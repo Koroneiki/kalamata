@@ -4,12 +4,33 @@ Kalamata is an Electrobun desktop application with a Vue and TypeScript frontend
 
 It logs onto Steam anonymously to discover content servers. A service keeps that connection open for multiple backend operations. It does not acquire manifests, depot keys, app metadata, licenses, or account credentials.
 
+## Stack
+
+- Electrobun with a Bun process and Vue webview
+- Vue 3, TypeScript, and Vue Router
+- Tailwind CSS v4 with semantic design tokens
+- Pinia and Pinia Colada
+- shadcn-vue component primitives
+
 ## Structure
 
-- `src/mainview` contains the Vue frontend.
-- `src/assets` contains shared frontend assets, including the Tailwind CSS entrypoint.
-- `src/bun` contains the Electrobun process entrypoint.
-- `src/backend` contains the existing Steam depot downloader.
+```text
+src/
+├── api/             # Frontend API and Electrobun RPC wrappers
+├── assets/          # Static assets and global styles
+├── backend/         # Steam depot downloader
+├── bun/             # Electrobun process entrypoint
+├── components/      # Generated UI primitives and custom components
+├── composables/     # Vue composables
+├── layouts/         # Layout components
+├── lib/             # Shared libraries
+├── mainview/        # Webview HTML and Vue entrypoint
+├── router/          # Routes and guards
+├── stores/          # Pinia stores
+├── types/           # Frontend TypeScript types
+├── utils/           # Utility functions
+└── views/           # Route-level pages
+```
 
 The frontend and downloader are not connected yet. Their RPC boundary will be added with the first frontend feature.
 

@@ -1,7 +1,7 @@
 {
   "extends": "@vue/tsconfig/tsconfig.dom.json",
-  "include": ["env.d.ts", "src/mainview/**/*", "src/mainview/**/*.vue"],
-  "exclude": ["src/**/__tests__/*"],
+  "include": ["env.d.ts", "src/**/*", "src/**/*.vue"],
+  "exclude": ["src/backend/**/*", "src/bun/**/*", "src/**/__tests__/*"],
   "compilerOptions": {
     "lib": ["DOM", "ES2023"],
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
