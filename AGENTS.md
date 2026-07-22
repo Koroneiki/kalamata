@@ -52,6 +52,20 @@ bunx --bun shadcn-vue@latest add <component-name>
 
 Build application-specific behavior in custom components under `forms`, `tables`, or `shared`, wrapping `ui` primitives as needed. Use the `cn` helper from `@/lib/utils` for conditional Tailwind classes and use semantic design tokens instead of hard-coded theme colors.
 
+shadcn-vue components are based on reka-ui v2 and use `modelValue` / `update:modelValue` rather than HTML-native state props:
+
+- Bind `Switch` with `v-model` or `:model-value` plus `@update:model-value`; do not use `checked`.
+- Bind `Select` with `v-model` or `:model-value` plus `@update:model-value`; do not use `value` or `selected`.
+
+```vue
+<Switch v-model="myBool" />
+
+<Switch
+  :model-value="item.is_active"
+  @update:model-value="handleToggle(item)"
+/>
+```
+
 ## Common Tasks
 
 Add a shadcn-vue button:
