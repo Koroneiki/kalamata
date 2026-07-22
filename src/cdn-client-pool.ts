@@ -1,4 +1,4 @@
-import type { ContentServer } from "./download-core.ts";
+import type { ContentServer } from "./content-client.ts";
 
 export class CDNClientPool {
   readonly #servers: ContentServer[];

@@ -2,6 +2,7 @@ import { rm, rmdir } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { CDNClientPool } from "./cdn-client-pool.ts";
+import type { ChunkClient, ContentServer } from "./content-client.ts";
 import type { FileFilter } from "./file-list.ts";
 import {
   DIRECTORY,
@@ -23,27 +24,7 @@ import {
 } from "./files.ts";
 import type { DepotManifest, DownloadEvent, DownloadResult, ManifestChunk, ManifestFile } from "./types.ts";
 
-export interface ContentServer {
-  Host: string;
-  vhost?: string;
-  https_support?: string;
-  usetokenauth?: number;
-  weightedload?: number;
-  NumEntriesInClientList?: number;
-  [key: string]: unknown;
-}
-
-export interface ChunkClient {
-  getContentServers(appId: number): Promise<{ servers: ContentServer[] }>;
-  downloadChunk(
-    appId: number,
-    depotId: number,
-    sha: string,
-    server: ContentServer,
-    signal?: AbortSignal,
-    expectedSize?: number,
-  ): Promise<{ chunk: Buffer }>;
-}
+export type { ChunkClient, ContentServer } from "./content-client.ts";
 
 interface ChunkJob {
   path: string;

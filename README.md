@@ -2,14 +2,17 @@
 
 Minimal Bun/TypeScript library for downloading a Steam depot from an existing local manifest and depot key.
 
-It logs onto Steam anonymously only to discover content servers. It does not acquire manifests, depot keys, app metadata, licenses, or account credentials.
+It logs onto Steam anonymously to discover content servers. A service keeps that connection open for multiple backend operations. It does not acquire manifests, depot keys, app metadata, licenses, or account credentials.
 
 ## Usage
 
 ```ts
-import { downloadDepot } from "kalamata";
+import { createSteamService } from "kalamata";
 
-const result = await downloadDepot({
+const steam = createSteamService();
+await steam.connect();
+
+const result = await steam.downloadDepot({
   appId: 730,
   depotId: 731,
   manifestPath: "/data/731_7617088375292372759.manifest",
@@ -22,7 +25,11 @@ const result = await downloadDepot({
     // Forward this event through the consuming application's IPC protocol.
   },
 });
+
+steam.dispose();
 ```
+
+Create one service for the backend process, call `connect()` once, and use it for depot downloads and future Steam operations. A frontend should call that backend service through its transport layer; it should not create or manage `steam-user` directly. Call `dispose()` when the backend shuts down.
 
 The optional file list follows DepotDownloaderMod's format. Each nonblank line is either a case-insensitive literal manifest path or a case-insensitive regular expression prefixed with `regex:`.
 

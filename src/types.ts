@@ -25,7 +25,6 @@ export interface DepotManifest {
 }
 
 export type DownloadEvent =
-  | { type: "connected" }
   | { type: "file-validating"; path: string }
   | { type: "file-complete"; path: string }
   | { type: "file-deleted"; path: string }

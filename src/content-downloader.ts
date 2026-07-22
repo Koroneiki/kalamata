@@ -1,5 +1,6 @@
 import { acquireOutputLock, DepotConfigStore } from "./depot-config-store.ts";
-import { downloadManifest, type ChunkClient } from "./download-core.ts";
+import { downloadManifest } from "./download-core.ts";
+import type { ChunkClient } from "./content-client.ts";
 import type { FileFilter } from "./file-list.ts";
 import { validateManifest } from "./local-inputs.ts";
 import { preflightManifestPaths } from "./files.ts";
