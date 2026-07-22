@@ -1,0 +1,8 @@
+node_modules/
+bun.lock
+coverage/
+*.tmp
+/download-*.ts
+fixtures-key-temp.txt
+test/*.integration.test.ts
+test/fixtures/
