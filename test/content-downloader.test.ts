@@ -2,10 +2,10 @@ import { afterEach, expect, mock, test } from "bun:test";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { downloadDepotContent } from "../src/content-downloader.ts";
-import { DepotConfigStore } from "../src/depot-config-store.ts";
-import type { ChunkClient } from "../src/download-core.ts";
-import type { DepotManifest, DownloadDepotOptions } from "../src/types.ts";
+import { downloadDepotContent } from "../src/backend/content-downloader.ts";
+import { DepotConfigStore } from "../src/backend/depot-config-store.ts";
+import type { ChunkClient } from "../src/backend/download-core.ts";
+import type { DepotManifest, DownloadDepotOptions } from "../src/backend/types.ts";
 
 let directory: string | undefined;
 

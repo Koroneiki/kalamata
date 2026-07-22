@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { createServer, type RequestListener, type Server } from "node:http";
-import { HttpStatusError, downloadChunkData } from "../src/chunk-download.ts";
+import { HttpStatusError, downloadChunkData } from "../src/backend/chunk-download.ts";
 
 const servers: Server[] = [];
 

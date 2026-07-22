@@ -1,6 +1,9 @@
 node_modules/
 bun.lock
 coverage/
+dist/
+build/
+artifacts/
 *.tmp
 /download-*.ts
 fixtures-key-temp.txt

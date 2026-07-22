@@ -3,8 +3,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
-import { downloadManifest, type ChunkClient, type ContentServer } from "../src/download-core.ts";
-import type { DepotManifest, ManifestChunk, ManifestFile } from "../src/types.ts";
+import { downloadManifest, type ChunkClient, type ContentServer } from "../src/backend/download-core.ts";
+import type { DepotManifest, ManifestChunk, ManifestFile } from "../src/backend/types.ts";
 
 let directory: string | undefined;
 

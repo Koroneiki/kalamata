@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { readFileFilter } from "../src/file-list.ts";
+import { readFileFilter } from "../src/backend/file-list.ts";
 
 let directory: string | undefined;
 

@@ -2,8 +2,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { parseManifest, readDepotKey, validateManifest } from "../src/local-inputs.ts";
-import type { DepotManifest } from "../src/types.ts";
+import { parseManifest, readDepotKey, validateManifest } from "../src/backend/local-inputs.ts";
+import type { DepotManifest } from "../src/backend/types.ts";
 
 let directory: string | undefined;
 

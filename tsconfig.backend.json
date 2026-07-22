@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "exactOptionalPropertyTypes": true,
+    "types": ["bun"]
+  },
+  "include": ["src/backend", "test"]
+}

@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { acquireOutputLock, DepotConfigStore } from "../src/depot-config-store.ts";
+import { acquireOutputLock, DepotConfigStore } from "../src/backend/depot-config-store.ts";
 
 let directory: string | undefined;
 

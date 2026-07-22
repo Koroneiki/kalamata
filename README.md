@@ -1,37 +1,18 @@
-# kalamata
+# Kalamata
 
-Minimal Bun/TypeScript library for downloading a Steam depot from an existing local manifest and depot key.
+Kalamata is an Electrobun desktop application with a Vue and TypeScript frontend. Its Bun backend downloads Steam depot content from an existing local manifest and depot key.
 
 It logs onto Steam anonymously to discover content servers. A service keeps that connection open for multiple backend operations. It does not acquire manifests, depot keys, app metadata, licenses, or account credentials.
 
-## Usage
+## Structure
 
-```ts
-import { createSteamService } from "kalamata";
+- `src/mainview` contains the Vue frontend.
+- `src/bun` contains the Electrobun process entrypoint.
+- `src/backend` contains the existing Steam depot downloader.
 
-const steam = createSteamService();
-try {
-  await steam.connect();
+The frontend and downloader are not connected yet. Their RPC boundary will be added with the first frontend feature.
 
-  const result = await steam.downloadDepot({
-    appId: 730,
-    depotId: 731,
-    manifestPath: "/data/731_7617088375292372759.manifest",
-    depotKeyPath: "/data/steam.keys",
-    outputDirectory: "/data/output",
-    fileListPath: "/data/files.txt",
-    verifyAll: true,
-    maxDownloads: 8,
-    onEvent: (event) => {
-      // Forward this event through the consuming application's IPC protocol.
-    },
-  });
-} finally {
-  steam.dispose();
-}
-```
-
-Create one service for the backend process, call `connect()` once, and use it for depot downloads and future Steam operations. A frontend should call that backend service through its transport layer; it should not create or manage `steam-user` directly. Call `dispose()` when the backend shuts down.
+When connected, the Bun process should create one service, call `connect()` once, and use it for depot downloads and future Steam operations. The frontend should call that service through Electrobun RPC; it should not create or manage `steam-user` directly. Call `dispose()` when the backend shuts down.
 
 `connect()` is idempotent, and concurrent calls share the same connection attempt. `downloadDepot()` also connects lazily if needed. A Steam connection error aborts active downloads and clears the session; a later `connect()` or download starts a new session. A disposed service cannot reconnect.
 
@@ -84,6 +65,8 @@ Steam VZip stores the five LZMA property bytes and compressed payload but omits 
 
 ```sh
 bun install
+bun run dev
+bun run build
 bun test
 bun run typecheck
 ```

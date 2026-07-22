@@ -2,8 +2,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { adlerForChunk, preflightManifestPaths, rebuildWithChunkMatches, resolveManifestPath, resolveOutputPath } from "../src/files.ts";
-import type { ManifestChunk } from "../src/types.ts";
+import { adlerForChunk, preflightManifestPaths, rebuildWithChunkMatches, resolveManifestPath, resolveOutputPath } from "../src/backend/files.ts";
+import type { ManifestChunk } from "../src/backend/types.ts";
 
 let directory: string | undefined;
 
