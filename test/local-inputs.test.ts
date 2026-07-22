@@ -53,6 +53,22 @@ test("rejects chunk gaps and manifest symlinks", () => {
   expect(() => validateManifest(manifest, 20)).toThrow("symlinks are not supported");
 });
 
+test("rejects non-decimal manifest integers", () => {
+  for (const value of ["", " ", "0x3", "3e0"]) {
+    const manifest = basicManifest();
+    manifest.files[0]!.size = value;
+    expect(() => validateManifest(manifest, 20)).toThrow("invalid size");
+  }
+});
+
+test("rejects manifest paths that differ only by separators", () => {
+  const manifest = basicManifest();
+  manifest.files.push({ ...manifest.files[0]!, filename: "folder\\file.bin" });
+  manifest.files[0]!.filename = "folder/file.bin";
+
+  expect(() => validateManifest(manifest, 20)).toThrow("duplicate path");
+});
+
 function basicManifest(): DepotManifest {
   return {
     depot_id: 20,

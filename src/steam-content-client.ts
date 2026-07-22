@@ -6,7 +6,7 @@ import { DecompressPool } from "./decompress-pool.ts";
 import type { SteamContentUser } from "./steam-session.ts";
 
 export class SteamContentClient implements ChunkClient {
-  readonly #decompressPool: DecompressPool;
+  #decompressPool: DecompressPool | undefined;
   // Keep connection reuse local to this download instead of mutating the host process's global agents.
   readonly #httpAgent = new http.Agent({ keepAlive: true });
   readonly #httpsAgent = new https.Agent({ keepAlive: true });
@@ -15,18 +15,14 @@ export class SteamContentClient implements ChunkClient {
 
   constructor(
     private readonly user: SteamContentUser,
-    depotKey: Buffer,
-    maxDownloads: number,
-  ) {
-    this.#decompressPool = new DecompressPool(depotKey, maxDownloads);
-  }
+    private readonly depotKey: Buffer,
+    private readonly maxDownloads: number,
+  ) {}
 
   getContentServers(appId: number): Promise<{ servers: ContentServer[] }> {
     return this.user.getContentServers(appId);
   }
 
-  // Override steam-user's downloadChunk with our efficient implementation
-  // that avoids O(n²) Buffer.concat behavior on every data event.
   async downloadChunk(
     appId: number,
     depotId: number,
@@ -53,11 +49,12 @@ export class SteamContentClient implements ChunkClient {
       location = buildChunkUrl(server, depotId, chunkSha1, token);
       encrypted = await downloadChunkData(location.url, location.vhost, signal, { http: this.#httpAgent, https: this.#httpsAgent });
     }
+    this.#decompressPool ??= new DecompressPool(this.depotKey, this.maxDownloads);
     return { chunk: await this.#decompressPool.process(encrypted, chunkSha1, expectedSize, signal) };
   }
 
   dispose(): void {
-    this.#decompressPool.dispose();
+    this.#decompressPool?.dispose();
     this.#httpAgent.destroy();
     this.#httpsAgent.destroy();
   }

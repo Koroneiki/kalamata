@@ -1,7 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { downloadDepotContent } from "./content-downloader.ts";
 import { readFileFilter } from "./file-list.ts";
-import { preflightManifestPaths } from "./files.ts";
 import { parseManifest, readDepotKey, validateManifest } from "./local-inputs.ts";
 import { SteamContentClient } from "./steam-content-client.ts";
 import type { SteamSession } from "./steam-session.ts";
@@ -21,17 +20,13 @@ export class DepotDownloadService {
     throwIfAborted(options.signal);
     const manifest = parseManifest(manifestContents, key);
     validateManifest(manifest, options.depotId);
-    await preflightManifestPaths(
-      options.outputDirectory,
-      manifest.files.filter((file) => fileFilter(file.filename)),
-    );
     throwIfAborted(options.signal);
 
     const controller = new AbortController();
     const onAbort = () => controller.abort(options.signal?.reason ?? new DOMException("Download aborted", "AbortError"));
     if (options.signal?.aborted) onAbort();
     else options.signal?.addEventListener("abort", onAbort, { once: true });
-    const removeConnectionErrorListener = this.session.onConnectionError((error) => controller.abort(error));
+    const removeDisconnectListener = this.session.onDisconnect((error) => controller.abort(error));
     try {
       const client = new SteamContentClient(await this.session.getClient(), key, options.maxDownloads ?? 8);
       try {
@@ -46,7 +41,7 @@ export class DepotDownloadService {
         client.dispose();
       }
     } finally {
-      removeConnectionErrorListener();
+      removeDisconnectListener();
       options.signal?.removeEventListener("abort", onAbort);
     }
   }

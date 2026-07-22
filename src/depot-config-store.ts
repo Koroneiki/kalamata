@@ -1,11 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
 import { lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { CONFIG_DIRECTORY, STAGING_DIRECTORY } from "./depot-paths.ts";
 import { parseManifest } from "./local-inputs.ts";
 import type { DepotManifest } from "./types.ts";
 
-export const CONFIG_DIRECTORY = ".DepotDownloader";
-export const STAGING_DIRECTORY = "staging";
+export { CONFIG_DIRECTORY, STAGING_DIRECTORY } from "./depot-paths.ts";
 
 interface DepotConfigData {
   version: 1;
@@ -53,9 +53,15 @@ export class DepotConfigStore {
   }
 
   async setInstalledManifestId(depotId: number, manifestId: string | null): Promise<void> {
-    this.#data.installedManifestIds[String(depotId)] = manifestId;
+    const key = String(depotId);
+    if (Object.hasOwn(this.#data.installedManifestIds, key) && this.#data.installedManifestIds[key] === manifestId) return;
+    const nextData: DepotConfigData = {
+      ...this.#data,
+      installedManifestIds: { ...this.#data.installedManifestIds, [key]: manifestId },
+    };
     await mkdir(this.directory, { recursive: true });
-    await writeAtomically(this.#filename, `${JSON.stringify(this.#data, null, 2)}\n`);
+    await writeAtomically(this.#filename, `${JSON.stringify(nextData, null, 2)}\n`);
+    this.#data.installedManifestIds = nextData.installedManifestIds;
   }
 
   async loadManifest(depotId: number, manifestId: string, key: Buffer): Promise<DepotManifest | undefined> {
@@ -104,34 +110,28 @@ export async function acquireOutputLock(outputDirectory: string): Promise<() => 
   const owner = { id: randomUUID(), pid: process.pid };
   await mkdir(directory, { recursive: true });
 
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      await mkdir(lockDirectory);
-      try {
-        await writeFile(ownerPath, JSON.stringify(owner));
-      } catch (error) {
-        await rm(lockDirectory, { recursive: true, force: true });
-        throw error;
-      }
-      return async () => {
-        try {
-          const current = JSON.parse(await readFile(ownerPath, "utf8")) as { id?: unknown };
-          if (current.id === owner.id) await rm(lockDirectory, { recursive: true, force: true });
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-        }
-      };
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      const existing = await readLockOwner(ownerPath);
-      if (!existing || processIsAlive(existing.pid)) {
-        throw new Error(`Another download is already using ${outputDirectory}`);
-      }
-      // If the recorded process is no longer alive, remove its stale lock and retry.
-      await rm(lockDirectory, { recursive: true, force: true });
+  try {
+    await mkdir(lockDirectory);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+      throw new Error(`Another download is already using ${outputDirectory}`);
     }
+    throw error;
   }
-  throw new Error(`Could not acquire download lock for ${outputDirectory}`);
+  try {
+    await writeFile(ownerPath, JSON.stringify(owner));
+  } catch (error) {
+    await rm(lockDirectory, { recursive: true, force: true });
+    throw error;
+  }
+  return async () => {
+    try {
+      const current = JSON.parse(await readFile(ownerPath, "utf8")) as { id?: unknown };
+      if (current.id === owner.id) await rm(lockDirectory, { recursive: true, force: true });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  };
 }
 
 async function writeAtomically(filename: string, contents: string): Promise<void> {
@@ -155,7 +155,12 @@ function sha1(contents: Buffer): string {
 function isDepotConfigData(value: unknown): value is DepotConfigData {
   if (!value || typeof value !== "object") return false;
   const data = value as Partial<DepotConfigData>;
-  if (data.version !== 1 || !data.installedManifestIds || typeof data.installedManifestIds !== "object") return false;
+  if (
+    data.version !== 1
+    || !data.installedManifestIds
+    || typeof data.installedManifestIds !== "object"
+    || Array.isArray(data.installedManifestIds)
+  ) return false;
   return Object.entries(data.installedManifestIds).every(([depotId, manifestId]) =>
     /^\d+$/u.test(depotId) && (manifestId === null || (typeof manifestId === "string" && /^\d+$/u.test(manifestId))),
   );
@@ -171,23 +176,5 @@ async function assertSafeConfigDirectory(outputDirectory: string): Promise<void>
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
-  }
-}
-
-async function readLockOwner(path: string): Promise<{ pid: number } | undefined> {
-  try {
-    const value = JSON.parse(await readFile(path, "utf8")) as { pid?: unknown };
-    return typeof value.pid === "number" && Number.isInteger(value.pid) ? { pid: value.pid } : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function processIsAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
   }
 }

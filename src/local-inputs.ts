@@ -1,10 +1,9 @@
 import { readFile } from "node:fs/promises";
 import ContentManifest from "steam-user/components/content_manifest.js";
+import { DIRECTORY, MAX_CHUNK_BYTES, SYMLINK, manifestPathKey } from "./manifest-utils.ts";
 import type { DepotManifest } from "./types.ts";
 
-export const DIRECTORY = 64;
-export const SYMLINK = 512;
-export const MAX_CHUNK_BYTES = 64 * 1024 * 1024;
+export { DIRECTORY, MAX_CHUNK_BYTES, SYMLINK } from "./manifest-utils.ts";
 
 export async function readDepotKey(path: string, depotId: number): Promise<Buffer> {
   const contents = await readFile(path, "utf8");
@@ -36,10 +35,6 @@ export async function readDepotKey(path: string, depotId: number): Promise<Buffe
   throw new Error(`No key for depot ${depotId} in ${path}`);
 }
 
-export async function readManifest(path: string, key: Buffer): Promise<DepotManifest> {
-  return parseManifest(await readFile(path), key);
-}
-
 export function parseManifest(contents: Buffer, key: Buffer): DepotManifest {
   const manifest = ContentManifest.parse(contents);
   if (manifest.filenames_encrypted) {
@@ -65,9 +60,9 @@ export function validateManifest(manifest: DepotManifest, depotId: number): void
     if (!Number.isInteger(file.flags) || !Array.isArray(file.chunks)) {
       throw new Error(`Manifest contains invalid metadata for ${file.filename}`);
     }
-    const normalizedFilename = file.filename.replaceAll("\\", "/");
-    if (filenames.has(normalizedFilename)) throw new Error(`Manifest contains duplicate path ${file.filename}`);
-    filenames.add(normalizedFilename);
+    const filenameKey = manifestPathKey(file.filename);
+    if (filenames.has(filenameKey)) throw new Error(`Manifest contains duplicate path ${file.filename}`);
+    filenames.add(filenameKey);
     if (file.flags & SYMLINK) {
       throw new Error(`Manifest symlinks are not supported: ${file.filename}`);
     }
@@ -99,6 +94,9 @@ export function validateManifest(manifest: DepotManifest, depotId: number): void
 }
 
 function parseSafeInteger(value: string | number, label: string): number {
+  if (typeof value === "string" && !/^(0|[1-9]\d*)$/u.test(value)) {
+    throw new Error(`Manifest contains an invalid ${label}`);
+  }
   const parsed = typeof value === "number" ? value : Number(value);
   if (!Number.isSafeInteger(parsed) || parsed < 0) throw new Error(`Manifest contains an invalid ${label}`);
   return parsed;

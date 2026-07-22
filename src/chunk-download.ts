@@ -4,10 +4,10 @@ import https from "node:https";
 import { createRequire } from "node:module";
 import { lzma } from "@napi-rs/lzma";
 import type { ContentServer } from "./content-client.ts";
+import { MAX_CHUNK_BYTES } from "./manifest-utils.ts";
 
 const USER_AGENT = "Valve/Steam HTTP Client 1.0";
 const REQUEST_TIMEOUT_MS = 100_000;
-const MAX_CHUNK_BYTES = 64 * 1024 * 1024;
 
 export interface ChunkDownloadAgents {
   http: http.Agent;

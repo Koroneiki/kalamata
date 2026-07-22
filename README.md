@@ -10,23 +10,25 @@ It logs onto Steam anonymously to discover content servers. A service keeps that
 import { createSteamService } from "kalamata";
 
 const steam = createSteamService();
-await steam.connect();
+try {
+  await steam.connect();
 
-const result = await steam.downloadDepot({
-  appId: 730,
-  depotId: 731,
-  manifestPath: "/data/731_7617088375292372759.manifest",
-  depotKeyPath: "/data/steam.keys",
-  outputDirectory: "/data/output",
-  fileListPath: "/data/files.txt",
-  verifyAll: true,
-  maxDownloads: 8,
-  onEvent: (event) => {
-    // Forward this event through the consuming application's IPC protocol.
-  },
-});
-
-steam.dispose();
+  const result = await steam.downloadDepot({
+    appId: 730,
+    depotId: 731,
+    manifestPath: "/data/731_7617088375292372759.manifest",
+    depotKeyPath: "/data/steam.keys",
+    outputDirectory: "/data/output",
+    fileListPath: "/data/files.txt",
+    verifyAll: true,
+    maxDownloads: 8,
+    onEvent: (event) => {
+      // Forward this event through the consuming application's IPC protocol.
+    },
+  });
+} finally {
+  steam.dispose();
+}
 ```
 
 Create one service for the backend process, call `connect()` once, and use it for depot downloads and future Steam operations. A frontend should call that backend service through its transport layer; it should not create or manage `steam-user` directly. Call `dispose()` when the backend shuts down.

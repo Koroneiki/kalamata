@@ -2,8 +2,9 @@ import { createReadStream } from "node:fs";
 import { createHash } from "node:crypto";
 import { chmod, lstat, mkdir, open, rename, rm, stat } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { CONFIG_DIRECTORY } from "./depot-paths.ts";
+import { DIRECTORY, manifestPathKey, normalizeManifestSeparators } from "./manifest-utils.ts";
 import type { ManifestChunk, ManifestFile } from "./types.ts";
-import { DIRECTORY } from "./local-inputs.ts";
 
 const EXECUTABLE = 32;
 export { DIRECTORY };
@@ -13,7 +14,7 @@ export function resolveManifestPath(root: string, filename: string): string {
     throw new Error(`Unsafe manifest path: ${filename}`);
   }
 
-  const normalized = filename.replaceAll("\\", "/");
+  const normalized = normalizeManifestSeparators(filename);
   const outputRoot = resolve(root);
   const outputPath = resolve(outputRoot, normalized);
   const fromRoot = relative(outputRoot, outputPath);
@@ -26,7 +27,7 @@ export function resolveManifestPath(root: string, filename: string): string {
 export function resolveOutputPath(root: string, filename: string): string {
   const outputPath = resolveManifestPath(root, filename);
   const firstSegment = relative(resolve(root), outputPath).split(sep, 1)[0];
-  if (firstSegment?.toLowerCase() === ".depotdownloader") {
+  if (firstSegment?.toLowerCase() === CONFIG_DIRECTORY.toLowerCase()) {
     throw new Error(`Manifest path conflicts with internal state: ${filename}`);
   }
   return outputPath;
@@ -91,7 +92,7 @@ export async function stageTypeTransitions(
   currentFiles: ManifestFile[],
   previousFiles: ManifestFile[],
 ): Promise<StagedPath[]> {
-  const previous = new Map(previousFiles.map((file) => [normalizeManifestName(file.filename), file]));
+  const previous = new Map(previousFiles.map((file) => [manifestPathKey(file.filename), file]));
   const staged: StagedPath[] = [];
 
   try {
@@ -110,7 +111,7 @@ export async function stageTypeTransitions(
 
       const wantsDirectory = Boolean(file.flags & DIRECTORY);
       if ((wantsDirectory && info.isDirectory()) || (!wantsDirectory && info.isFile())) continue;
-      const oldFile = previous.get(normalizeManifestName(file.filename));
+      const oldFile = previous.get(manifestPathKey(file.filename));
       const oldWasDirectory = oldFile ? Boolean(oldFile.flags & DIRECTORY) : undefined;
       if (oldWasDirectory === undefined || oldWasDirectory === wantsDirectory) {
         throw new Error(`Manifest path has an unexpected filesystem type: ${file.filename}`);
@@ -146,17 +147,8 @@ export async function restoreStagedPaths(paths: StagedPath[]): Promise<void> {
   if (errors.length > 0) throw new AggregateError(errors, "Could not restore paths after a failed type transition");
 }
 
-function normalizeManifestName(filename: string): string {
-  const normalized = filename.replaceAll("\\", "/");
-  return process.platform === "linux" ? normalized : normalized.toLowerCase();
-}
-
 function pathDepth(filename: string): number {
-  return filename.replaceAll("\\", "/").split("/").length;
-}
-
-export async function prepareDirectory(path: string): Promise<void> {
-  await mkdir(path, { recursive: true });
+  return normalizeManifestSeparators(filename).split("/").length;
 }
 
 export async function preallocate(path: string, size: number): Promise<void> {
@@ -182,44 +174,33 @@ export async function existingFileSize(path: string): Promise<number | undefined
 
 export async function adlerForChunk(path: string, chunk: ManifestChunk): Promise<number> {
   const length = Number(chunk.cb_original);
-  const buffer = Buffer.allocUnsafe(length);
+  const buffer = Buffer.allocUnsafe(Math.min(length, 64 * 1024));
   const handle = await open(path, "r");
+  let bytesRead = 0;
+  let a = 0;
+  let b = 0;
   try {
-    const { bytesRead } = await handle.read(buffer, 0, length, Number(chunk.offset));
-    if (bytesRead !== length) return -1;
+    while (bytesRead < length) {
+      const wanted = Math.min(buffer.length, length - bytesRead);
+      const result = await handle.read(buffer, 0, wanted, Number(chunk.offset) + bytesRead);
+      if (result.bytesRead === 0) return -1;
+      bytesRead += result.bytesRead;
+
+      let index = 0;
+      while (index < result.bytesRead) {
+        const end = Math.min(index + 5_552, result.bytesRead);
+        for (; index < end; index++) {
+          a += buffer[index]!;
+          b += a;
+        }
+        a %= 65_521;
+        b %= 65_521;
+      }
+    }
   } finally {
     await handle.close();
   }
-
-  let a = 0;
-  let b = 0;
-  for (const byte of buffer) {
-    a = (a + byte) % 65521;
-    b = (b + a) % 65521;
-  }
   return (a | (b << 16)) >>> 0;
-}
-
-export async function findInvalidChunks(path: string, chunks: ManifestChunk[]): Promise<Set<string>> {
-  const invalid = new Set<string>();
-  for (const chunk of [...chunks].sort((a, b) => Number(a.offset) - Number(b.offset))) {
-    if ((await adlerForChunk(path, chunk)) !== chunk.crc >>> 0) invalid.add(chunk.sha);
-  }
-  return invalid;
-}
-
-export async function rebuildWithValidChunks(
-  path: string,
-  size: number,
-  chunks: ManifestChunk[],
-  invalid: Set<string>,
-): Promise<void> {
-  await rebuildWithChunkMatches(
-    path,
-    `${path}.depotdownloader.tmp`,
-    size,
-    chunks.filter((chunk) => !invalid.has(chunk.sha)).map((chunk) => ({ source: chunk, destination: chunk })),
-  );
 }
 
 export interface ChunkMatch {
@@ -237,6 +218,8 @@ export async function rebuildWithChunkMatches(
   await rm(stagingPath, { force: true });
   await rename(path, stagingPath);
 
+  let rebuilt = false;
+  let restored = false;
   try {
     await preallocate(path, size);
     const source = await open(stagingPath, "r");
@@ -244,30 +227,31 @@ export async function rebuildWithChunkMatches(
     try {
       for (const match of matches) {
         const length = Number(match.source.cb_original);
-        const buffer = Buffer.allocUnsafe(length);
-        const bytesRead = await readExactly(source, buffer, Number(match.source.offset));
-        if (bytesRead !== length) throw new Error(`Could not reuse chunk ${match.source.sha}`);
-        await writeExactly(destination, buffer, Number(match.destination.offset));
+        const buffer = Buffer.allocUnsafe(Math.min(length, 64 * 1024));
+        let copied = 0;
+        while (copied < length) {
+          const part = buffer.subarray(0, Math.min(buffer.length, length - copied));
+          const bytesRead = await readExactly(source, part, Number(match.source.offset) + copied);
+          if (bytesRead !== part.length) throw new Error(`Could not reuse chunk ${match.source.sha}`);
+          await writeExactly(destination, part, Number(match.destination.offset) + copied);
+          copied += part.length;
+        }
       }
     } finally {
       await Promise.all([source.close(), destination.close()]);
     }
+    rebuilt = true;
   } catch (error) {
-    await rm(path, { force: true });
     try {
+      await rm(path, { force: true });
       await rename(stagingPath, path);
+      restored = true;
     } catch (restoreError) {
       throw new AggregateError([error, restoreError], `Could not restore ${path}; original retained at ${stagingPath}`);
     }
     throw error;
   } finally {
-    // Remove staging only when the output path exists; otherwise it may be the remaining copy.
-    try {
-      await stat(path);
-      await rm(stagingPath, { force: true });
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    }
+    if (rebuilt || restored) await rm(stagingPath, { force: true });
   }
 }
 

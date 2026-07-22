@@ -1,16 +1,5 @@
 import { availableParallelism } from "node:os";
-
-interface SerializedError {
-  name: string;
-  message: string;
-  stack?: string;
-}
-
-interface WorkerResponse {
-  id: number;
-  data?: ArrayBuffer;
-  error?: SerializedError;
-}
+import { deserializeError, exactArrayBuffer, type WorkerRequest, type WorkerResponse } from "./decompress-protocol.ts";
 
 interface Pending {
   id: number;
@@ -83,23 +72,7 @@ export class DecompressPool {
   }
 
   dispose(): void {
-    if (this.#disposed) return;
-    this.#disposed = true;
-    const error = new Error("Pool disposed");
-
-    for (const pending of this.#queue.splice(0)) {
-      cleanupPending(pending);
-      pending.reject(error);
-    }
-    for (const slot of this.#workers) {
-      if (slot.current) {
-        cleanupPending(slot.current);
-        slot.current.reject(error);
-      }
-      slot.current = undefined;
-      slot.worker.terminate();
-    }
-    this.#workers.length = 0;
+    this.#shutdown(new Error("Pool disposed"));
   }
 
   #createWorker(index: number): WorkerSlot {
@@ -116,7 +89,7 @@ export class DecompressPool {
     };
     worker.onmessageerror = () => this.#handleWorkerFailure(slot, new Error("Worker message could not be deserialized"));
     worker.addEventListener("close", () => this.#handleWorkerFailure(slot, new Error("Worker exited unexpectedly")));
-    worker.postMessage({ type: "init", key: this.#key });
+    worker.postMessage({ type: "init", key: this.#key } satisfies WorkerRequest);
     return slot;
   }
 
@@ -150,13 +123,7 @@ export class DecompressPool {
 
     this.#consecutiveWorkerFailures++;
     if (this.#consecutiveWorkerFailures >= DecompressPool.#MAX_CONSECUTIVE_WORKER_FAILURES) {
-      this.#disposed = true;
-      for (const pending of this.#queue.splice(0)) {
-        cleanupPending(pending);
-        pending.reject(error);
-      }
-      for (const workerSlot of this.#workers) workerSlot.worker.terminate();
-      this.#workers.length = 0;
+      this.#shutdown(error);
       return;
     }
 
@@ -166,14 +133,7 @@ export class DecompressPool {
       this.#workers[slot.index] = replacement;
       this.#dispatch(replacement);
     } catch (replacementError) {
-      this.#disposed = true;
-      const failure = toError(replacementError);
-      for (const pending of this.#queue.splice(0)) {
-        cleanupPending(pending);
-        pending.reject(failure);
-      }
-      for (const workerSlot of this.#workers) workerSlot.worker.terminate();
-      this.#workers.length = 0;
+      this.#shutdown(toError(replacementError));
     }
   }
 
@@ -185,42 +145,42 @@ export class DecompressPool {
       if (!pending) return;
       slot.current = pending;
       try {
-        slot.worker.postMessage(
-          {
-            type: "process",
-            id: pending.id,
-            encrypted: pending.encrypted,
+        const request: WorkerRequest = {
+          type: "process",
+          id: pending.id,
+          encrypted: pending.encrypted,
           expectedSha1: pending.expectedSha1,
-          expectedSize: pending.expectedSize,
-          },
-          [pending.encrypted],
-        );
+          ...(pending.expectedSize === undefined ? {} : { expectedSize: pending.expectedSize }),
+        };
+        slot.worker.postMessage(request, [pending.encrypted]);
       } catch (error) {
         this.#handleWorkerFailure(slot, toError(error));
       }
     }
+  }
+
+  #shutdown(error: Error): void {
+    if (this.#disposed) return;
+    this.#disposed = true;
+    for (const pending of this.#queue.splice(0)) {
+      cleanupPending(pending);
+      pending.reject(error);
+    }
+    for (const slot of this.#workers) {
+      if (slot.current) {
+        cleanupPending(slot.current);
+        if (!slot.current.aborted) slot.current.reject(error);
+      }
+      slot.current = undefined;
+      slot.worker.terminate();
+    }
+    this.#workers.length = 0;
   }
 }
 
 function cleanupPending(pending: Pending): void {
   if (pending.onAbort) pending.signal?.removeEventListener("abort", pending.onAbort);
   pending.onAbort = undefined;
-}
-
-function exactArrayBuffer(data: Uint8Array): ArrayBuffer {
-  // Transfer only the visible bytes; Buffers may be views into a larger shared slab.
-  if (data.buffer instanceof ArrayBuffer) {
-    if (data.byteOffset === 0 && data.byteLength === data.buffer.byteLength) return data.buffer;
-    return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
-  }
-  return Uint8Array.from(data).buffer;
-}
-
-function deserializeError(serialized: SerializedError): Error {
-  const error = new Error(serialized.message);
-  error.name = serialized.name;
-  if (serialized.stack) error.stack = serialized.stack;
-  return error;
 }
 
 function toError(error: unknown): Error {

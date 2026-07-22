@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { acquireOutputLock, DepotConfigStore } from "../src/depot-config-store.ts";
@@ -37,4 +37,28 @@ test("prevents concurrent downloads in one output directory", async () => {
   }
   const releaseAgain = await acquireOutputLock(directory);
   await releaseAgain();
+});
+
+test("rejects malformed manifest ID maps", async () => {
+  directory = await mkdtemp(join(tmpdir(), "depot-config-"));
+  const configDirectory = join(directory, ".DepotDownloader");
+  await mkdir(configDirectory);
+  await writeFile(join(configDirectory, "depot.config.json"), JSON.stringify({
+    version: 1,
+    installedManifestIds: [],
+  }));
+
+  await expect(DepotConfigStore.load(directory)).rejects.toThrow("Invalid depot config");
+});
+
+test("does not automatically remove a stale lock", async () => {
+  directory = await mkdtemp(join(tmpdir(), "depot-config-"));
+  const lockDirectory = join(directory, ".DepotDownloader", "download.lock");
+  await mkdir(lockDirectory, { recursive: true });
+  await writeFile(join(lockDirectory, "owner.json"), JSON.stringify({ id: "stale", pid: 2_147_483_647 }));
+
+  const attempts = await Promise.allSettled([acquireOutputLock(directory), acquireOutputLock(directory)]);
+
+  expect(attempts.every((result) => result.status === "rejected")).toBe(true);
+  expect(await Bun.file(join(lockDirectory, "owner.json")).exists()).toBe(true);
 });

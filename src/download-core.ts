@@ -1,17 +1,16 @@
-import { rm, rmdir } from "node:fs/promises";
+import { mkdir, rm, rmdir } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { CDNClientPool } from "./cdn-client-pool.ts";
 import type { ChunkClient, ContentServer } from "./content-client.ts";
+import { CONFIG_DIRECTORY, STAGING_DIRECTORY } from "./depot-paths.ts";
 import type { FileFilter } from "./file-list.ts";
 import {
-  DIRECTORY,
   adlerForChunk,
   assertNoSymlinkTraversal,
   existingFileSize,
   preallocate,
   preflightManifestPaths,
-  prepareDirectory,
   rebuildWithChunkMatches,
   resolveManifestPath,
   resolveOutputPath,
@@ -22,6 +21,7 @@ import {
   writeChunk,
   type ChunkMatch,
 } from "./files.ts";
+import { DIRECTORY, manifestPathKey } from "./manifest-utils.ts";
 import type { DepotManifest, DownloadEvent, DownloadResult, ManifestChunk, ManifestFile } from "./types.ts";
 
 export type { ChunkClient, ContentServer } from "./content-client.ts";
@@ -55,7 +55,7 @@ export async function downloadManifest(
   const includeFile = options.fileFilter ?? (() => true);
   const currentFiles = manifest.files.filter((file) => includeFile(file.filename));
   await preflightManifestPaths(options.outputDirectory, currentFiles);
-  const stagingDirectory = options.stagingDirectory ?? join(options.outputDirectory, ".DepotDownloader", "staging");
+  const stagingDirectory = options.stagingDirectory ?? join(options.outputDirectory, CONFIG_DIRECTORY, STAGING_DIRECTORY);
   const transitionDirectory = join(stagingDirectory, `transitions-${randomUUID()}`);
   const staged = await stageTypeTransitions(
     options.outputDirectory,
@@ -65,7 +65,7 @@ export async function downloadManifest(
   );
 
   try {
-    const result = await downloadManifestCore(client, manifest, options);
+    const result = await downloadManifestCore(client, manifest, options, currentFiles, includeFile);
     await rm(transitionDirectory, { recursive: true, force: true });
     return result;
   } catch (error) {
@@ -83,16 +83,16 @@ async function downloadManifestCore(
   client: ChunkClient,
   manifest: DepotManifest,
   options: CoreOptions,
+  currentFiles: ManifestFile[],
+  includeFile: FileFilter,
 ): Promise<DownloadResult> {
-  const includeFile = options.fileFilter ?? (() => true);
-  const currentFiles = manifest.files.filter((file) => includeFile(file.filename));
   const previousFiles = new Map(
     (options.previousManifest?.files ?? [])
       .filter((file) => includeFile(file.filename))
-      .map((file) => [file.filename, file]),
+      .map((file) => [manifestPathKey(file.filename), file]),
   );
-  const currentNames = new Set(currentFiles.map((file) => file.filename));
-  const stagingDirectory = options.stagingDirectory ?? join(options.outputDirectory, ".DepotDownloader", "staging");
+  const currentPathKeys = new Set(currentFiles.map((file) => manifestPathKey(file.filename)));
+  const stagingDirectory = options.stagingDirectory ?? join(options.outputDirectory, CONFIG_DIRECTORY, STAGING_DIRECTORY);
   const jobs: ChunkJob[] = [];
   const remainingByFile = new Map<string, number>();
   const resolvedPaths = new Set<string>();
@@ -109,13 +109,13 @@ async function downloadManifestCore(
     resolvedPaths.add(outputPath);
 
     if (file.flags & DIRECTORY) {
-      await prepareDirectory(outputPath);
+      await mkdir(outputPath, { recursive: true });
       continue;
     }
 
     const size = fileSize(file);
     const existingSize = await existingFileSize(outputPath);
-    const oldFile = previousFiles.get(file.filename);
+    const oldFile = previousFiles.get(manifestPathKey(file.filename));
     let needed: ManifestChunk[];
 
     if (existingSize === undefined) {
@@ -178,7 +178,7 @@ async function downloadManifestCore(
   }
 
   throwIfAborted(options.signal);
-  await deleteObsoleteFiles(options.previousManifest, currentNames, includeFile, options);
+  await deleteObsoleteFiles(options.previousManifest, currentPathKeys, includeFile, options);
   throwIfAborted(options.signal);
   return { manifestId: manifest.gid_manifest, downloadedBytes, reusedBytes };
 }
@@ -323,13 +323,13 @@ async function downloadWithRetry(
 
 async function deleteObsoleteFiles(
   previousManifest: DepotManifest | undefined,
-  currentNames: Set<string>,
+  currentPathKeys: Set<string>,
   includeFile: FileFilter,
   options: CoreOptions,
 ): Promise<void> {
   if (!previousManifest) return;
   for (const file of previousManifest.files) {
-    if ((file.flags & DIRECTORY) || !includeFile(file.filename) || currentNames.has(file.filename)) continue;
+    if ((file.flags & DIRECTORY) || !includeFile(file.filename) || currentPathKeys.has(manifestPathKey(file.filename))) continue;
     throwIfAborted(options.signal);
     await assertNoSymlinkTraversal(options.outputDirectory, file.filename);
     const path = resolveOutputPath(options.outputDirectory, file.filename);
@@ -337,7 +337,7 @@ async function deleteObsoleteFiles(
     options.onEvent?.({ type: "file-deleted", path });
   }
   const obsoleteDirectories = previousManifest.files
-    .filter((file) => (file.flags & DIRECTORY) && includeFile(file.filename) && !currentNames.has(file.filename))
+    .filter((file) => (file.flags & DIRECTORY) && includeFile(file.filename) && !currentPathKeys.has(manifestPathKey(file.filename)))
     .sort((left, right) => right.filename.length - left.filename.length);
   for (const directory of obsoleteDirectories) {
     throwIfAborted(options.signal);

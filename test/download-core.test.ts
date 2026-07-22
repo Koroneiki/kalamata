@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
@@ -100,6 +100,23 @@ describe("downloadManifest", () => {
 
     expect(await Bun.file(join(directory, "obsolete.bin")).exists()).toBe(false);
     expect(await readFile(join(directory, "unrelated.bin"), "utf8")).toBe("keep");
+  });
+
+  test("does not delete a current file when manifest separators change", async () => {
+    directory = await mkdtemp(join(tmpdir(), "depot-download-"));
+    await mkdir(join(directory, "folder"));
+    await writeFile(join(directory, "folder/file.bin"), "abc");
+    const currentFile = manifestFile("folder/file.bin", [chunk("first", 0, "abc")]);
+    const previousFile = { ...currentFile, filename: "folder\\file.bin" };
+    const client = fakeClient({});
+
+    await downloadManifest(client, manifest(currentFile), {
+      ...options(directory, false),
+      previousManifest: manifest(previousFile),
+    });
+
+    expect(await readFile(join(directory, "folder/file.bin"), "utf8")).toBe("abc");
+    expect(client.downloadChunk).not.toHaveBeenCalled();
   });
 
   test("limits downloads and cleanup to files selected by the filter", async () => {

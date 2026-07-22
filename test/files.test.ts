@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { adlerForChunk, preflightManifestPaths, rebuildWithValidChunks, resolveManifestPath, resolveOutputPath } from "../src/files.ts";
+import { adlerForChunk, preflightManifestPaths, rebuildWithChunkMatches, resolveManifestPath, resolveOutputPath } from "../src/files.ts";
 import type { ManifestChunk } from "../src/types.ts";
 
 let directory: string | undefined;
@@ -61,9 +61,37 @@ describe("chunk reuse", () => {
     const chunks: ManifestChunk[] = [chunk("first", 0, "abc"), chunk("second", 3, "def")];
 
     expect(await adlerForChunk(path, chunks[0]!)).toBe(chunks[0]!.crc);
-    await rebuildWithValidChunks(path, 6, chunks, new Set(["second"]));
+    await rebuildWithChunkMatches(path, join(directory, "staging.bin"), 6, [{ source: chunks[0]!, destination: chunks[0]! }]);
 
     expect(await readFile(path, "utf8")).toBe("abc\0\0\0");
+  });
+
+  test("calculates Adler checksums across bounded read buffers", async () => {
+    directory = await mkdtemp(join(tmpdir(), "depot-files-"));
+    const path = join(directory, "large.bin");
+    const contents = Buffer.allocUnsafe(150_000);
+    for (let index = 0; index < contents.length; index++) contents[index] = index % 251;
+    await writeFile(path, contents);
+    const manifestChunk = chunk("large", 0, "");
+    manifestChunk.cb_original = contents.length;
+    manifestChunk.cb_compressed = contents.length;
+    manifestChunk.crc = adler(contents);
+
+    expect(await adlerForChunk(path, manifestChunk)).toBe(manifestChunk.crc);
+  });
+
+  test("restores the original after rebuilding fails", async () => {
+    directory = await mkdtemp(join(tmpdir(), "depot-files-"));
+    const path = join(directory, "file.bin");
+    const stagingPath = join(directory, "staging.bin");
+    await writeFile(path, "original");
+    const missing = chunk("missing", 100, "data");
+
+    await expect(rebuildWithChunkMatches(path, stagingPath, 8, [{ source: missing, destination: missing }]))
+      .rejects.toThrow("Could not reuse chunk");
+
+    expect(await readFile(path, "utf8")).toBe("original");
+    expect(await Bun.file(stagingPath).exists()).toBe(false);
   });
 });
 

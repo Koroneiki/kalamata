@@ -31,3 +31,11 @@ test("preserves whitespace in literal manifest paths", async () => {
   expect(includes("  SPACED/file.txt  ")).toBe(true);
   expect(includes("spaced/file.txt")).toBe(false);
 });
+
+test("reports the file and line for invalid regular expressions", async () => {
+  directory = await mkdtemp(join(tmpdir(), "depot-file-list-"));
+  const path = join(directory, "files.txt");
+  await writeFile(path, "ordinary.txt\nregex:[\n");
+
+  await expect(readFileFilter(path)).rejects.toThrow(`${path}:2`);
+});

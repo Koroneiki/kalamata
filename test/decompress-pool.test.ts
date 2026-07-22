@@ -96,15 +96,15 @@ describe("DecompressPool", () => {
       .rejects.toThrow("does not match the manifest");
   });
 
-  test("rejects active and future work after disposal", async () => {
-    const pool = createPool(1);
-    const expected = Buffer.alloc(1024 * 1024, 0x2a);
-    const processing = pool.process(encryptedZip(expected), sha1(expected));
+  test("rejects active, queued, and future work after disposal", async () => {
+    const pool = createPool(2);
+    const expected = Array.from({ length: 3 }, (_, index) => Buffer.alloc(1024 * 1024, 0x2a + index));
+    const processing = expected.map((contents) => pool.process(encryptedZip(contents), sha1(contents)));
 
     pool.dispose();
 
-    await expect(processing).rejects.toThrow("Pool disposed");
-    await expect(pool.process(encryptedZip(expected), sha1(expected))).rejects.toThrow("Pool disposed");
+    for (const promise of processing) await expect(promise).rejects.toThrow("Pool disposed");
+    await expect(pool.process(encryptedZip(expected[0]!), sha1(expected[0]!))).rejects.toThrow("Pool disposed");
   });
 });
 

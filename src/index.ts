@@ -5,18 +5,20 @@ import type { DownloadDepotOptions, DownloadResult } from "./types.ts";
 export type { DownloadDepotOptions, DownloadEvent, DownloadResult } from "./types.ts";
 
 export class SteamService {
+  readonly #session: SteamSession;
   readonly #downloads: DepotDownloadService;
 
-  constructor(private readonly session = new SteamSession()) {
-    this.#downloads = new DepotDownloadService(session);
+  constructor() {
+    this.#session = new SteamSession();
+    this.#downloads = new DepotDownloadService(this.#session);
   }
 
   get connected(): boolean {
-    return this.session.connected;
+    return this.#session.connected;
   }
 
   connect(): Promise<void> {
-    return this.session.connect();
+    return this.#session.connect();
   }
 
   downloadDepot(options: DownloadDepotOptions): Promise<DownloadResult> {
@@ -24,7 +26,7 @@ export class SteamService {
   }
 
   dispose(): void {
-    this.session.dispose();
+    this.#session.dispose();
   }
 }
 

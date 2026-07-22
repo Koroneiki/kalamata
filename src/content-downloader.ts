@@ -3,7 +3,6 @@ import { downloadManifest } from "./download-core.ts";
 import type { ChunkClient } from "./content-client.ts";
 import type { FileFilter } from "./file-list.ts";
 import { validateManifest } from "./local-inputs.ts";
-import { preflightManifestPaths } from "./files.ts";
 import type { DepotManifest, DownloadDepotOptions, DownloadResult } from "./types.ts";
 
 interface ContentDownloadInputs {
@@ -20,11 +19,6 @@ export async function downloadDepotContent(
   signal?: AbortSignal,
 ): Promise<DownloadResult> {
   throwIfAborted(signal);
-  validateManifest(inputs.manifest, options.depotId);
-  await preflightManifestPaths(
-    options.outputDirectory,
-    inputs.manifest.files.filter((file) => inputs.fileFilter(file.filename)),
-  );
   const releaseLock = await acquireOutputLock(options.outputDirectory);
   try {
     return await downloadDepotContentLocked(client, options, inputs, signal);

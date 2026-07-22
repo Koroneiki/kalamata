@@ -1,3 +1,4 @@
+import { once } from "node:events";
 import type SteamUserType from "steam-user";
 import type { ContentServer } from "./content-client.ts";
 
@@ -11,8 +12,9 @@ export type SteamUserFactory = () => Promise<SteamContentUser>;
 export class SteamSession {
   #client: SteamContentUser | undefined;
   #connecting: Promise<void> | undefined;
-  #onConnectionError: ((error: Error) => void) | undefined;
-  readonly #connectionErrorListeners = new Set<(error: Error) => void>();
+  #onDisconnect: ((error: Error) => void) | undefined;
+  readonly #disconnectListeners = new Set<(error: Error) => void>();
+  readonly #disposeController = new AbortController();
   #disposed = false;
 
   constructor(private readonly createUser: SteamUserFactory = createSteamUser) {}
@@ -40,13 +42,19 @@ export class SteamSession {
     return this.#client;
   }
 
-  onConnectionError(listener: (error: Error) => void): () => void {
-    this.#connectionErrorListeners.add(listener);
-    return () => this.#connectionErrorListeners.delete(listener);
+  onDisconnect(listener: (error: Error) => void): () => void {
+    this.#disconnectListeners.add(listener);
+    return () => this.#disconnectListeners.delete(listener);
   }
 
   dispose(): void {
+    if (this.#disposed) return;
     this.#disposed = true;
+    const error = new Error("Steam session is disposed");
+    this.#disposeController.abort(error);
+    const listeners = [...this.#disconnectListeners];
+    this.#disconnectListeners.clear();
+    for (const listener of listeners) listener(error);
     this.#clearClient();
   }
 
@@ -58,17 +66,17 @@ export class SteamSession {
     }
 
     try {
-      await logOnAnonymously(client);
+      await logOnAnonymously(client, this.#disposeController.signal);
       if (this.#disposed) throw new Error("Steam session is disposed");
 
-      const onConnectionError = (error: Error) => {
+      const onDisconnect = (error: Error) => {
         if (this.#client !== client) return;
         this.#clearClient();
-        for (const listener of this.#connectionErrorListeners) listener(error);
+        for (const listener of this.#disconnectListeners) listener(error);
       };
-      client.on("error", onConnectionError);
+      client.on("error", onDisconnect);
       this.#client = client;
-      this.#onConnectionError = onConnectionError;
+      this.#onDisconnect = onDisconnect;
     } catch (error) {
       client.logOff();
       throw error;
@@ -78,9 +86,9 @@ export class SteamSession {
   #clearClient(): void {
     const client = this.#client;
     if (!client) return;
-    if (this.#onConnectionError) client.off("error", this.#onConnectionError);
+    if (this.#onDisconnect) client.off("error", this.#onDisconnect);
     this.#client = undefined;
-    this.#onConnectionError = undefined;
+    this.#onDisconnect = undefined;
     client.logOff();
   }
 }
@@ -104,23 +112,13 @@ async function createSteamUser(): Promise<SteamContentUser> {
   });
 }
 
-function logOnAnonymously(client: SteamContentUser): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const cleanup = () => {
-      client.off("loggedOn", onLoggedOn);
-      client.off("error", onError);
-    };
-    const onLoggedOn = () => {
-      cleanup();
-      resolve();
-    };
-    const onError = (error: Error) => {
-      cleanup();
-      reject(error);
-    };
-
-    client.once("loggedOn", onLoggedOn);
-    client.once("error", onError);
-    client.logOn({ anonymous: true });
-  });
+async function logOnAnonymously(client: SteamContentUser, signal: AbortSignal): Promise<void> {
+  const loggedOn = once(client, "loggedOn", { signal });
+  client.logOn({ anonymous: true });
+  try {
+    await loggedOn;
+  } catch (error) {
+    if (signal.aborted) throw signal.reason;
+    throw error;
+  }
 }
