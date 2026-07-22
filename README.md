@@ -7,6 +7,7 @@ It logs onto Steam anonymously to discover content servers. A service keeps that
 ## Structure
 
 - `src/mainview` contains the Vue frontend.
+- `src/assets` contains shared frontend assets, including the Tailwind CSS entrypoint.
 - `src/bun` contains the Electrobun process entrypoint.
 - `src/backend` contains the existing Steam depot downloader.
 
@@ -68,5 +69,7 @@ bun install
 bun run dev
 bun run build
 bun test
-bun run typecheck
+bun run type-check
+bun run lint
+bun run format
 ```

@@ -12,7 +12,9 @@
     "test:integration": "STEAM_INTEGRATION=1 bun test test/balatro-download.integration.test.ts",
     "test:integration:cat-quest": "CAT_QUEST_INTEGRATION=1 bun test test/cat-quest-download.integration.test.ts",
     "test:integration:grow-home": "GROW_HOME_INTEGRATION=1 bun test test/grow-home-download.integration.test.ts",
-    "typecheck": "bunx vue-tsc --noEmit && bunx tsc --noEmit -p tsconfig.backend.json"
+    "type-check": "vue-tsc --build",
+    "lint": "oxlint",
+    "format": "oxfmt"
   },
   "dependencies": {
     "@napi-rs/lzma": "1.5.1",
@@ -22,13 +24,22 @@
     "vue": "3.5.40"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@tsconfig/node22": "^22.0.5",
     "@types/bun": "latest",
+    "@types/node": "^26.1.1",
     "@types/steam-user": "5.1.1",
     "@types/three": "0.165.0",
     "@vitejs/plugin-vue": "6.0.8",
+    "@vue/tsconfig": "^0.9.1",
     "concurrently": "10.0.3",
+    "oxfmt": "^0.60.0",
+    "oxlint": "^1.75.0",
+    "oxlint-tsgolint": "^7.0.2001",
+    "tailwindcss": "^4.3.3",
     "typescript": "5.9.3",
     "vite": "8.1.5",
+    "vite-plugin-vue-devtools": "^8.1.5",
     "vue-tsc": "3.3.7"
   }
 }

@@ -1,15 +1,15 @@
 export interface ContentServer {
-  Host: string;
-  vhost?: string;
-  https_support?: string;
-  usetokenauth?: number;
-  weightedload?: number;
-  NumEntriesInClientList?: number;
-  [key: string]: unknown;
+  Host: string
+  vhost?: string
+  https_support?: string
+  usetokenauth?: number
+  weightedload?: number
+  NumEntriesInClientList?: number
+  [key: string]: unknown
 }
 
 export interface ChunkClient {
-  getContentServers(appId: number): Promise<{ servers: ContentServer[] }>;
+  getContentServers(appId: number): Promise<{ servers: ContentServer[] }>
   downloadChunk(
     appId: number,
     depotId: number,
@@ -17,5 +17,5 @@ export interface ChunkClient {
     server: ContentServer,
     signal?: AbortSignal,
     expectedSize?: number,
-  ): Promise<{ chunk: Buffer }>;
+  ): Promise<{ chunk: Buffer }>
 }

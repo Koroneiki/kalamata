@@ -1,52 +1,67 @@
-import { availableParallelism } from "node:os";
-import { deserializeError, exactArrayBuffer, type WorkerRequest, type WorkerResponse } from "./decompress-protocol.ts";
+import { availableParallelism } from 'node:os'
+import {
+  deserializeError,
+  exactArrayBuffer,
+  type WorkerRequest,
+  type WorkerResponse,
+} from './decompress-protocol.ts'
 
 interface Pending {
-  id: number;
-  encrypted: ArrayBuffer;
-  expectedSha1: string;
-  expectedSize: number | undefined;
-  signal: AbortSignal | undefined;
-  onAbort: (() => void) | undefined;
-  aborted: boolean;
-  resolve: (data: Buffer) => void;
-  reject: (error: Error) => void;
+  id: number
+  encrypted: ArrayBuffer
+  expectedSha1: string
+  expectedSize: number | undefined
+  signal: AbortSignal | undefined
+  onAbort: (() => void) | undefined
+  aborted: boolean
+  resolve: (data: Buffer) => void
+  reject: (error: Error) => void
 }
 
 interface WorkerSlot {
-  index: number;
-  worker: Worker;
-  current: Pending | undefined;
+  index: number
+  worker: Worker
+  current: Pending | undefined
 }
 
 export class DecompressPool {
-  static readonly #MAX_CONSECUTIVE_WORKER_FAILURES = 3;
-  readonly #key: Uint8Array;
-  readonly #workers: WorkerSlot[] = [];
-  readonly #queue: Pending[] = [];
-  #nextId = 0;
-  #consecutiveWorkerFailures = 0;
-  #disposed = false;
+  static readonly #MAX_CONSECUTIVE_WORKER_FAILURES = 3
+  readonly #key: Uint8Array
+  readonly #workers: WorkerSlot[] = []
+  readonly #queue: Pending[] = []
+  #nextId = 0
+  #consecutiveWorkerFailures = 0
+  #disposed = false
 
   constructor(key: Buffer, count = availableParallelism()) {
-    if (!Number.isInteger(count) || count < 1) throw new Error("Worker count must be a positive integer");
-    this.#key = Uint8Array.from(key);
+    if (!Number.isInteger(count) || count < 1)
+      throw new Error('Worker count must be a positive integer')
+    this.#key = Uint8Array.from(key)
 
-    const workerCount = Math.min(count, availableParallelism());
+    const workerCount = Math.min(count, availableParallelism())
     try {
-      for (let index = 0; index < workerCount; index++) this.#workers.push(this.#createWorker(index));
+      for (let index = 0; index < workerCount; index++)
+        this.#workers.push(this.#createWorker(index))
     } catch (error) {
-      for (const slot of this.#workers) slot.worker.terminate();
-      this.#workers.length = 0;
-      this.#disposed = true;
-      throw error;
+      for (const slot of this.#workers) slot.worker.terminate()
+      this.#workers.length = 0
+      this.#disposed = true
+      throw error
     }
   }
 
-  process(encrypted: Buffer, expectedSha1: string, expectedSize?: number, signal?: AbortSignal): Promise<Buffer> {
-    if (this.#disposed) return Promise.reject(new Error("Pool disposed"));
-    if (signal?.aborted) return Promise.reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
-    const id = this.#nextId++;
+  process(
+    encrypted: Buffer,
+    expectedSha1: string,
+    expectedSize?: number,
+    signal?: AbortSignal,
+  ): Promise<Buffer> {
+    if (this.#disposed) return Promise.reject(new Error('Pool disposed'))
+    if (signal?.aborted)
+      return Promise.reject(
+        signal.reason ?? new DOMException('Aborted', 'AbortError'),
+      )
+    const id = this.#nextId++
     return new Promise<Buffer>((resolve, reject) => {
       const pending: Pending = {
         id,
@@ -58,131 +73,153 @@ export class DecompressPool {
         aborted: false,
         resolve,
         reject,
-      };
+      }
       pending.onAbort = () => {
-        pending.aborted = true;
-        const index = this.#queue.indexOf(pending);
-        if (index >= 0) this.#queue.splice(index, 1);
-        reject(signal?.reason ?? new DOMException("Aborted", "AbortError"));
-      };
-      signal?.addEventListener("abort", pending.onAbort, { once: true });
-      this.#queue.push(pending);
-      this.#dispatch();
-    });
+        pending.aborted = true
+        const index = this.#queue.indexOf(pending)
+        if (index >= 0) this.#queue.splice(index, 1)
+        reject(signal?.reason ?? new DOMException('Aborted', 'AbortError'))
+      }
+      signal?.addEventListener('abort', pending.onAbort, { once: true })
+      this.#queue.push(pending)
+      this.#dispatch()
+    })
   }
 
   dispose(): void {
-    this.#shutdown(new Error("Pool disposed"));
+    this.#shutdown(new Error('Pool disposed'))
   }
 
   #createWorker(index: number): WorkerSlot {
-    const worker = new Worker(new URL("./decompress-worker.ts", import.meta.url).href, {
-      name: `depot-decompress-${index}`,
-      ref: true,
-    });
-    const slot: WorkerSlot = { index, worker, current: undefined };
+    const worker = new Worker(
+      new URL('./decompress-worker.ts', import.meta.url).href,
+      {
+        name: `depot-decompress-${index}`,
+        ref: true,
+      },
+    )
+    const slot: WorkerSlot = { index, worker, current: undefined }
 
-    worker.onmessage = (event: MessageEvent<WorkerResponse>) => this.#handleMessage(slot, event.data);
+    worker.onmessage = (event: MessageEvent<WorkerResponse>) =>
+      this.#handleMessage(slot, event.data)
     worker.onerror = (event) => {
-      event.preventDefault();
-      this.#handleWorkerFailure(slot, event.error instanceof Error ? event.error : new Error(event.message));
-    };
-    worker.onmessageerror = () => this.#handleWorkerFailure(slot, new Error("Worker message could not be deserialized"));
-    worker.addEventListener("close", () => this.#handleWorkerFailure(slot, new Error("Worker exited unexpectedly")));
-    worker.postMessage({ type: "init", key: this.#key } satisfies WorkerRequest);
-    return slot;
+      event.preventDefault()
+      this.#handleWorkerFailure(
+        slot,
+        event.error instanceof Error ? event.error : new Error(event.message),
+      )
+    }
+    worker.onmessageerror = () =>
+      this.#handleWorkerFailure(
+        slot,
+        new Error('Worker message could not be deserialized'),
+      )
+    worker.addEventListener('close', () =>
+      this.#handleWorkerFailure(slot, new Error('Worker exited unexpectedly')),
+    )
+    worker.postMessage({ type: 'init', key: this.#key } satisfies WorkerRequest)
+    return slot
   }
 
   #handleMessage(slot: WorkerSlot, message: WorkerResponse): void {
-    if (this.#disposed || this.#workers[slot.index] !== slot) return;
-    const pending = slot.current;
+    if (this.#disposed || this.#workers[slot.index] !== slot) return
+    const pending = slot.current
     if (!pending || message.id !== pending.id) {
-      this.#handleWorkerFailure(slot, new Error("Worker returned an unexpected response"));
-      return;
+      this.#handleWorkerFailure(
+        slot,
+        new Error('Worker returned an unexpected response'),
+      )
+      return
     }
 
-    slot.current = undefined;
-    this.#consecutiveWorkerFailures = 0;
-    cleanupPending(pending);
+    slot.current = undefined
+    this.#consecutiveWorkerFailures = 0
+    cleanupPending(pending)
     if (!pending.aborted) {
-      if (message.error) pending.reject(deserializeError(message.error));
-      else if (message.data) pending.resolve(Buffer.from(message.data));
-      else pending.reject(new Error("Worker returned no chunk data"));
+      if (message.error) pending.reject(deserializeError(message.error))
+      else if (message.data) pending.resolve(Buffer.from(message.data))
+      else pending.reject(new Error('Worker returned no chunk data'))
     }
-    this.#dispatch(slot);
+    this.#dispatch(slot)
   }
 
   #handleWorkerFailure(slot: WorkerSlot, error: Error): void {
-    if (this.#disposed || this.#workers[slot.index] !== slot) return;
+    if (this.#disposed || this.#workers[slot.index] !== slot) return
     if (slot.current) {
-      cleanupPending(slot.current);
-      if (!slot.current.aborted) slot.current.reject(error);
+      cleanupPending(slot.current)
+      if (!slot.current.aborted) slot.current.reject(error)
     }
-    slot.current = undefined;
-    slot.worker.terminate();
+    slot.current = undefined
+    slot.worker.terminate()
 
-    this.#consecutiveWorkerFailures++;
-    if (this.#consecutiveWorkerFailures >= DecompressPool.#MAX_CONSECUTIVE_WORKER_FAILURES) {
-      this.#shutdown(error);
-      return;
+    this.#consecutiveWorkerFailures++
+    if (
+      this.#consecutiveWorkerFailures >=
+      DecompressPool.#MAX_CONSECUTIVE_WORKER_FAILURES
+    ) {
+      this.#shutdown(error)
+      return
     }
 
     // A single crashed isolate should fail its chunk, not permanently reduce pool capacity.
     try {
-      const replacement = this.#createWorker(slot.index);
-      this.#workers[slot.index] = replacement;
-      this.#dispatch(replacement);
+      const replacement = this.#createWorker(slot.index)
+      this.#workers[slot.index] = replacement
+      this.#dispatch(replacement)
     } catch (replacementError) {
-      this.#shutdown(toError(replacementError));
+      this.#shutdown(toError(replacementError))
     }
   }
 
   #dispatch(onlySlot?: WorkerSlot): void {
-    const slots = onlySlot ? [onlySlot] : this.#workers;
+    const slots = onlySlot ? [onlySlot] : this.#workers
     for (const slot of slots) {
-      if (slot.current || this.#disposed) continue;
-      const pending = this.#queue.shift();
-      if (!pending) return;
-      slot.current = pending;
+      if (slot.current || this.#disposed) continue
+      const pending = this.#queue.shift()
+      if (!pending) return
+      slot.current = pending
       try {
         const request: WorkerRequest = {
-          type: "process",
+          type: 'process',
           id: pending.id,
           encrypted: pending.encrypted,
           expectedSha1: pending.expectedSha1,
-          ...(pending.expectedSize === undefined ? {} : { expectedSize: pending.expectedSize }),
-        };
-        slot.worker.postMessage(request, [pending.encrypted]);
+          ...(pending.expectedSize === undefined
+            ? {}
+            : { expectedSize: pending.expectedSize }),
+        }
+        slot.worker.postMessage(request, [pending.encrypted])
       } catch (error) {
-        this.#handleWorkerFailure(slot, toError(error));
+        this.#handleWorkerFailure(slot, toError(error))
       }
     }
   }
 
   #shutdown(error: Error): void {
-    if (this.#disposed) return;
-    this.#disposed = true;
+    if (this.#disposed) return
+    this.#disposed = true
     for (const pending of this.#queue.splice(0)) {
-      cleanupPending(pending);
-      pending.reject(error);
+      cleanupPending(pending)
+      pending.reject(error)
     }
     for (const slot of this.#workers) {
       if (slot.current) {
-        cleanupPending(slot.current);
-        if (!slot.current.aborted) slot.current.reject(error);
+        cleanupPending(slot.current)
+        if (!slot.current.aborted) slot.current.reject(error)
       }
-      slot.current = undefined;
-      slot.worker.terminate();
+      slot.current = undefined
+      slot.worker.terminate()
     }
-    this.#workers.length = 0;
+    this.#workers.length = 0
   }
 }
 
 function cleanupPending(pending: Pending): void {
-  if (pending.onAbort) pending.signal?.removeEventListener("abort", pending.onAbort);
-  pending.onAbort = undefined;
+  if (pending.onAbort)
+    pending.signal?.removeEventListener('abort', pending.onAbort)
+  pending.onAbort = undefined
 }
 
 function toError(error: unknown): Error {
-  return error instanceof Error ? error : new Error(String(error));
+  return error instanceof Error ? error : new Error(String(error))
 }

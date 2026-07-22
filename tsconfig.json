@@ -1,14 +1,14 @@
 {
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.node.json" },
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.backend.json" }
+  ],
   "compilerOptions": {
-    "target": "ESNext",
-    "module": "Preserve",
-    "moduleResolution": "Bundler",
-    "allowImportingTsExtensions": true,
-    "strict": true,
-    "noUncheckedIndexedAccess": true,
-    "skipLibCheck": true,
-    "types": ["bun", "vite/client"]
-  },
-  "include": ["src/bun", "src/mainview", "env.d.ts", "electrobun.config.ts", "vite.config.ts"],
-  "exclude": ["node_modules", "dist", "build", "artifacts"]
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  }
 }

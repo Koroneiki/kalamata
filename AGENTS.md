@@ -11,5 +11,7 @@ bun install
 bun run dev
 bun run build
 bun test
-bun run typecheck
+bun run type-check
+bun run lint
+bun run format
 ```

@@ -1,10 +1,10 @@
-import { mkdir, rm, rmdir } from "node:fs/promises";
-import { randomUUID } from "node:crypto";
-import { join } from "node:path";
-import { CDNClientPool } from "./cdn-client-pool.ts";
-import type { ChunkClient, ContentServer } from "./content-client.ts";
-import { CONFIG_DIRECTORY, STAGING_DIRECTORY } from "./depot-paths.ts";
-import type { FileFilter } from "./file-list.ts";
+import { mkdir, rm, rmdir } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
+import { join } from 'node:path'
+import { CDNClientPool } from './cdn-client-pool.ts'
+import type { ChunkClient } from './content-client.ts'
+import { CONFIG_DIRECTORY, STAGING_DIRECTORY } from './depot-paths.ts'
+import type { FileFilter } from './file-list.ts'
 import {
   adlerForChunk,
   assertNoSymlinkTraversal,
@@ -20,28 +20,34 @@ import {
   verifyFileSha1,
   writeChunk,
   type ChunkMatch,
-} from "./files.ts";
-import { DIRECTORY, manifestPathKey } from "./manifest-utils.ts";
-import type { DepotManifest, DownloadEvent, DownloadResult, ManifestChunk, ManifestFile } from "./types.ts";
+} from './files.ts'
+import { DIRECTORY, manifestPathKey } from './manifest-utils.ts'
+import type {
+  DepotManifest,
+  DownloadEvent,
+  DownloadResult,
+  ManifestChunk,
+  ManifestFile,
+} from './types.ts'
 
-export type { ChunkClient, ContentServer } from "./content-client.ts";
+export type { ChunkClient, ContentServer } from './content-client.ts'
 
 interface ChunkJob {
-  path: string;
-  chunk: ManifestChunk;
+  path: string
+  chunk: ManifestChunk
 }
 
 export interface CoreOptions {
-  appId: number;
-  depotId: number;
-  outputDirectory: string;
-  verifyAll: boolean;
-  maxDownloads: number;
-  previousManifest?: DepotManifest;
-  stagingDirectory?: string;
-  fileFilter?: FileFilter;
-  signal?: AbortSignal;
-  onEvent?: (event: DownloadEvent) => void;
+  appId: number
+  depotId: number
+  outputDirectory: string
+  verifyAll: boolean
+  maxDownloads: number
+  previousManifest?: DepotManifest
+  stagingDirectory?: string
+  fileFilter?: FileFilter
+  signal?: AbortSignal
+  onEvent?: (event: DownloadEvent) => void
 }
 
 export async function downloadManifest(
@@ -50,32 +56,48 @@ export async function downloadManifest(
   options: CoreOptions,
 ): Promise<DownloadResult> {
   if (!Number.isInteger(options.maxDownloads) || options.maxDownloads < 1) {
-    throw new Error("maxDownloads must be a positive integer");
+    throw new Error('maxDownloads must be a positive integer')
   }
-  const includeFile = options.fileFilter ?? (() => true);
-  const currentFiles = manifest.files.filter((file) => includeFile(file.filename));
-  await preflightManifestPaths(options.outputDirectory, currentFiles);
-  const stagingDirectory = options.stagingDirectory ?? join(options.outputDirectory, CONFIG_DIRECTORY, STAGING_DIRECTORY);
-  const transitionDirectory = join(stagingDirectory, `transitions-${randomUUID()}`);
+  const includeFile = options.fileFilter ?? (() => true)
+  const currentFiles = manifest.files.filter((file) =>
+    includeFile(file.filename),
+  )
+  await preflightManifestPaths(options.outputDirectory, currentFiles)
+  const stagingDirectory =
+    options.stagingDirectory ??
+    join(options.outputDirectory, CONFIG_DIRECTORY, STAGING_DIRECTORY)
+  const transitionDirectory = join(
+    stagingDirectory,
+    `transitions-${randomUUID()}`,
+  )
   const staged = await stageTypeTransitions(
     options.outputDirectory,
     transitionDirectory,
     currentFiles,
     options.previousManifest?.files ?? [],
-  );
+  )
 
   try {
-    const result = await downloadManifestCore(client, manifest, options, currentFiles, includeFile);
-    await rm(transitionDirectory, { recursive: true, force: true });
-    return result;
+    const result = await downloadManifestCore(
+      client,
+      manifest,
+      options,
+      currentFiles,
+      includeFile,
+    )
+    await rm(transitionDirectory, { recursive: true, force: true })
+    return result
   } catch (error) {
     try {
-      await restoreStagedPaths(staged);
-      await rm(transitionDirectory, { recursive: true, force: true });
+      await restoreStagedPaths(staged)
+      await rm(transitionDirectory, { recursive: true, force: true })
     } catch (restoreError) {
-      throw new AggregateError([error, restoreError], `Download failed and type transitions could not be restored`);
+      throw new AggregateError(
+        [error, restoreError],
+        `Download failed and type transitions could not be restored`,
+      )
     }
-    throw error;
+    throw error
   }
 }
 
@@ -90,97 +112,121 @@ async function downloadManifestCore(
     (options.previousManifest?.files ?? [])
       .filter((file) => includeFile(file.filename))
       .map((file) => [manifestPathKey(file.filename), file]),
-  );
-  const currentPathKeys = new Set(currentFiles.map((file) => manifestPathKey(file.filename)));
-  const stagingDirectory = options.stagingDirectory ?? join(options.outputDirectory, CONFIG_DIRECTORY, STAGING_DIRECTORY);
-  const jobs: ChunkJob[] = [];
-  const remainingByFile = new Map<string, number>();
-  const resolvedPaths = new Set<string>();
-  let reusedBytes = 0;
-  let downloadedBytes = 0;
+  )
+  const currentPathKeys = new Set(
+    currentFiles.map((file) => manifestPathKey(file.filename)),
+  )
+  const stagingDirectory =
+    options.stagingDirectory ??
+    join(options.outputDirectory, CONFIG_DIRECTORY, STAGING_DIRECTORY)
+  const jobs: ChunkJob[] = []
+  const remainingByFile = new Map<string, number>()
+  const resolvedPaths = new Set<string>()
+  let reusedBytes = 0
+  let downloadedBytes = 0
   const total = currentFiles
     .filter((file) => !(file.flags & DIRECTORY))
-    .reduce((sum, file) => sum + fileSize(file), 0);
+    .reduce((sum, file) => sum + fileSize(file), 0)
 
   for (const file of currentFiles) {
-    throwIfAborted(options.signal);
-    const outputPath = resolveOutputPath(options.outputDirectory, file.filename);
-    if (resolvedPaths.has(outputPath)) throw new Error(`Duplicate manifest path: ${file.filename}`);
-    resolvedPaths.add(outputPath);
+    throwIfAborted(options.signal)
+    const outputPath = resolveOutputPath(options.outputDirectory, file.filename)
+    if (resolvedPaths.has(outputPath))
+      throw new Error(`Duplicate manifest path: ${file.filename}`)
+    resolvedPaths.add(outputPath)
 
     if (file.flags & DIRECTORY) {
-      await mkdir(outputPath, { recursive: true });
-      continue;
+      await mkdir(outputPath, { recursive: true })
+      continue
     }
 
-    const size = fileSize(file);
-    const existingSize = await existingFileSize(outputPath);
-    const oldFile = previousFiles.get(manifestPathKey(file.filename));
-    let needed: ManifestChunk[];
+    const size = fileSize(file)
+    const existingSize = await existingFileSize(outputPath)
+    const oldFile = previousFiles.get(manifestPathKey(file.filename))
+    let needed: ManifestChunk[]
 
     if (existingSize === undefined) {
-      await preallocate(outputPath, size);
-      needed = file.chunks;
+      await preallocate(outputPath, size)
+      needed = file.chunks
     } else if (oldFile) {
-      const hashMatches = oldFile.sha_content.toLowerCase() === file.sha_content.toLowerCase();
+      const hashMatches =
+        oldFile.sha_content.toLowerCase() === file.sha_content.toLowerCase()
       if (!options.verifyAll && hashMatches && existingSize === size) {
-        reusedBytes += size;
-        await setExecutable(outputPath, file);
-        options.onEvent?.({ type: "file-complete", path: outputPath });
-        continue;
+        reusedBytes += size
+        await setExecutable(outputPath, file)
+        options.onEvent?.({ type: 'file-complete', path: outputPath })
+        continue
       }
 
-      if (options.verifyAll) options.onEvent?.({ type: "file-validating", path: outputPath });
-      const plan = await planChunkReuse(outputPath, oldFile, file, options.signal);
-      needed = plan.needed;
-      reusedBytes += reusedSize(plan.valid);
+      if (options.verifyAll)
+        options.onEvent?.({ type: 'file-validating', path: outputPath })
+      const plan = await planChunkReuse(
+        outputPath,
+        oldFile,
+        file,
+        options.signal,
+      )
+      needed = plan.needed
+      reusedBytes += reusedSize(plan.valid)
 
       if (!hashMatches || needed.length > 0 || existingSize !== size) {
-        const stagingPath = resolveManifestPath(stagingDirectory, file.filename);
-        await rebuildWithChunkMatches(outputPath, stagingPath, size, plan.valid);
+        const stagingPath = resolveManifestPath(stagingDirectory, file.filename)
+        await rebuildWithChunkMatches(outputPath, stagingPath, size, plan.valid)
       }
     } else {
-      options.onEvent?.({ type: "file-validating", path: outputPath });
-      const plan = await planCurrentFileReuse(outputPath, file, options.signal);
-      needed = plan.needed;
-      reusedBytes += reusedSize(plan.valid);
+      options.onEvent?.({ type: 'file-validating', path: outputPath })
+      const plan = await planCurrentFileReuse(outputPath, file, options.signal)
+      needed = plan.needed
+      reusedBytes += reusedSize(plan.valid)
       if (needed.length > 0 || existingSize !== size) {
-        const stagingPath = resolveManifestPath(stagingDirectory, file.filename);
-        await rebuildWithChunkMatches(outputPath, stagingPath, size, plan.valid);
+        const stagingPath = resolveManifestPath(stagingDirectory, file.filename)
+        await rebuildWithChunkMatches(outputPath, stagingPath, size, plan.valid)
       }
     }
 
-    await setExecutable(outputPath, file);
+    await setExecutable(outputPath, file)
     if (needed.length === 0) {
-      options.onEvent?.({ type: "file-complete", path: outputPath });
-      continue;
+      options.onEvent?.({ type: 'file-complete', path: outputPath })
+      continue
     }
-    remainingByFile.set(outputPath, needed.length);
-    for (const chunk of needed) jobs.push({ path: outputPath, chunk });
+    remainingByFile.set(outputPath, needed.length)
+    for (const chunk of needed) jobs.push({ path: outputPath, chunk })
   }
 
-  options.onEvent?.({ type: "progress", downloaded: reusedBytes, total });
+  options.onEvent?.({ type: 'progress', downloaded: reusedBytes, total })
   if (jobs.length > 0) {
-    const { servers } = await client.getContentServers(options.appId);
-    const pool = new CDNClientPool(servers);
+    const { servers } = await client.getContentServers(options.appId)
+    const pool = new CDNClientPool(servers)
     await runWorkers(client, jobs, remainingByFile, pool, options, (bytes) => {
-      downloadedBytes += bytes;
-      options.onEvent?.({ type: "progress", downloaded: reusedBytes + downloadedBytes, total });
-    });
+      downloadedBytes += bytes
+      options.onEvent?.({
+        type: 'progress',
+        downloaded: reusedBytes + downloadedBytes,
+        total,
+      })
+    })
   }
 
   if (options.verifyAll) {
     for (const file of currentFiles) {
-      if (file.flags & DIRECTORY) continue;
-      throwIfAborted(options.signal);
-      await verifyFileSha1(resolveOutputPath(options.outputDirectory, file.filename), file.sha_content);
+      if (file.flags & DIRECTORY) continue
+      throwIfAborted(options.signal)
+      await verifyFileSha1(
+        resolveOutputPath(options.outputDirectory, file.filename),
+        file.sha_content,
+      )
     }
   }
 
-  throwIfAborted(options.signal);
-  await deleteObsoleteFiles(options.previousManifest, currentPathKeys, includeFile, options);
-  throwIfAborted(options.signal);
-  return { manifestId: manifest.gid_manifest, downloadedBytes, reusedBytes };
+  throwIfAborted(options.signal)
+  await deleteObsoleteFiles(
+    options.previousManifest,
+    currentPathKeys,
+    includeFile,
+    options,
+  )
+  throwIfAborted(options.signal)
+  return { manifestId: manifest.gid_manifest, downloadedBytes, reusedBytes }
 }
 
 async function planChunkReuse(
@@ -189,24 +235,29 @@ async function planChunkReuse(
   newFile: ManifestFile,
   signal?: AbortSignal,
 ): Promise<{ needed: ManifestChunk[]; valid: ChunkMatch[] }> {
-  const oldChunks = new Map<string, ManifestChunk>();
-  for (const chunk of oldFile.chunks) oldChunks.set(chunk.sha.toLowerCase(), chunk);
+  const oldChunks = new Map<string, ManifestChunk>()
+  for (const chunk of oldFile.chunks)
+    oldChunks.set(chunk.sha.toLowerCase(), chunk)
 
-  const needed: ManifestChunk[] = [];
-  const candidates: ChunkMatch[] = [];
+  const needed: ManifestChunk[] = []
+  const candidates: ChunkMatch[] = []
   for (const chunk of newFile.chunks) {
-    const oldChunk = oldChunks.get(chunk.sha.toLowerCase());
-    if (!oldChunk || Number(oldChunk.cb_original) !== Number(chunk.cb_original)) needed.push(chunk);
-    else candidates.push({ source: oldChunk, destination: chunk });
+    const oldChunk = oldChunks.get(chunk.sha.toLowerCase())
+    if (!oldChunk || Number(oldChunk.cb_original) !== Number(chunk.cb_original))
+      needed.push(chunk)
+    else candidates.push({ source: oldChunk, destination: chunk })
   }
 
-  const valid: ChunkMatch[] = [];
-  for (const match of candidates.sort((left, right) => Number(left.source.offset) - Number(right.source.offset))) {
-    throwIfAborted(signal);
-    if ((await adlerForChunk(path, match.source)) === (match.source.crc >>> 0)) valid.push(match);
-    else needed.push(match.destination);
+  const valid: ChunkMatch[] = []
+  for (const match of candidates.sort(
+    (left, right) => Number(left.source.offset) - Number(right.source.offset),
+  )) {
+    throwIfAborted(signal)
+    if ((await adlerForChunk(path, match.source)) === match.source.crc >>> 0)
+      valid.push(match)
+    else needed.push(match.destination)
   }
-  return { needed, valid };
+  return { needed, valid }
 }
 
 async function planCurrentFileReuse(
@@ -214,14 +265,17 @@ async function planCurrentFileReuse(
   file: ManifestFile,
   signal?: AbortSignal,
 ): Promise<{ needed: ManifestChunk[]; valid: ChunkMatch[] }> {
-  const needed: ManifestChunk[] = [];
-  const valid: ChunkMatch[] = [];
-  for (const chunk of [...file.chunks].sort((left, right) => Number(left.offset) - Number(right.offset))) {
-    throwIfAborted(signal);
-    if ((await adlerForChunk(path, chunk)) === (chunk.crc >>> 0)) valid.push({ source: chunk, destination: chunk });
-    else needed.push(chunk);
+  const needed: ManifestChunk[] = []
+  const valid: ChunkMatch[] = []
+  for (const chunk of [...file.chunks].sort(
+    (left, right) => Number(left.offset) - Number(right.offset),
+  )) {
+    throwIfAborted(signal)
+    if ((await adlerForChunk(path, chunk)) === chunk.crc >>> 0)
+      valid.push({ source: chunk, destination: chunk })
+    else needed.push(chunk)
   }
-  return { needed, valid };
+  return { needed, valid }
 }
 
 async function runWorkers(
@@ -232,62 +286,80 @@ async function runWorkers(
   options: CoreOptions,
   onDownloaded: (bytes: number) => void,
 ): Promise<void> {
-  const controller = new AbortController();
-  const onAbort = () => controller.abort(options.signal?.reason ?? new DOMException("Download aborted", "AbortError"));
-  if (options.signal?.aborted) onAbort();
-  else options.signal?.addEventListener("abort", onAbort, { once: true });
+  const controller = new AbortController()
+  const onAbort = () =>
+    controller.abort(
+      options.signal?.reason ??
+        new DOMException('Download aborted', 'AbortError'),
+    )
+  if (options.signal?.aborted) onAbort()
+  else options.signal?.addEventListener('abort', onAbort, { once: true })
 
-  const groupedJobs = groupChunkJobs(jobs);
-  let nextJob = 0;
+  const groupedJobs = groupChunkJobs(jobs)
+  let nextJob = 0
   const worker = async (): Promise<void> => {
     try {
       while (true) {
-        throwIfAborted(controller.signal);
-        const group = groupedJobs[nextJob++];
-        if (!group) return;
-        const data = await downloadWithRetry(client, group[0]!.chunk, pool, options, controller.signal);
-        throwIfAborted(controller.signal);
+        throwIfAborted(controller.signal)
+        const group = groupedJobs[nextJob++]
+        if (!group) return
+        const data = await downloadWithRetry(
+          client,
+          group[0]!.chunk,
+          pool,
+          options,
+          controller.signal,
+        )
+        throwIfAborted(controller.signal)
         for (const job of group) {
-          await writeChunk(job.path, job.chunk, data);
-          onDownloaded(data.length);
+          await writeChunk(job.path, job.chunk, data)
+          onDownloaded(data.length)
 
-          const remaining = (remainingByFile.get(job.path) ?? 1) - 1;
-          remainingByFile.set(job.path, remaining);
-          if (remaining === 0) options.onEvent?.({ type: "file-complete", path: job.path });
+          const remaining = (remainingByFile.get(job.path) ?? 1) - 1
+          remainingByFile.set(job.path, remaining)
+          if (remaining === 0)
+            options.onEvent?.({ type: 'file-complete', path: job.path })
         }
       }
     } catch (error) {
-      if (!controller.signal.aborted) controller.abort(error);
-      throw error;
+      if (!controller.signal.aborted) controller.abort(error)
+      throw error
     }
-  };
+  }
 
   try {
     const results = await Promise.allSettled(
-      Array.from({ length: Math.min(options.maxDownloads, groupedJobs.length) }, worker),
-    );
-    const failed = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
-    if (failed) throw controller.signal.reason ?? failed.reason;
+      Array.from(
+        { length: Math.min(options.maxDownloads, groupedJobs.length) },
+        worker,
+      ),
+    )
+    const failed = results.find(
+      (result): result is PromiseRejectedResult => result.status === 'rejected',
+    )
+    if (failed) throw controller.signal.reason ?? failed.reason
   } finally {
-    options.signal?.removeEventListener("abort", onAbort);
+    options.signal?.removeEventListener('abort', onAbort)
   }
 }
 
 function groupChunkJobs(jobs: ChunkJob[]): ChunkJob[][] {
-  const groups = new Map<string, ChunkJob[]>();
+  const groups = new Map<string, ChunkJob[]>()
   for (const job of jobs) {
-    const key = job.chunk.sha.toLowerCase();
-    const group = groups.get(key);
+    const key = job.chunk.sha.toLowerCase()
+    const group = groups.get(key)
     if (!group) {
-      groups.set(key, [job]);
-      continue;
+      groups.set(key, [job])
+      continue
     }
     if (Number(group[0]!.chunk.cb_original) !== Number(job.chunk.cb_original)) {
-      throw new Error(`Manifest uses inconsistent sizes for chunk ${job.chunk.sha}`);
+      throw new Error(
+        `Manifest uses inconsistent sizes for chunk ${job.chunk.sha}`,
+      )
     }
-    group.push(job);
+    group.push(job)
   }
-  return [...groups.values()];
+  return [...groups.values()]
 }
 
 async function downloadWithRetry(
@@ -297,28 +369,34 @@ async function downloadWithRetry(
   options: CoreOptions,
   signal: AbortSignal,
 ): Promise<Buffer> {
-  let lastError: unknown;
+  let lastError: unknown
   for (let attempt = 0; attempt < pool.attemptsPerChunk; attempt++) {
-    throwIfAborted(signal);
-    const server = pool.getConnection();
+    throwIfAborted(signal)
+    const server = pool.getConnection()
     try {
-      const data = (await client.downloadChunk(
-        options.appId,
-        options.depotId,
-        chunk.sha,
-        server,
-        signal,
-        Number(chunk.cb_original),
-      )).chunk;
-      pool.returnConnection(server);
-      return data;
+      const data = (
+        await client.downloadChunk(
+          options.appId,
+          options.depotId,
+          chunk.sha,
+          server,
+          signal,
+          Number(chunk.cb_original),
+        )
+      ).chunk
+      pool.returnConnection(server)
+      return data
     } catch (error) {
-      lastError = error;
-      pool.returnBrokenConnection(server);
-      options.onEvent?.({ type: "retry", chunk: chunk.sha, attempt: attempt + 1 });
+      lastError = error
+      pool.returnBrokenConnection(server)
+      options.onEvent?.({
+        type: 'retry',
+        chunk: chunk.sha,
+        attempt: attempt + 1,
+      })
     }
   }
-  throw new Error(`Failed to download chunk ${chunk.sha}`, { cause: lastError });
+  throw new Error(`Failed to download chunk ${chunk.sha}`, { cause: lastError })
 }
 
 async function deleteObsoleteFiles(
@@ -327,40 +405,57 @@ async function deleteObsoleteFiles(
   includeFile: FileFilter,
   options: CoreOptions,
 ): Promise<void> {
-  if (!previousManifest) return;
+  if (!previousManifest) return
   for (const file of previousManifest.files) {
-    if ((file.flags & DIRECTORY) || !includeFile(file.filename) || currentPathKeys.has(manifestPathKey(file.filename))) continue;
-    throwIfAborted(options.signal);
-    await assertNoSymlinkTraversal(options.outputDirectory, file.filename);
-    const path = resolveOutputPath(options.outputDirectory, file.filename);
-    await rm(path, { force: true });
-    options.onEvent?.({ type: "file-deleted", path });
+    if (
+      file.flags & DIRECTORY ||
+      !includeFile(file.filename) ||
+      currentPathKeys.has(manifestPathKey(file.filename))
+    )
+      continue
+    throwIfAborted(options.signal)
+    await assertNoSymlinkTraversal(options.outputDirectory, file.filename)
+    const path = resolveOutputPath(options.outputDirectory, file.filename)
+    await rm(path, { force: true })
+    options.onEvent?.({ type: 'file-deleted', path })
   }
   const obsoleteDirectories = previousManifest.files
-    .filter((file) => (file.flags & DIRECTORY) && includeFile(file.filename) && !currentPathKeys.has(manifestPathKey(file.filename)))
-    .sort((left, right) => right.filename.length - left.filename.length);
+    .filter(
+      (file) =>
+        file.flags & DIRECTORY &&
+        includeFile(file.filename) &&
+        !currentPathKeys.has(manifestPathKey(file.filename)),
+    )
+    .sort((left, right) => right.filename.length - left.filename.length)
   for (const directory of obsoleteDirectories) {
-    throwIfAborted(options.signal);
-    await assertNoSymlinkTraversal(options.outputDirectory, directory.filename);
+    throwIfAborted(options.signal)
+    await assertNoSymlinkTraversal(options.outputDirectory, directory.filename)
     try {
-      await rmdir(resolveOutputPath(options.outputDirectory, directory.filename));
+      await rmdir(
+        resolveOutputPath(options.outputDirectory, directory.filename),
+      )
     } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code !== "ENOENT" && code !== "ENOTEMPTY" && code !== "EEXIST") throw error;
+      const code = (error as NodeJS.ErrnoException).code
+      if (code !== 'ENOENT' && code !== 'ENOTEMPTY' && code !== 'EEXIST')
+        throw error
     }
   }
 }
 
 function reusedSize(matches: ChunkMatch[]): number {
-  return matches.reduce((sum, match) => sum + Number(match.destination.cb_original), 0);
+  return matches.reduce(
+    (sum, match) => sum + Number(match.destination.cb_original),
+    0,
+  )
 }
 
 function fileSize(file: ManifestFile): number {
-  const size = Number(file.size);
-  if (!Number.isSafeInteger(size) || size < 0) throw new Error(`Invalid size for ${file.filename}`);
-  return size;
+  const size = Number(file.size)
+  if (!Number.isSafeInteger(size) || size < 0)
+    throw new Error(`Invalid size for ${file.filename}`)
+  return size
 }
 
 function throwIfAborted(signal?: AbortSignal): void {
-  signal?.throwIfAborted();
+  signal?.throwIfAborted()
 }
