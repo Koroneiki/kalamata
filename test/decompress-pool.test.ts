@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { lzma } from '@napi-rs/lzma'
 import { createHash } from 'node:crypto'
 import { createRequire } from 'node:module'
-import { DecompressPool } from '../src/backend/decompress-pool.ts'
+import { DecompressPool } from '../src/backend/depot/decompress-pool.ts'
 
 const require = createRequire(import.meta.url)
 const AdmZip = require('adm-zip') as new () => {

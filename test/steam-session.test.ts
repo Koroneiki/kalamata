@@ -3,7 +3,7 @@ import { EventEmitter } from 'node:events'
 import {
   SteamSession,
   type SteamContentUser,
-} from '../src/backend/steam-session.ts'
+} from '../src/backend/steam/steam-session.ts'
 
 describe('SteamSession', () => {
   test('shares one login across concurrent connect calls', async () => {

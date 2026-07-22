@@ -1,4 +1,4 @@
-import type { ContentServer } from './content-client.ts'
+import type { ContentServer } from '../steam/types.ts'
 
 export class CDNClientPool {
   readonly #servers: ContentServer[]

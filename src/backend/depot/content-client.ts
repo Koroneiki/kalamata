@@ -1,12 +1,6 @@
-export interface ContentServer {
-  Host: string
-  vhost?: string
-  https_support?: string
-  usetokenauth?: number
-  weightedload?: number
-  NumEntriesInClientList?: number
-  [key: string]: unknown
-}
+import type { ContentServer } from '../steam/types.ts'
+
+export type { ContentServer } from '../steam/types.ts'
 
 export interface ChunkClient {
   getContentServers(appId: number): Promise<{ servers: ContentServer[] }>

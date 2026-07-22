@@ -1,15 +1,7 @@
 import { once } from 'node:events'
-import type SteamUserType from 'steam-user'
-import type { ContentServer } from './content-client.ts'
+import type { SteamContentUser } from './types.ts'
 
-export interface SteamContentUser extends SteamUserType {
-  getContentServers(appId: number): Promise<{ servers: ContentServer[] }>
-  getCDNAuthToken(
-    appId: number,
-    depotId: number,
-    hostname: string,
-  ): Promise<{ token: string }>
-}
+export type { SteamContentUser } from './types.ts'
 
 export type SteamUserFactory = () => Promise<SteamContentUser>
 

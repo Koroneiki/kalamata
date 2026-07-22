@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import {
   acquireOutputLock,
   DepotConfigStore,
-} from '../src/backend/depot-config-store.ts'
+} from '../src/backend/depot/depot-config-store.ts'
 
 let directory: string | undefined
 

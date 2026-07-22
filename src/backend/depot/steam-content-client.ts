@@ -8,7 +8,7 @@ import {
   downloadChunkData,
 } from './chunk-download.ts'
 import { DecompressPool } from './decompress-pool.ts'
-import type { SteamContentUser } from './steam-session.ts'
+import type { SteamContentUser } from '../steam/types.ts'
 
 export class SteamContentClient implements ChunkClient {
   #decompressPool: DecompressPool | undefined

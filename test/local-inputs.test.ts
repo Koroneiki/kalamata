@@ -6,8 +6,8 @@ import {
   parseManifest,
   readDepotKey,
   validateManifest,
-} from '../src/backend/local-inputs.ts'
-import type { DepotManifest } from '../src/backend/types.ts'
+} from '../src/backend/depot/local-inputs.ts'
+import type { DepotManifest } from '../src/backend/depot/types.ts'
 
 let directory: string | undefined
 

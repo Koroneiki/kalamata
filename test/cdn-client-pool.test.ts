@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { CDNClientPool } from '../src/backend/cdn-client-pool.ts'
+import { CDNClientPool } from '../src/backend/depot/cdn-client-pool.ts'
 
 test('selects the lowest-load server and rotates broken connections', () => {
   const slow = { Host: 'slow', weightedload: 50, NumEntriesInClientList: 1 }

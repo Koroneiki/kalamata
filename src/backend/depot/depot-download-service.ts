@@ -7,7 +7,7 @@ import {
   validateManifest,
 } from './local-inputs.ts'
 import { SteamContentClient } from './steam-content-client.ts'
-import type { SteamSession } from './steam-session.ts'
+import type { SteamSession } from '../steam/steam-session.ts'
 import type { DownloadDepotOptions, DownloadResult } from './types.ts'
 
 export class DepotDownloadService {

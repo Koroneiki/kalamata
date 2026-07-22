@@ -3,7 +3,7 @@ import http from 'node:http'
 import https from 'node:https'
 import { createRequire } from 'node:module'
 import { lzma } from '@napi-rs/lzma'
-import type { ContentServer } from './content-client.ts'
+import type { ContentServer } from '../steam/types.ts'
 import { MAX_CHUNK_BYTES } from './manifest-utils.ts'
 
 const USER_AGENT = 'Valve/Steam HTTP Client 1.0'

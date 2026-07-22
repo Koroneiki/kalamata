@@ -15,8 +15,8 @@ import {
   rebuildWithChunkMatches,
   resolveManifestPath,
   resolveOutputPath,
-} from '../src/backend/files.ts'
-import type { ManifestChunk } from '../src/backend/types.ts'
+} from '../src/backend/depot/files.ts'
+import type { ManifestChunk } from '../src/backend/depot/types.ts'
 
 let directory: string | undefined
 
