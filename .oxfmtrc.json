@@ -6,6 +6,7 @@
   "printWidth": 80,
   "trailingComma": "all",
   "singleQuote": true,
+  "ignorePatterns": ["src/components/ui/**"],
   "sortTailwindcss": {},
   "sortPackageJson": false
 }
