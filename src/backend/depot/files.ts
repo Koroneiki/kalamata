@@ -11,7 +11,6 @@ import {
 import type { ManifestChunk, ManifestFile } from './types.ts'
 
 const EXECUTABLE = 32
-export { DIRECTORY }
 
 export function resolveManifestPath(root: string, filename: string): string {
   if (!filename || filename.includes('\0') || isAbsolute(filename)) {

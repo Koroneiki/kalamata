@@ -91,8 +91,11 @@ export class DecompressPool {
   }
 
   #createWorker(index: number): WorkerSlot {
+    const workerPath = import.meta.url.endsWith('.ts')
+      ? './decompress-worker.ts'
+      : './decompress-worker/decompress-worker.js'
     const worker = new Worker(
-      new URL('./decompress-worker.ts', import.meta.url).href,
+      new URL(workerPath, import.meta.url).href,
       {
         name: `depot-decompress-${index}`,
         ref: true,

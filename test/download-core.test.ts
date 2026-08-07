@@ -262,27 +262,31 @@ describe('downloadManifest', () => {
     directory = await mkdtemp(join(tmpdir(), 'depot-download-'))
     await writeFile(join(directory, 'content'), 'old')
     const oldFile = manifestFile('content', [chunk('old', 0, 'old')])
-    const directoryEntry: ManifestFile = {
-      filename: 'content',
-      size: '0',
-      flags: 64,
-      sha_content: '',
-      chunks: [],
-    }
     const child = manifestFile('content/new.bin', [chunk('new', 0, 'new')])
 
-    await downloadManifest(
-      fakeClient({ new: 'new' }),
-      manifestFiles([child, directoryEntry]),
-      {
-        ...options(directory, false),
-        previousManifest: manifest(oldFile),
-      },
-    )
+    await downloadManifest(fakeClient({ new: 'new' }), manifest(child), {
+      ...options(directory, false),
+      previousManifest: manifest(oldFile),
+    })
 
     expect(await readFile(join(directory, 'content/new.bin'), 'utf8')).toBe(
       'new',
     )
+  })
+
+  test('installs an implied directory-to-file transition', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'depot-download-'))
+    await mkdir(join(directory, 'content'))
+    await writeFile(join(directory, 'content/old.bin'), 'old')
+    const oldChild = manifestFile('content/old.bin', [chunk('old', 0, 'old')])
+    const file = manifestFile('content', [chunk('new', 0, 'new')])
+
+    await downloadManifest(fakeClient({ new: 'new' }), manifest(file), {
+      ...options(directory, false),
+      previousManifest: manifest(oldChild),
+    })
+
+    expect(await readFile(join(directory, 'content'), 'utf8')).toBe('new')
   })
 })
 

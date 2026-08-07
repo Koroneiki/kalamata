@@ -21,7 +21,11 @@ import {
   writeChunk,
   type ChunkMatch,
 } from './files.ts'
-import { DIRECTORY, manifestPathKey } from './manifest-utils.ts'
+import {
+  DIRECTORY,
+  manifestPathKey,
+  withImpliedDirectories,
+} from './manifest-utils.ts'
 import type {
   DepotManifest,
   DownloadEvent,
@@ -70,11 +74,12 @@ export async function downloadManifest(
     stagingDirectory,
     `transitions-${randomUUID()}`,
   )
+  const effectiveCurrentFiles = withImpliedDirectories(currentFiles)
   const staged = await stageTypeTransitions(
     options.outputDirectory,
     transitionDirectory,
-    currentFiles,
-    options.previousManifest?.files ?? [],
+    effectiveCurrentFiles,
+    withImpliedDirectories(options.previousManifest?.files ?? []),
   )
 
   try {
@@ -114,7 +119,14 @@ async function downloadManifestCore(
       .map((file) => [manifestPathKey(file.filename), file]),
   )
   const currentPathKeys = new Set(
-    currentFiles.map((file) => manifestPathKey(file.filename)),
+    withImpliedDirectories(currentFiles).map((file) =>
+      manifestPathKey(file.filename),
+    ),
+  )
+  const currentFilePathKeys = new Set(
+    currentFiles
+      .filter((file) => !(file.flags & DIRECTORY))
+      .map((file) => manifestPathKey(file.filename)),
   )
   const stagingDirectory =
     options.stagingDirectory ??
@@ -222,6 +234,7 @@ async function downloadManifestCore(
   await deleteObsoleteFiles(
     options.previousManifest,
     currentPathKeys,
+    currentFilePathKeys,
     includeFile,
     options,
   )
@@ -402,6 +415,7 @@ async function downloadWithRetry(
 async function deleteObsoleteFiles(
   previousManifest: DepotManifest | undefined,
   currentPathKeys: Set<string>,
+  currentFilePathKeys: Set<string>,
   includeFile: FileFilter,
   options: CoreOptions,
 ): Promise<void> {
@@ -410,7 +424,8 @@ async function deleteObsoleteFiles(
     if (
       file.flags & DIRECTORY ||
       !includeFile(file.filename) ||
-      currentPathKeys.has(manifestPathKey(file.filename))
+      currentPathKeys.has(manifestPathKey(file.filename)) ||
+      hasFileAncestor(file.filename, currentFilePathKeys)
     )
       continue
     throwIfAborted(options.signal)
@@ -440,6 +455,22 @@ async function deleteObsoleteFiles(
         throw error
     }
   }
+}
+
+function hasFileAncestor(
+  filename: string,
+  currentFilePathKeys: Set<string>,
+): boolean {
+  const segments = filename.replaceAll('\\', '/').split('/')
+  for (let length = 1; length < segments.length; length++) {
+    if (
+      currentFilePathKeys.has(
+        manifestPathKey(segments.slice(0, length).join('/')),
+      )
+    )
+      return true
+  }
+  return false
 }
 
 function reusedSize(matches: ChunkMatch[]): number {

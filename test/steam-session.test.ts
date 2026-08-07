@@ -78,6 +78,21 @@ describe('SteamSession', () => {
 
     expect(disconnectError?.message).toBe('Steam session is disposed')
   })
+
+  test('disconnects even when a disposal listener throws', async () => {
+    const user = new FakeSteamUser()
+    const session = new SteamSession(
+      async () => user as unknown as SteamContentUser,
+    )
+    await session.connect()
+    session.onDisconnect(() => {
+      throw new Error('listener failed')
+    })
+
+    expect(() => session.dispose()).toThrow('listener failed')
+    expect(session.connected).toBe(false)
+    expect(user.logOffCalls).toBe(1)
+  })
 })
 
 class FakeSteamUser extends EventEmitter {

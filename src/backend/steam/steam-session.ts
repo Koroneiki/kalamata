@@ -54,8 +54,8 @@ export class SteamSession {
     this.#disposeController.abort(error)
     const listeners = [...this.#disconnectListeners]
     this.#disconnectListeners.clear()
-    for (const listener of listeners) listener(error)
     this.#clearClient()
+    for (const listener of listeners) listener(error)
   }
 
   async #connect(): Promise<void> {

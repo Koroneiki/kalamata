@@ -5,8 +5,6 @@ import { CONFIG_DIRECTORY, STAGING_DIRECTORY } from './depot-paths.ts'
 import { parseManifest } from './local-inputs.ts'
 import type { DepotManifest } from './types.ts'
 
-export { CONFIG_DIRECTORY, STAGING_DIRECTORY } from './depot-paths.ts'
-
 interface DepotConfigData {
   version: 1
   installedManifestIds: Record<string, string | null>

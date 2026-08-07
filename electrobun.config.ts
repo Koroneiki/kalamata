@@ -13,7 +13,11 @@ export default {
     copy: {
       'dist/index.html': 'views/mainview/index.html',
       'dist/assets': 'views/mainview/assets',
+      'dist/decompress-worker': 'bun/decompress-worker',
     },
     watchIgnore: ['dist/**'],
+  },
+  scripts: {
+    preBuild: './scripts/build-decompress-worker.ts',
   },
 } satisfies ElectrobunConfig

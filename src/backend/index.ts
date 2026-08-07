@@ -22,10 +22,6 @@ export class SteamService {
     this.#products = new ProductInfoService(this.#session)
   }
 
-  get connected(): boolean {
-    return this.#session.connected
-  }
-
   connect(): Promise<void> {
     return this.#session.connect()
   }

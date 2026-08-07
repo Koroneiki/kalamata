@@ -8,8 +8,6 @@ import {
 } from './manifest-utils.ts'
 import type { DepotManifest } from './types.ts'
 
-export { DIRECTORY, MAX_CHUNK_BYTES, SYMLINK } from './manifest-utils.ts'
-
 export async function readDepotKey(
   path: string,
   depotId: number,
