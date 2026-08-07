@@ -9,3 +9,4 @@ artifacts/
 fixtures-key-temp.txt
 test/*.integration.test.ts
 test/fixtures/
+/plan/
