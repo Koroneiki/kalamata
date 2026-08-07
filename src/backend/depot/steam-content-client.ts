@@ -21,7 +21,6 @@ export class SteamContentClient implements ChunkClient {
   constructor(
     private readonly user: SteamContentUser,
     private readonly depotKey: Buffer,
-    private readonly maxDownloads: number,
   ) {}
 
   getContentServers(appId: number): Promise<{ servers: ContentServer[] }> {
@@ -66,10 +65,7 @@ export class SteamContentClient implements ChunkClient {
         { http: this.#httpAgent, https: this.#httpsAgent },
       )
     }
-    this.#decompressPool ??= new DecompressPool(
-      this.depotKey,
-      this.maxDownloads,
-    )
+    this.#decompressPool ??= new DecompressPool(this.depotKey)
     return {
       chunk: await this.#decompressPool.process(
         encrypted,

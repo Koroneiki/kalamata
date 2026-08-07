@@ -39,7 +39,6 @@ export interface DownloadDepotOptions {
   outputDirectory: string
   fileListPath?: string
   verifyAll?: boolean
-  maxDownloads?: number
   signal?: AbortSignal
   onEvent?: (event: DownloadEvent) => void
 }

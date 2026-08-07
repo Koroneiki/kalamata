@@ -34,6 +34,8 @@ import type {
   ManifestFile,
 } from './types.ts'
 
+const DOWNLOAD_CONCURRENCY = 8
+
 export type { ChunkClient, ContentServer } from './content-client.ts'
 
 interface ChunkJob {
@@ -46,7 +48,6 @@ export interface CoreOptions {
   depotId: number
   outputDirectory: string
   verifyAll: boolean
-  maxDownloads: number
   previousManifest?: DepotManifest
   stagingDirectory?: string
   fileFilter?: FileFilter
@@ -59,9 +60,6 @@ export async function downloadManifest(
   manifest: DepotManifest,
   options: CoreOptions,
 ): Promise<DownloadResult> {
-  if (!Number.isInteger(options.maxDownloads) || options.maxDownloads < 1) {
-    throw new Error('maxDownloads must be a positive integer')
-  }
   const includeFile = options.fileFilter ?? (() => true)
   const currentFiles = manifest.files.filter((file) =>
     includeFile(file.filename),
@@ -343,7 +341,7 @@ async function runWorkers(
   try {
     const results = await Promise.allSettled(
       Array.from(
-        { length: Math.min(options.maxDownloads, groupedJobs.length) },
+        { length: Math.min(DOWNLOAD_CONCURRENCY, groupedJobs.length) },
         worker,
       ),
     )

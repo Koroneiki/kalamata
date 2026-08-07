@@ -38,11 +38,7 @@ export class DepotDownloadService {
       controller.abort(error),
     )
     try {
-      const client = new SteamContentClient(
-        await this.session.getClient(),
-        key,
-        options.maxDownloads ?? 8,
-      )
+      const client = new SteamContentClient(await this.session.getClient(), key)
       try {
         throwIfAborted(controller.signal)
         return await downloadDepotContent(
@@ -83,12 +79,6 @@ function validateOptions(options: DownloadDepotOptions): void {
     throw new Error(
       'manifestPath, depotKeyPath, and outputDirectory are required',
     )
-  }
-  if (
-    options.maxDownloads !== undefined &&
-    (!Number.isInteger(options.maxDownloads) || options.maxDownloads < 1)
-  ) {
-    throw new Error('maxDownloads must be a positive integer')
   }
 }
 

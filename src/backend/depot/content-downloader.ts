@@ -75,7 +75,6 @@ async function downloadDepotContentLocked(
     depotId: options.depotId,
     outputDirectory: options.outputDirectory,
     verifyAll: options.verifyAll ?? false,
-    maxDownloads: options.maxDownloads ?? 8,
     stagingDirectory: store.stagingDirectory,
     fileFilter: inputs.fileFilter,
     ...(previousManifest ? { previousManifest } : {}),

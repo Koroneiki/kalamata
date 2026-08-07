@@ -33,7 +33,7 @@ export class DecompressPool {
   #consecutiveWorkerFailures = 0
   #disposed = false
 
-  constructor(key: Buffer, count = availableParallelism()) {
+  constructor(key: Buffer, count = 8) {
     if (!Number.isInteger(count) || count < 1)
       throw new Error('Worker count must be a positive integer')
     this.#key = Uint8Array.from(key)
@@ -94,13 +94,10 @@ export class DecompressPool {
     const workerPath = import.meta.url.endsWith('.ts')
       ? './decompress-worker.ts'
       : './decompress-worker/decompress-worker.js'
-    const worker = new Worker(
-      new URL(workerPath, import.meta.url).href,
-      {
-        name: `depot-decompress-${index}`,
-        ref: true,
-      },
-    )
+    const worker = new Worker(new URL(workerPath, import.meta.url).href, {
+      name: `depot-decompress-${index}`,
+      ref: true,
+    })
     const slot: WorkerSlot = { index, worker, current: undefined }
 
     worker.onmessage = (event: MessageEvent<WorkerResponse>) =>

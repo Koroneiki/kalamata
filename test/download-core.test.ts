@@ -223,6 +223,50 @@ describe('downloadManifest', () => {
     expect(siblingAborted).toBe(true)
   })
 
+  test('automatically limits concurrent downloads', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'depot-download-'))
+    const server: ContentServer = { Host: 'cdn.example.test' }
+    let active = 0
+    let peak = 0
+    let started = 0
+    let releaseDownloads!: () => void
+    let markEightStarted!: () => void
+    const downloadsBlocked = new Promise<void>((resolve) => {
+      releaseDownloads = resolve
+    })
+    const eightStarted = new Promise<void>((resolve) => {
+      markEightStarted = resolve
+    })
+    const client: ChunkClient = {
+      getContentServers: async () => ({ servers: [server] }),
+      downloadChunk: async (_appId, _depotId, sha) => {
+        active++
+        started++
+        peak = Math.max(peak, active)
+        if (started === 8) markEightStarted()
+        await downloadsBlocked
+        active--
+        return { chunk: Buffer.from(sha) }
+      },
+    }
+    const files = Array.from({ length: 9 }, (_, index) => {
+      const value = `chunk-${index}`
+      return manifestFile(`${index}.bin`, [chunk(value, 0, value)])
+    })
+
+    const downloading = downloadManifest(
+      client,
+      manifestFiles(files),
+      options(directory, false),
+    )
+    await eightStarted
+
+    expect(started).toBe(8)
+    releaseDownloads()
+    await downloading
+    expect(peak).toBe(8)
+  })
+
   test('downloads one copy of a chunk referenced by multiple files', async () => {
     directory = await mkdtemp(join(tmpdir(), 'depot-download-'))
     const client = fakeClient({ shared: 'same' })
@@ -291,7 +335,7 @@ describe('downloadManifest', () => {
 })
 
 function options(outputDirectory: string, verifyAll: boolean) {
-  return { appId: 10, depotId: 20, outputDirectory, verifyAll, maxDownloads: 2 }
+  return { appId: 10, depotId: 20, outputDirectory, verifyAll }
 }
 
 function manifest(file: ManifestFile): DepotManifest {
