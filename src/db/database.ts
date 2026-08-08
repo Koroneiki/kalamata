@@ -148,6 +148,13 @@ export class KalamataDatabase {
     validateId(depotId, 'depotId')
     validateManifestId(manifestId)
     this.sqlite.transaction(() => {
+      const manifest = this.sqlite
+        .query<{ found: number }, [number, string]>(
+          'SELECT 1 AS found FROM manifest_files WHERE depot_id = ? AND manifest_id = ?',
+        )
+        .get(depotId, manifestId)
+      if (!manifest) throw new Error('Manifest file is not registered')
+
       this.sqlite
         .query(
           'INSERT INTO library (app_id, install_path, created_at) VALUES (?, ?, ?) ON CONFLICT(app_id) DO NOTHING',

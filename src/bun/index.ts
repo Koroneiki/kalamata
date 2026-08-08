@@ -3,6 +3,7 @@ import { BrowserView, BrowserWindow, Updater, Utils } from 'electrobun/bun'
 import { createSteamService } from '../backend/index.ts'
 import { FoundationService } from '../backend/foundation-service.ts'
 import { openKalamataDatabase } from '../db/index.ts'
+import { syncManifestFiles } from '../db/manifest-files.ts'
 import { canonicalizeInstallDirectory } from '../db/validation.ts'
 import type { AppRpc } from '../types/rpc.ts'
 import { DownloadQueueCoordinator } from './download-queue.ts'
@@ -23,6 +24,7 @@ async function getMainViewUrl(): Promise<string> {
 }
 
 const database = await openKalamataDatabase(Utils.paths.userData)
+await syncManifestFiles(database)
 const steam = createSteamService()
 const foundation = new FoundationService(steam, database)
 let queue: DownloadQueueCoordinator

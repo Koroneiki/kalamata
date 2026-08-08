@@ -1,8 +1,7 @@
 import { sql } from 'drizzle-orm'
 import {
-  type AnySQLiteColumn,
   check,
-  foreignKey,
+  type AnySQLiteColumn,
   integer,
   primaryKey,
   sqliteTable,
@@ -72,9 +71,5 @@ export const libraryDepotInstalls = sqliteTable(
       'library_depot_installs_manifest_id_valid',
       sql`${table.installedManifestId} <> '' AND ${table.installedManifestId} NOT GLOB '*[^0-9]*'`,
     ),
-    foreignKey({
-      columns: [table.depotId, table.installedManifestId],
-      foreignColumns: [manifestFiles.depotId, manifestFiles.manifestId],
-    }),
   ],
 )

@@ -1,11 +1,19 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { mkdir, mkdtemp, realpath, rm, symlink } from 'node:fs/promises'
+import {
+  mkdir,
+  mkdtemp,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { KalamataDatabase } from '../src/db/database.ts'
 import {
   manifestRelativePath,
   resolveManagedManifest,
+  syncManifestFiles,
 } from '../src/db/manifest-files.ts'
 import { depotKeyFromHex } from '../src/db/validation.ts'
 
@@ -50,16 +58,36 @@ describe('foundation database', () => {
     })
   })
 
-  test('enforces both install foreign keys and rolls back library creation', async () => {
+  test('requires registered manifests and rolls back library creation', async () => {
     const db = await openDatabase()
     expect(() => db.recordInstalledDepot(10, root!, 20, '123')).toThrow()
     expect(db.getLibrary()).toEqual([])
 
     db.addManifest(20, '123')
     db.recordInstalledDepot(10, root!, 20, '123')
-    expect(() => db.sqlite.query('DELETE FROM manifest_files').run()).toThrow()
     db.sqlite.query('DELETE FROM library WHERE app_id = 10').run()
     expect(db.getInstalls(10)).toEqual([])
+  })
+
+  test('syncs manifest rows to regular files without losing install state', async () => {
+    const db = await openDatabase()
+    db.addManifest(20, '123')
+    db.recordInstalledDepot(10, root!, 20, '123')
+    await writeFile(join(root!, 'manifest-files', '30_456.manifest'), '')
+
+    await syncManifestFiles(db, 1000)
+
+    expect(db.getManifestRows(20)).toEqual([])
+    expect(db.getManifestRows(30)).toEqual([
+      {
+        depotId: 30,
+        manifestId: '456',
+        relativePath: 'manifest-files/30_456.manifest',
+      },
+    ])
+    expect(db.getInstalls(10)).toEqual([
+      { depotId: 20, installedManifestId: '123' },
+    ])
   })
 
   test('rejects canonical duplicate paths and changes to locked paths', async () => {
