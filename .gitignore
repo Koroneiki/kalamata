@@ -1,4 +1,5 @@
 node_modules/
+.DS_Store
 bun.lock
 coverage/
 dist/
@@ -18,6 +19,7 @@ test/fixtures/
 .impeccable/config.local.json
 .impeccable/hook.cache.json
 .impeccable/hook.pending.json
+.impeccable/critique/
 .impeccable/*.png
 .impeccable/live/server.json
 .impeccable/live/sessions/
