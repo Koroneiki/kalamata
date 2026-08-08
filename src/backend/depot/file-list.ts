@@ -21,7 +21,7 @@ export async function readFileFilter(path?: string): Promise<FileFilter> {
         })
       }
     } else {
-      literalPaths.add(normalizeForMatch(rawLine))
+      literalPaths.add(normalizeManifestSeparators(rawLine).toLowerCase())
     }
   }
 
@@ -32,8 +32,4 @@ export async function readFileFilter(path?: string): Promise<FileFilter> {
       patterns.some((pattern) => pattern.test(normalized))
     )
   }
-}
-
-function normalizeForMatch(filename: string): string {
-  return normalizeManifestSeparators(filename).toLowerCase()
 }
