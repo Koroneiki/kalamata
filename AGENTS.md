@@ -96,6 +96,14 @@ Add a route in `src/router/index.ts`. Route-level views must be lazy loaded:
 
 Put route guards in `src/router`. Keep API or Electrobun RPC calls in `src/api`, composable orchestration in `src/composables`, and route components in `src/views`.
 
+## Database Migrations
+
+- Define schema changes in `src/db/schema.ts`, then run `bunx drizzle-kit generate`.
+- Commit the generated SQL migration together with `src/db/migrations/meta/_journal.json` and the generated snapshot JSON. Snapshots are the schema-diff baseline for future migrations.
+- Review generated SQL before applying it. For SQLite table rebuilds, verify constraints reference the rebuilt table correctly and existing data is copied before the old table is dropped.
+- Do not modify a migration that may already have been applied; create a new migration instead.
+- Verify fresh database creation. When a migration rebuilds tables or changes existing data or constraints, also verify upgrading a populated database preserves the intended data.
+
 ## Commands
 
 ```sh
