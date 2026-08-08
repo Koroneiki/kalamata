@@ -4,6 +4,7 @@
     "electrobun.config.ts",
     "src/backend/**/*",
     "src/bun/**/*",
+    "src/db/**/*",
     "test/**/*"
   ],
   "compilerOptions": {

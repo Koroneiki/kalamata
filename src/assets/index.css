@@ -79,5 +79,12 @@
 
   body {
     @apply bg-background text-foreground;
+    caret-color: var(--primary);
+    scrollbar-color: var(--muted-foreground) var(--muted);
+  }
+
+  ::selection {
+    background: var(--accent);
+    color: var(--accent-foreground);
   }
 }

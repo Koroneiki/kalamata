@@ -1,0 +1,143 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-07T20:21:55Z",
+  "title": "Design System: Kalamata",
+  "extensions": {
+    "colorMeta": {
+      "parchment": {
+        "role": "neutral",
+        "displayName": "Parchment",
+        "canonical": "oklch(0.985 0.006 95)",
+        "tonalRamp": ["oklch(0.15 0.006 95)", "oklch(0.27 0.006 95)", "oklch(0.39 0.006 95)", "oklch(0.51 0.006 95)", "oklch(0.63 0.006 95)", "oklch(0.75 0.006 95)", "oklch(0.87 0.006 95)", "oklch(0.985 0.006 95)"]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "oklch(0.205 0.018 90)",
+        "tonalRamp": ["oklch(0.15 0.018 90)", "oklch(0.27 0.018 90)", "oklch(0.39 0.018 90)", "oklch(0.51 0.018 90)", "oklch(0.63 0.018 90)", "oklch(0.75 0.018 90)", "oklch(0.87 0.018 90)", "oklch(0.95 0.018 90)"]
+      },
+      "field-olive": {
+        "role": "primary",
+        "displayName": "Field Olive",
+        "canonical": "oklch(0.43 0.105 120)",
+        "tonalRamp": ["oklch(0.15 0.105 120)", "oklch(0.27 0.105 120)", "oklch(0.39 0.105 120)", "oklch(0.51 0.105 120)", "oklch(0.63 0.105 120)", "oklch(0.75 0.105 120)", "oklch(0.87 0.08 120)", "oklch(0.95 0.04 120)"]
+      },
+      "dry-grass": {
+        "role": "secondary",
+        "displayName": "Dry Grass",
+        "canonical": "oklch(0.94 0.02 100)",
+        "tonalRamp": ["oklch(0.15 0.02 100)", "oklch(0.27 0.02 100)", "oklch(0.39 0.02 100)", "oklch(0.51 0.02 100)", "oklch(0.63 0.02 100)", "oklch(0.75 0.02 100)", "oklch(0.87 0.02 100)", "oklch(0.95 0.02 100)"]
+      },
+      "weathered-paper": {
+        "role": "neutral",
+        "displayName": "Weathered Paper",
+        "canonical": "oklch(0.95 0.014 95)",
+        "tonalRamp": ["oklch(0.15 0.014 95)", "oklch(0.27 0.014 95)", "oklch(0.39 0.014 95)", "oklch(0.51 0.014 95)", "oklch(0.63 0.014 95)", "oklch(0.75 0.014 95)", "oklch(0.87 0.014 95)", "oklch(0.95 0.014 95)"]
+      },
+      "faded-ink": {
+        "role": "neutral",
+        "displayName": "Faded Ink",
+        "canonical": "oklch(0.52 0.025 90)",
+        "tonalRamp": ["oklch(0.15 0.025 90)", "oklch(0.27 0.025 90)", "oklch(0.39 0.025 90)", "oklch(0.51 0.025 90)", "oklch(0.63 0.025 90)", "oklch(0.75 0.025 90)", "oklch(0.87 0.02 90)", "oklch(0.95 0.01 90)"]
+      },
+      "signal-red": {
+        "role": "primary",
+        "displayName": "Signal Red",
+        "canonical": "oklch(0.58 0.22 27)",
+        "tonalRamp": ["oklch(0.15 0.12 27)", "oklch(0.27 0.18 27)", "oklch(0.39 0.22 27)", "oklch(0.51 0.22 27)", "oklch(0.63 0.2 27)", "oklch(0.75 0.15 27)", "oklch(0.87 0.09 27)", "oklch(0.95 0.04 27)"]
+      }
+    },
+    "typographyMeta": {
+      "headline": { "displayName": "App Headline", "purpose": "App identity on the details surface." },
+      "title": { "displayName": "Section Title", "purpose": "Collections and operational groups." },
+      "body": { "displayName": "Interface Body", "purpose": "Instructions, errors, and general copy." },
+      "label": { "displayName": "Supporting Label", "purpose": "Compact secondary status and metadata." },
+      "metadata": { "displayName": "Technical Metadata", "purpose": "Paths, manifests, and identifiers." }
+    },
+    "shadows": [
+      { "name": "control-edge", "value": "0 1px 2px rgb(0 0 0 / 0.05)", "purpose": "A subtle physical edge for fields, checkboxes, and outline controls." },
+      { "name": "transient-lift", "value": "0 4px 6px -1px rgb(0 0 0 / 0.1)", "purpose": "Tooltips and temporary overlays." },
+      { "name": "modal-lift", "value": "0 10px 15px -3px rgb(0 0 0 / 0.1)", "purpose": "Dialogs only." }
+    ],
+    "motion": [
+      { "name": "state-standard", "value": "200ms ease", "purpose": "Hover, focus, disclosure, and modal state transitions." },
+      { "name": "running-spinner", "value": "1s linear infinite", "purpose": "The active download loader only." }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "lg", "value": "1024px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The committed action for a decision area.",
+      "html": "<button class=\"ds-btn-primary\">Download depots</button>",
+      "css": ".ds-btn-primary { height: 2.25rem; padding: 0.5rem 1rem; border: 0; border-radius: 0.5rem; background: var(--primary); color: var(--primary-foreground); font: 500 0.875rem/1.25 ui-sans-serif, system-ui, sans-serif; transition: background-color 200ms ease, box-shadow 200ms ease; } .ds-btn-primary:hover { background: color-mix(in oklch, var(--primary) 90%, transparent); } .ds-btn-primary:focus-visible { outline: 0; box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent); } .ds-btn-primary:active { transform: translateY(1px); }"
+    },
+    {
+      "name": "Outline Button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "A secondary or reversible action.",
+      "html": "<button class=\"ds-btn-outline\">Choose directory</button>",
+      "css": ".ds-btn-outline { height: 2.25rem; padding: 0.5rem 1rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--background); color: var(--foreground); font: 500 0.875rem/1.25 ui-sans-serif, system-ui, sans-serif; box-shadow: 0 1px 2px rgb(0 0 0 / 0.05); transition: background-color 200ms ease, box-shadow 200ms ease; } .ds-btn-outline:hover { background: var(--accent); color: var(--accent-foreground); } .ds-btn-outline:focus-visible { outline: 0; box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent); }"
+    },
+    {
+      "name": "App ID Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Compact numeric search input with visible validation and focus.",
+      "html": "<label class=\"ds-field\">Steam App ID<input class=\"ds-input\" inputmode=\"numeric\" placeholder=\"For example, 440\"></label>",
+      "css": ".ds-field { display: grid; gap: 0.5rem; color: var(--foreground); font: 500 0.875rem/1.25 ui-sans-serif, system-ui, sans-serif; } .ds-input { height: 2.25rem; min-width: 0; padding: 0.25rem 0.75rem; border: 1px solid var(--input); border-radius: 0.5rem; background: transparent; color: var(--foreground); font: 400 0.875rem/1.5 ui-sans-serif, system-ui, sans-serif; font-variant-numeric: tabular-nums; box-shadow: 0 1px 2px rgb(0 0 0 / 0.05); transition: border-color 200ms ease, box-shadow 200ms ease; } .ds-input:focus-visible { border-color: var(--ring); outline: 0; box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent); }"
+    },
+    {
+      "name": "Ready Badge",
+      "kind": "chip",
+      "refersTo": "status-badge",
+      "description": "A quiet textual readiness signal.",
+      "html": "<span class=\"ds-badge-ready\">Manifest ready</span>",
+      "css": ".ds-badge-ready { display: inline-flex; align-items: center; width: fit-content; padding: 0.125rem 0.5rem; border: 1px solid transparent; border-radius: 9999px; background: var(--secondary); color: var(--secondary-foreground); font: 500 0.75rem/1.25 ui-sans-serif, system-ui, sans-serif; white-space: nowrap; }"
+    },
+    {
+      "name": "Download Queue",
+      "kind": "custom",
+      "description": "A tonal operational panel for one application-wide queue.",
+      "html": "<section class=\"ds-queue\" aria-label=\"Download queue running\"><div class=\"ds-queue-head\"><strong>Downloading depot 228984</strong><span>42%</span></div><p>Queue 1 of 2 · 1.2 GB of 2.8 GB</p><div class=\"ds-progress\"><span></span></div><code>/Users/local/Games/example</code></section>",
+      "css": ".ds-queue { padding: 1rem; border-radius: 0.625rem; background: color-mix(in oklch, var(--muted) 70%, transparent); color: var(--foreground); font: 400 0.875rem/1.5 ui-sans-serif, system-ui, sans-serif; } .ds-queue-head { display: flex; justify-content: space-between; gap: 0.75rem; font-variant-numeric: tabular-nums; } .ds-queue p { margin: 0.25rem 0 0; color: var(--muted-foreground); font-size: 0.75rem; } .ds-progress { height: 0.5rem; margin-top: 0.75rem; overflow: hidden; border-radius: 9999px; background: var(--secondary); } .ds-progress span { display: block; width: 42%; height: 100%; background: var(--primary); } .ds-queue code { display: block; margin-top: 0.5rem; overflow: hidden; color: var(--foreground); font: 400 0.75rem/1.4 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Field Manual",
+    "overview": "Kalamata is calm and utilitarian: a compact desktop tool whose visual language makes local resources, readiness, and progress easy to inspect. Warm parchment neutrals keep the interface grounded while field olive is reserved for actions, focus, and positive operational status. The system is quiet without becoming vague. Structure comes from spacing, dividers, restrained tonal fills, and precise labels rather than decorative containers. Controls feel compact and dependable. Avoid glossy gaming aesthetics: no neon palettes, dramatic gradients, glass effects, or promotional spectacle.",
+    "keyCharacteristics": [
+      "Warm neutral canvas with a restrained olive operational accent.",
+      "Compact desktop density that remains usable in narrow, resizable windows.",
+      "Flat, border-led structure with tonal surfaces for state and grouping.",
+      "System sans for interface language and monospace for paths and identifiers.",
+      "Product identity expressed through truthful Steam metadata and readiness states, not decoration."
+    ],
+    "rules": [
+      { "name": "The Sparse Olive Rule", "body": "Field Olive marks what is actionable, focused, progressing, or successful; it is not a general-purpose decoration.", "section": "colors" },
+      { "name": "The Status Is More Than Color Rule", "body": "Every success, warning, unavailable, and failure state also carries explicit text or iconography.", "section": "colors" },
+      { "name": "The Operational Legibility Rule", "body": "Muted 0.75rem text is supporting evidence only; critical readiness, error recovery, and next-step guidance stays at body size and sufficient contrast.", "section": "typography" },
+      { "name": "The Flat-by-Default Rule", "body": "Persistent content surfaces do not use shadows; elevation signals temporary content or interaction priority.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do preserve warm parchment surfaces and reserve Field Olive for action, focus, progress, and success.",
+      "Do make readiness and disabled reasons explicit before users commit a download.",
+      "Do use dividers, spacing, and tonal fills before introducing another rounded container.",
+      "Do keep paths and identifiers monospace, truncation-safe, and recoverable through a tooltip or accessible label.",
+      "Do design for narrow, resizable desktop windows from the start."
+    ],
+    "donts": [
+      "Don't introduce neon color, dramatic gradients, glass effects, or glossy gaming ornament.",
+      "Don't turn the interface into a generic dashboard of equal-weight cards.",
+      "Don't use tiny muted copy for critical choices, errors, or recovery guidance.",
+      "Don't communicate installed, ready, unavailable, or failed states through color alone.",
+      "Don't fabricate capabilities, entitlement signals, download estimates, or resource metadata the application does not have."
+    ]
+  }
+}

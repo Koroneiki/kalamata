@@ -1,0 +1,29 @@
+import { access } from 'node:fs/promises'
+import { join } from 'node:path'
+import { KalamataDatabase } from './database.ts'
+
+export { KalamataDatabase } from './database.ts'
+export * from './manifest-files.ts'
+export * from './validation.ts'
+
+export async function discoverMigrationsFolder(): Promise<string> {
+  const candidates = [
+    join(import.meta.dir, 'migrations'),
+    join(import.meta.dir, '..', 'db', 'migrations'),
+  ]
+  for (const candidate of candidates) {
+    try {
+      await access(join(candidate, 'meta', '_journal.json'))
+      return candidate
+    } catch {
+      // Try the packaged and source layouts without consulting the working directory.
+    }
+  }
+  throw new Error('Bundled database migrations could not be located')
+}
+
+export async function openKalamataDatabase(
+  dataRoot: string,
+): Promise<KalamataDatabase> {
+  return KalamataDatabase.open(dataRoot, await discoverMigrationsFolder())
+}

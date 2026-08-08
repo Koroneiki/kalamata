@@ -14,6 +14,7 @@ export default {
       'dist/index.html': 'views/mainview/index.html',
       'dist/assets': 'views/mainview/assets',
       'dist/decompress-worker': 'bun/decompress-worker',
+      'src/db/migrations': 'bun/migrations',
     },
     watchIgnore: ['dist/**'],
   },

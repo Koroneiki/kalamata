@@ -12,7 +12,7 @@ Kalamata is a private desktop utility for anonymously looking up public Steam ap
 
 ## Operating Context
 
-- A user starts with a Steam App ID or, in the planned foundation, an app already recorded in the local library.
+- A user starts with a Steam App ID or an app already recorded in the local library.
 - Steam product identity remains live metadata rather than persisted user data.
 - Downloads use local manifest files and depot keys that are already available to Kalamata.
 - Core screens must remain operable in narrow, resizable desktop windows.
@@ -22,10 +22,6 @@ Kalamata is a private desktop utility for anonymously looking up public Steam ap
 Current capabilities:
 
 - Look up and display public Steam app metadata by App ID.
-- Download Steam depot content through the Bun backend when called with a local manifest and depot key; this capability is not exposed through UI or RPC yet.
-
-Planned foundation:
-
 - Show installed apps from a local library and public-branch depot readiness.
 - Let the user choose an install directory for a new app.
 - Let the user select ready depots and download them sequentially through one application-wide queue.
@@ -40,11 +36,11 @@ Durable constraints:
 ## Brand Commitments
 
 - The product name is Kalamata.
-- No logo, custom typography, visual reference, or mature design system has been approved yet.
+- `DESIGN.md` defines the approved visual system; no logo, custom typography, or product artwork has been approved.
 
 ## Evidence on Hand
 
-- `plan/IMPLEMENTATION_PLAN_FOUNDATION.md` is the approved implementation baseline for future foundation work; its features are not current capabilities.
+- `plan/IMPLEMENTATION_PLAN_FOUNDATION.md` is the implemented foundation baseline.
 - `plan/FEATURE_LIST.md` records features outside that foundation and must not be presented as available.
 - The repository contains no testimonials, benchmarks, customer claims, or product artwork; future UI work must not fabricate them.
 

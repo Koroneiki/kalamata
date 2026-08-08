@@ -145,7 +145,7 @@ function options(outputDirectory: string): DownloadDepotOptions {
     appId: 10,
     depotId: 20,
     manifestPath: 'unused',
-    depotKeyPath: 'unused',
+    depotKey: Buffer.alloc(32),
     outputDirectory,
   }
 }

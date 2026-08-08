@@ -132,11 +132,11 @@ async function downloadManifestCore(
   const jobs: ChunkJob[] = []
   const remainingByFile = new Map<string, number>()
   const resolvedPaths = new Set<string>()
-  let reusedBytes = 0
-  let downloadedBytes = 0
+  let reusedBytes = 0n
+  let downloadedBytes = 0n
   const total = currentFiles
     .filter((file) => !(file.flags & DIRECTORY))
-    .reduce((sum, file) => sum + fileSize(file), 0)
+    .reduce((sum, file) => sum + BigInt(file.size), 0n)
 
   for (const file of currentFiles) {
     throwIfAborted(options.signal)
@@ -162,7 +162,7 @@ async function downloadManifestCore(
       const hashMatches =
         oldFile.sha_content.toLowerCase() === file.sha_content.toLowerCase()
       if (!options.verifyAll && hashMatches && existingSize === size) {
-        reusedBytes += size
+        reusedBytes += BigInt(size)
         await setExecutable(outputPath, file)
         options.onEvent?.({ type: 'file-complete', path: outputPath })
         continue
@@ -203,16 +203,20 @@ async function downloadManifestCore(
     for (const chunk of needed) jobs.push({ path: outputPath, chunk })
   }
 
-  options.onEvent?.({ type: 'progress', downloaded: reusedBytes, total })
+  options.onEvent?.({
+    type: 'progress',
+    downloaded: reusedBytes.toString(),
+    total: total.toString(),
+  })
   if (jobs.length > 0) {
     const { servers } = await client.getContentServers(options.appId)
     const pool = new CDNClientPool(servers)
     await runWorkers(client, jobs, remainingByFile, pool, options, (bytes) => {
-      downloadedBytes += bytes
+      downloadedBytes += BigInt(bytes)
       options.onEvent?.({
         type: 'progress',
-        downloaded: reusedBytes + downloadedBytes,
-        total,
+        downloaded: (reusedBytes + downloadedBytes).toString(),
+        total: total.toString(),
       })
     })
   }
@@ -237,7 +241,11 @@ async function downloadManifestCore(
     options,
   )
   throwIfAborted(options.signal)
-  return { manifestId: manifest.gid_manifest, downloadedBytes, reusedBytes }
+  return {
+    manifestId: manifest.gid_manifest,
+    downloadedBytes: downloadedBytes.toString(),
+    reusedBytes: reusedBytes.toString(),
+  }
 }
 
 async function planChunkReuse(
@@ -471,10 +479,10 @@ function hasFileAncestor(
   return false
 }
 
-function reusedSize(matches: ChunkMatch[]): number {
+function reusedSize(matches: ChunkMatch[]): bigint {
   return matches.reduce(
-    (sum, match) => sum + Number(match.destination.cb_original),
-    0,
+    (sum, match) => sum + BigInt(match.destination.cb_original),
+    0n,
   )
 }
 

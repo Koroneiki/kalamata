@@ -28,14 +28,14 @@ export type DownloadEvent =
   | { type: 'file-validating'; path: string }
   | { type: 'file-complete'; path: string }
   | { type: 'file-deleted'; path: string }
-  | { type: 'progress'; downloaded: number; total: number }
+  | { type: 'progress'; downloaded: string; total: string }
   | { type: 'retry'; chunk: string; attempt: number }
 
 export interface DownloadDepotOptions {
   appId: number
   depotId: number
   manifestPath: string
-  depotKeyPath: string
+  depotKey: Buffer
   outputDirectory: string
   fileListPath?: string
   verifyAll?: boolean
@@ -45,6 +45,6 @@ export interface DownloadDepotOptions {
 
 export interface DownloadResult {
   manifestId: string
-  downloadedBytes: number
-  reusedBytes: number
+  downloadedBytes: string
+  reusedBytes: string
 }

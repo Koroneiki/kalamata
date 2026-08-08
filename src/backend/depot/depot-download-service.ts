@@ -1,11 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { downloadDepotContent } from './content-downloader.ts'
 import { readFileFilter } from './file-list.ts'
-import {
-  parseManifest,
-  readDepotKey,
-  validateManifest,
-} from './local-inputs.ts'
+import { parseManifest, validateManifest } from './local-inputs.ts'
 import { SteamContentClient } from './steam-content-client.ts'
 import type { SteamSession } from '../steam/steam-session.ts'
 import type { DownloadDepotOptions, DownloadResult } from './types.ts'
@@ -16,12 +12,12 @@ export class DepotDownloadService {
   async download(options: DownloadDepotOptions): Promise<DownloadResult> {
     validateOptions(options)
     throwIfAborted(options.signal)
-    const [key, manifestContents, fileFilter] = await Promise.all([
-      readDepotKey(options.depotKeyPath, options.depotId),
+    const [manifestContents, fileFilter] = await Promise.all([
       readFile(options.manifestPath),
       readFileFilter(options.fileListPath),
     ])
     throwIfAborted(options.signal)
+    const key = Buffer.from(options.depotKey)
     const manifest = parseManifest(manifestContents, key)
     validateManifest(manifest, options.depotId)
     throwIfAborted(options.signal)
@@ -71,14 +67,11 @@ function validateOptions(options: DownloadDepotOptions): void {
       throw new Error(`${name} must be a positive 32-bit integer`)
     }
   }
-  if (
-    !options.manifestPath ||
-    !options.depotKeyPath ||
-    !options.outputDirectory
-  ) {
-    throw new Error(
-      'manifestPath, depotKeyPath, and outputDirectory are required',
-    )
+  if (!options.manifestPath || !options.outputDirectory) {
+    throw new Error('manifestPath and outputDirectory are required')
+  }
+  if (!Buffer.isBuffer(options.depotKey) || options.depotKey.length !== 32) {
+    throw new Error('depotKey must be a 32-byte Buffer')
   }
 }
 

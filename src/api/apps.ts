@@ -1,12 +1,8 @@
-import { Electroview } from 'electrobun/view'
+import { electroview } from '@/api/transport'
 
-import type { AppRpc } from '@/types/rpc'
-
-const rpc = Electroview.defineRPC<AppRpc>({
-  maxRequestTime: 30_000,
-  handlers: {},
-})
-const electroview = new Electroview({ rpc })
+export function getAppSummary(appId: number) {
+  return electroview.rpc!.request.getAppSummary({ appId })
+}
 
 export function getAppDetails(appId: number) {
   return electroview.rpc!.request.getAppDetails({ appId })

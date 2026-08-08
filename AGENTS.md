@@ -66,6 +66,17 @@ shadcn-vue components are based on reka-ui v2 and use `modelValue` / `update:mod
 />
 ```
 
+## Playwright And Electrobun
+
+A normal Playwright browser cannot use Electrobun RPC because the native webview injects `window.__electrobun` and its Bun bridge. For browser UI testing:
+
+- Start Vite and use `browser_run_code_unsafe` with `page.addInitScript` before navigation to install a page-local mock bridge.
+- Initialize `window.__electrobun = {}` and handle RPC through `window.__electrobunBunBridge.postMessage`.
+- Return request responses through `window.__electrobun.receiveMessageFromBun({ type: 'response', id, success, payload })`.
+- Emit Bun messages with `{ type: 'message', id: 'downloadStateChanged', payload }`.
+- Keep this harness inside Playwright; do not add production or test-only RPC bypasses to the repository.
+- Treat Playwright as UI-state coverage only. Verify native dialogs, filesystem behavior, Steam access, downloads, and real RPC separately, and report the boundary accurately.
+
 ## Common Tasks
 
 Add a shadcn-vue button:

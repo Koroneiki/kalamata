@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises'
 import ContentManifest from 'steam-user/components/content_manifest.js'
 import {
   DIRECTORY,
@@ -8,48 +7,10 @@ import {
 } from './manifest-utils.ts'
 import type { DepotManifest } from './types.ts'
 
-export async function readDepotKey(
-  path: string,
-  depotId: number,
-): Promise<Buffer> {
-  const contents = await readFile(path, 'utf8')
-  const keys = new Map<number, Buffer>()
-
-  for (const rawLine of contents.split(/[\r\n]+/u)) {
-    const line = rawLine.trim()
-    if (!line) continue
-
-    const [id, hex, extra] = line.split(';')
-    if (extra !== undefined || !id || !hex) {
-      throw new Error(`Invalid depot key line: ${rawLine}`)
-    }
-
-    if (!/^\d+$/u.test(id))
-      throw new Error(`Invalid depot ID in key line: ${rawLine}`)
-    const parsedId = Number(id)
-    if (
-      !Number.isSafeInteger(parsedId) ||
-      parsedId < 0 ||
-      parsedId > 0xffffffff
-    ) {
-      throw new Error(`Invalid depot ID in key line: ${rawLine}`)
-    }
-    if (!/^[0-9a-f]{64}$/iu.test(hex)) {
-      throw new Error(
-        `Depot ${parsedId} key must contain exactly 64 hexadecimal characters`,
-      )
-    }
-    if (keys.has(parsedId))
-      throw new Error(`Duplicate key for depot ${parsedId}`)
-    keys.set(parsedId, Buffer.from(hex, 'hex'))
-  }
-
-  const key = keys.get(depotId)
-  if (key) return key
-  throw new Error(`No key for depot ${depotId} in ${path}`)
-}
-
 export function parseManifest(contents: Buffer, key: Buffer): DepotManifest {
+  if (!Buffer.isBuffer(key) || key.length !== 32) {
+    throw new Error('Depot key must be a 32-byte Buffer')
+  }
   const manifest = ContentManifest.parse(contents)
   if (manifest.filenames_encrypted) {
     ContentManifest.decryptFilenames(manifest, key)
@@ -57,9 +18,14 @@ export function parseManifest(contents: Buffer, key: Buffer): DepotManifest {
   return manifest
 }
 
-export function validateManifest(
+export function parseManifestEnvelope(contents: Buffer): DepotManifest {
+  return ContentManifest.parse(contents)
+}
+
+export function validateManifestEnvelope(
   manifest: DepotManifest,
   depotId: number,
+  manifestId?: string,
 ): void {
   if (manifest.depot_id !== depotId) {
     throw new Error(
@@ -69,8 +35,22 @@ export function validateManifest(
   if (!manifest.gid_manifest || !Array.isArray(manifest.files)) {
     throw new Error('Manifest is missing required metadata or files')
   }
-  if (!/^\d+$/u.test(manifest.gid_manifest))
+  if (!/^\d+$/u.test(manifest.gid_manifest)) {
     throw new Error('Manifest has an invalid manifest ID')
+  }
+  if (manifestId !== undefined && manifest.gid_manifest !== manifestId) {
+    throw new Error(
+      `Manifest has ID ${manifest.gid_manifest}, expected ${manifestId}`,
+    )
+  }
+}
+
+export function validateManifest(
+  manifest: DepotManifest,
+  depotId: number,
+  manifestId?: string,
+): void {
+  validateManifestEnvelope(manifest, depotId, manifestId)
 
   const filenames = new Set<string>()
   for (const file of manifest.files) {

@@ -1,7 +1,11 @@
-import { BrowserView, BrowserWindow, Updater } from 'electrobun/bun'
+import { BrowserView, BrowserWindow, Updater, Utils } from 'electrobun/bun'
 
 import { createSteamService } from '../backend/index.ts'
+import { FoundationService } from '../backend/foundation-service.ts'
+import { openKalamataDatabase } from '../db/index.ts'
+import { canonicalizeInstallDirectory } from '../db/validation.ts'
 import type { AppRpc } from '../types/rpc.ts'
+import { DownloadQueueCoordinator } from './download-queue.ts'
 
 const DEV_SERVER_URL = 'http://localhost:5173'
 
@@ -18,30 +22,46 @@ async function getMainViewUrl(): Promise<string> {
   return 'views://mainview/index.html'
 }
 
+const database = await openKalamataDatabase(Utils.paths.userData)
 const steam = createSteamService()
+const foundation = new FoundationService(steam, database)
+let queue: DownloadQueueCoordinator
 const rpc = BrowserView.defineRPC<AppRpc>({
   maxRequestTime: 30_000,
   handlers: {
     requests: {
+      async getAppSummary({ appId }) {
+        return foundation.getAppSummary(appId)
+      },
       async getAppDetails({ appId }) {
-        const product = await steam.getProductInfo(appId)
-        const associations = Object.values(
-          product.appinfo.common?.associations ?? {},
-        )
-
-        return {
-          appId,
-          name: product.appinfo.common?.name ?? `App ${appId}`,
-          developers: associations
-            .filter(({ type }) => type === 'developer')
-            .map(({ name }) => name),
-          publishers: associations
-            .filter(({ type }) => type === 'publisher')
-            .map(({ name }) => name),
-        }
+        return foundation.getAppDetails(appId)
+      },
+      getLibrary() {
+        return database.getLibrary()
+      },
+      async selectInstallDirectory({ startingPath }) {
+        const selected = await Utils.openFileDialog({
+          startingFolder: startingPath ?? Utils.paths.home,
+          allowedFileTypes: '*',
+          canChooseFiles: false,
+          canChooseDirectory: true,
+          allowsMultipleSelection: false,
+        })
+        const path = selected[0]
+        return path ? (await canonicalizeInstallDirectory(path)).path : null
+      },
+      getDownloadState() {
+        return queue.getState()
+      },
+      startDownload(request) {
+        return queue.start(request)
       },
     },
   },
+})
+
+queue = new DownloadQueueCoordinator(steam, database, (state) => {
+  rpc.send.downloadStateChanged(state)
 })
 
 new BrowserWindow({

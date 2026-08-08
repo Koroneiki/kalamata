@@ -1,39 +1,8 @@
-import { afterEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { expect, test } from 'bun:test'
+import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { tmpdir } from 'node:os'
-import {
-  parseManifest,
-  readDepotKey,
-  validateManifest,
-} from '../src/backend/depot/local-inputs.ts'
+import { parseManifest, validateManifest } from '../src/backend/depot/local-inputs.ts'
 import type { DepotManifest } from '../src/backend/depot/types.ts'
-
-let directory: string | undefined
-
-afterEach(async () => {
-  if (directory) await rm(directory, { recursive: true, force: true })
-  directory = undefined
-})
-
-describe('readDepotKey', () => {
-  test('selects and decodes the requested key', async () => {
-    directory = await mkdtemp(join(tmpdir(), 'depot-key-'))
-    const path = join(directory, 'steam.keys')
-    const expected = 'ab'.repeat(32)
-    await writeFile(path, `100;${'01'.repeat(32)}\n200;${expected}\n`)
-
-    expect((await readDepotKey(path, 200)).toString('hex')).toBe(expected)
-  })
-
-  test('rejects malformed matching keys', async () => {
-    directory = await mkdtemp(join(tmpdir(), 'depot-key-'))
-    const path = join(directory, 'steam.keys')
-    await writeFile(path, '200;abcd\n')
-
-    await expect(readDepotKey(path, 200)).rejects.toThrow('64 hexadecimal')
-  })
-})
 
 test('parses and validates the checked-in Balatro manifest without network access', async () => {
   const key = Buffer.from(

@@ -41,8 +41,8 @@ describe('downloadManifest', () => {
     )
     expect(result).toEqual({
       manifestId: '123',
-      downloadedBytes: 6,
-      reusedBytes: 0,
+      downloadedBytes: '6',
+      reusedBytes: '0',
     })
   })
 
@@ -58,7 +58,7 @@ describe('downloadManifest', () => {
     })
 
     expect(await readFile(join(directory, 'file.bin'), 'utf8')).toBe('wrong!')
-    expect(result.reusedBytes).toBe(6)
+    expect(result.reusedBytes).toBe('6')
     expect(client.downloadChunk).not.toHaveBeenCalled()
   })
 
@@ -90,8 +90,8 @@ describe('downloadManifest', () => {
     )
 
     expect(await readFile(join(directory, 'file.bin'), 'utf8')).toBe('abcxyz')
-    expect(result.downloadedBytes).toBe(3)
-    expect(result.reusedBytes).toBe(3)
+    expect(result.downloadedBytes).toBe('3')
+    expect(result.reusedBytes).toBe('3')
     expect(client.downloadChunk).toHaveBeenCalledTimes(1)
   })
 
@@ -121,8 +121,8 @@ describe('downloadManifest', () => {
     )
     expect(result).toEqual({
       manifestId: '123',
-      downloadedBytes: 3,
-      reusedBytes: 6,
+      downloadedBytes: '3',
+      reusedBytes: '6',
     })
     expect(client.downloadChunk).toHaveBeenCalledTimes(1)
   })
@@ -282,7 +282,7 @@ describe('downloadManifest', () => {
     )
 
     expect(client.downloadChunk).toHaveBeenCalledTimes(1)
-    expect(result.downloadedBytes).toBe(8)
+    expect(result.downloadedBytes).toBe('8')
     expect(await readFile(join(directory, 'first.bin'), 'utf8')).toBe('same')
     expect(await readFile(join(directory, 'second.bin'), 'utf8')).toBe('same')
   })
