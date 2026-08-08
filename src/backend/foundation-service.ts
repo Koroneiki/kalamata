@@ -8,7 +8,10 @@ import {
 
 export class FoundationService {
   constructor(
-    readonly steam: Pick<SteamService, 'getProductInfo' | 'downloadDepot'>,
+    readonly steam: Pick<
+      SteamService,
+      'getProductInfo' | 'getProductInfoWithDlc'
+    >,
     readonly database: KalamataDatabase,
   ) {}
 
@@ -18,7 +21,7 @@ export class FoundationService {
 
   async getAppDetails(appId: number): Promise<AppDetails> {
     return normalizeAppDetails(
-      await this.steam.getProductInfo(appId),
+      await this.steam.getProductInfoWithDlc(appId),
       this.database,
     )
   }

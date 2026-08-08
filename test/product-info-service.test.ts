@@ -81,7 +81,59 @@ describe('ProductInfoService', () => {
 
     await expect(service.getProductInfo(440)).rejects.toBe(error)
   })
+
+  test('fetches only valid unique directly listed DLCs without recursion', async () => {
+    const base = appInfo({
+      extended: {
+        listofdlc: '20, nope, 30, 20, 0, 4294967296, 40.5',
+      },
+    })
+    const dlc20 = appInfo({ extended: { listofdlc: '40' } })
+    const dlc30 = appInfo()
+    const getProductInfo = mock(
+      async (
+        appIds: number[],
+        _packageIds: number[],
+        _metaDataOnly: boolean,
+      ) =>
+        appIds[0] === 10
+          ? productResult({ 10: product(base) })
+          : productResult({ 20: product(dlc20), 30: product(dlc30) }),
+    )
+    const client = { getProductInfo } as unknown as SteamContentUser
+    const service = new ProductInfoService({ getClient: async () => client })
+
+    const result = await service.getProductInfoWithDlc(10)
+
+    expect(result.baseProduct).toMatchObject({ appId: 10, appinfo: base })
+    expect(result.dlcProducts.map(({ appId }) => appId)).toEqual([20, 30])
+    expect(getProductInfo.mock.calls).toEqual([
+      [[10], [], true],
+      [[20, 30], [], true],
+    ])
+  })
 })
+
+function appInfo(
+  value: Record<string, unknown> = {},
+): SteamUser.AppInfoContent {
+  return value as unknown as SteamUser.AppInfoContent
+}
+
+function product(appinfo: SteamUser.AppInfoContent) {
+  return { changenumber: 1, missingToken: false, appinfo }
+}
+
+function productResult(
+  apps: SteamUser.ProductInfo['apps'],
+): SteamUser.ProductInfo {
+  return {
+    apps,
+    packages: {},
+    unknownApps: [],
+    unknownPackages: [],
+  }
+}
 
 function createService(result: SteamUser.ProductInfo): {
   service: ProductInfoService

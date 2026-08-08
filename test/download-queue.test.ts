@@ -8,12 +8,16 @@ import type {
   DownloadDepotOptions,
   DownloadResult,
 } from '../src/backend/depot/types.ts'
-import type { ProductInfo } from '../src/backend/steam/types.ts'
+import type {
+  ProductInfo,
+  ProductInfoResult,
+} from '../src/backend/steam/types.ts'
 import { DownloadQueueCoordinator } from '../src/bun/download-queue.ts'
 import { KalamataDatabase } from '../src/db/database.ts'
 import type { DownloadQueueState } from '../src/types/rpc.ts'
 
 const APP_ID = 10
+const DLC_APP_ID = 20
 const DEPOTS = [
   {
     depotId: 2379781,
@@ -87,7 +91,7 @@ test('validates the whole plan, runs in order, maps events, and persists atomica
     }
   })
   const queue = new DownloadQueueCoordinator(
-    { getProductInfo: async () => product(), downloadDepot },
+    { getProductInfoWithDlc: async () => products(), downloadDepot },
     database,
     (state) => emitted.push(state),
   )
@@ -107,6 +111,10 @@ test('validates the whole plan, runs in order, maps events, and persists atomica
   releaseFirst()
   await waitForTerminal(queue)
   expect(calls).toEqual(DEPOTS.map(({ depotId }) => depotId))
+  expect(downloadDepot.mock.calls.map(([options]) => options.appId)).toEqual([
+    APP_ID,
+    DLC_APP_ID,
+  ])
   expect(maximumActive).toBe(1)
   expect(database.getLibrary()).toHaveLength(1)
   expect(database.getInstalls(APP_ID)).toHaveLength(2)
@@ -131,7 +139,7 @@ test('rejects duplicate IDs and unavailable later depots before downloading', as
   const { database, installPath } = await setup(false)
   const downloadDepot = mock(async () => resultFor(DEPOTS[0]))
   const queue = new DownloadQueueCoordinator(
-    { getProductInfo: async () => product(), downloadDepot },
+    { getProductInfoWithDlc: async () => products(), downloadDepot },
     database,
   )
   await expect(
@@ -157,7 +165,7 @@ test('stops after a download failure and retains prior committed installs', asyn
   const calls: number[] = []
   const queue = new DownloadQueueCoordinator(
     {
-      getProductInfo: async () => product(),
+      getProductInfoWithDlc: async () => products(),
       downloadDepot: async (options) => {
         calls.push(options.depotId)
         if (options.depotId === DEPOTS[1].depotId)
@@ -199,7 +207,7 @@ test('stops after persistence failure without marking the depot completed', asyn
   }
   const queue = new DownloadQueueCoordinator(
     {
-      getProductInfo: async () => product(),
+      getProductInfoWithDlc: async () => products(),
       downloadDepot: async ({ depotId }) =>
         resultFor(DEPOTS.find((depot) => depot.depotId === depotId)!),
     },
@@ -227,7 +235,7 @@ test('preserves exact byte totals beyond the safe integer range', async () => {
   const { database, installPath } = await setup()
   const queue = new DownloadQueueCoordinator(
     {
-      getProductInfo: async () => product(),
+      getProductInfoWithDlc: async () => products(),
       downloadDepot: async ({ depotId }) => ({
         manifestId: DEPOTS.find((depot) => depot.depotId === depotId)!
           .manifestId,
@@ -260,7 +268,7 @@ test('coalesces progress updates within one event-loop turn', async () => {
   const blocked = new Promise<void>((resolve) => (finish = resolve))
   const queue = new DownloadQueueCoordinator(
     {
-      getProductInfo: async () => product(),
+      getProductInfoWithDlc: async () => products(),
       downloadDepot: async (options) => {
         emitProgress = (downloaded) =>
           options.onEvent?.({ type: 'progress', downloaded, total: '100' })
@@ -315,6 +323,64 @@ test('downloader rejects a non-32-byte inline key before reading inputs', async 
   ).rejects.toThrow('32-byte Buffer')
 })
 
+test('rejects Steamworks and Unused depots before resource planning', async () => {
+  const { database, installPath } = await setup()
+  const resourceLookups: number[] = []
+  const originalGetDepotKey = database.getDepotKey.bind(database)
+  database.getDepotKey = (depotId) => {
+    resourceLookups.push(depotId)
+    return originalGetDepotKey(depotId)
+  }
+  const downloadDepot = mock(async () => resultFor(DEPOTS[0]))
+  const queue = new DownloadQueueCoordinator(
+    {
+      getProductInfoWithDlc: async () =>
+        products({
+          '228981': depotMetadata('1'),
+          '700': {},
+        }),
+      downloadDepot,
+    },
+    database,
+  )
+
+  for (const depotId of [228981, 700]) {
+    await expect(
+      queue.start({ appId: APP_ID, installPath, depotIds: [depotId] }),
+    ).rejects.toThrow(`Depot ${depotId} is not available`)
+  }
+  expect(resourceLookups).not.toContain(228981)
+  expect(resourceLookups).not.toContain(700)
+  expect(downloadDepot).not.toHaveBeenCalled()
+})
+
+test('starts no download when the embedded manifest depot ID differs', async () => {
+  const { database, installPath } = await setup()
+  const first = DEPOTS[0]
+  await copyFile(
+    join(
+      import.meta.dir,
+      'fixtures',
+      `${DEPOTS[1].depotId}_${DEPOTS[1].manifestId}.manifest`,
+    ),
+    join(
+      root!,
+      'manifest-files',
+      `${first.depotId}_${first.manifestId}.manifest`,
+    ),
+  )
+  const downloadDepot = mock(async () => resultFor(first))
+  const queue = new DownloadQueueCoordinator(
+    { getProductInfoWithDlc: async () => products(), downloadDepot },
+    database,
+  )
+
+  await expect(
+    queue.start({ appId: APP_ID, installPath, depotIds: [first.depotId] }),
+  ).rejects.toThrow(`Depot ${first.depotId} is not available`)
+  expect(downloadDepot).not.toHaveBeenCalled()
+})
+
 async function waitForTerminal(queue: DownloadQueueCoordinator): Promise<void> {
   while (queue.getState().status === 'running') await Bun.sleep(1)
 }
@@ -327,23 +393,40 @@ function resultFor(depot: (typeof DEPOTS)[number]): DownloadResult {
   }
 }
 
-function product(): ProductInfo {
+function product(
+  appId: number,
+  depotEntries: Record<string, unknown>,
+): ProductInfo {
   return {
-    appId: APP_ID,
+    appId,
     changenumber: 1,
     missingToken: false,
     appinfo: {
       common: { name: 'Queue Test' },
-      depots: Object.fromEntries(
-        DEPOTS.map((depot) => [
-          depot.depotId,
-          {
-            manifests: {
-              public: { gid: depot.manifestId, size: '10', download: '10' },
-            },
-          },
-        ]),
-      ),
+      depots: depotEntries,
     } as unknown as SteamUser.AppInfoContent,
+  }
+}
+
+function products(
+  extraBaseDepots: Record<string, unknown> = {},
+): ProductInfoResult {
+  return {
+    baseProduct: product(APP_ID, {
+      [DEPOTS[0].depotId]: depotMetadata(DEPOTS[0].manifestId),
+      ...extraBaseDepots,
+    }),
+    dlcProducts: [
+      product(DLC_APP_ID, {
+        [DEPOTS[1].depotId]: depotMetadata(DEPOTS[1].manifestId),
+      }),
+    ],
+  }
+}
+
+function depotMetadata(manifestId: string) {
+  return {
+    config: { oslist: 'windows' },
+    manifests: { public: { gid: manifestId, size: '10', download: '10' } },
   }
 }

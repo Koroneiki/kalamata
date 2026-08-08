@@ -1,11 +1,19 @@
-import type { AppDepot, AppDetails, AppSummary } from '../../types/rpc.ts'
+import type {
+  AppDepot,
+  AppDetails,
+  AppSummary,
+  DepotGroup,
+  EligibleAppDepot,
+} from '../../types/rpc.ts'
 import type { KalamataDatabase } from '../../db/database.ts'
 import { validateManagedManifest } from '../../db/manifest-files.ts'
 import { depotKeyFromHex } from '../../db/validation.ts'
-import type { ProductInfo } from './types.ts'
+import type { ProductInfo, ProductInfoResult } from './types.ts'
 
 export interface PublicDepot {
   depotId: number
+  ownerAppId: number
+  group: DepotGroup
   platform: string | null
   language: string | null
   manifestId: string | null
@@ -43,32 +51,52 @@ export function normalizeAppSummary(product: ProductInfo): AppSummary {
   }
 }
 
-export function extractPublicDepots(product: ProductInfo): PublicDepot[] {
-  const depots = asRecord(asRecord(product.appinfo).depots)
+export function extractPublicDepots(
+  products: ProductInfoResult,
+): PublicDepot[] {
   const result: PublicDepot[] = []
-  for (const [rawDepotId, rawDepot] of Object.entries(depots)) {
-    if (!/^[1-9]\d*$/u.test(rawDepotId)) continue
-    const depotId = Number(rawDepotId)
-    if (!Number.isInteger(depotId) || depotId > 0xffffffff) continue
-    const depot = asRecord(rawDepot)
-    const config = asRecord(depot.config)
-    const publicManifest = asRecord(asRecord(depot.manifests).public)
-    result.push({
-      depotId,
-      platform: restriction(config.oslist),
-      language: restriction(config.language),
-      manifestId: decimalString(publicManifest.gid),
-      sizeBytes: decimalString(publicManifest.size),
-      downloadBytes: decimalString(publicManifest.download),
-    })
+  const seen = new Set<number>()
+  for (const product of [products.baseProduct, ...products.dlcProducts]) {
+    const depots = asRecord(asRecord(product.appinfo).depots)
+    for (const [rawDepotId, rawDepot] of Object.entries(depots)) {
+      if (!/^[1-9]\d*$/u.test(rawDepotId)) continue
+      const depotId = Number(rawDepotId)
+      if (
+        !Number.isInteger(depotId) ||
+        depotId > 0xffffffff ||
+        seen.has(depotId)
+      )
+        continue
+      seen.add(depotId)
+      const depot = asRecord(rawDepot)
+      const config = asRecord(depot.config)
+      const publicManifest = asRecord(asRecord(depot.manifests).public)
+      const group = classifyDepot(
+        depotId,
+        product.appId === products.baseProduct.appId,
+        config.oslist,
+        publicManifest,
+      )
+      result.push({
+        depotId,
+        ownerAppId: product.appId,
+        group,
+        platform: restriction(config.oslist),
+        language: restriction(config.language),
+        manifestId: decimalString(publicManifest.gid),
+        sizeBytes: decimalString(publicManifest.size),
+        downloadBytes: decimalString(publicManifest.download),
+      })
+    }
   }
   return result.sort((left, right) => left.depotId - right.depotId)
 }
 
 export async function normalizeAppDetails(
-  product: ProductInfo,
+  products: ProductInfoResult,
   database: KalamataDatabase,
 ): Promise<AppDetails> {
+  const product = products.baseProduct
   const library = database.getLibraryEntry(product.appId)
   const installs = new Map(
     database
@@ -76,10 +104,24 @@ export async function normalizeAppDetails(
       .map((row) => [row.depotId, row.installedManifestId]),
   )
   const depots: AppDepot[] = []
-  for (const depot of extractPublicDepots(product)) {
+  for (const depot of extractPublicDepots(products)) {
+    const { group, ...depotFields } = depot
+    if (!isEligibleGroup(group)) {
+      depots.push({
+        ...depotFields,
+        group,
+        eligible: false,
+        manifestStatus: null,
+        keyStatus: null,
+        installStatus: null,
+        selectable: false,
+      })
+      continue
+    }
+
     const keyText = database.getDepotKey(depot.depotId)
     let key: Buffer | undefined
-    let keyStatus: AppDepot['keyStatus'] = 'missing'
+    let keyStatus: EligibleAppDepot['keyStatus'] = 'missing'
     if (keyText !== null) {
       try {
         key = depotKeyFromHex(keyText)
@@ -93,7 +135,7 @@ export async function normalizeAppDetails(
     const current = depot.manifestId
       ? rows.find((row) => row.manifestId === depot.manifestId)
       : undefined
-    let manifestStatus: AppDepot['manifestStatus'] = rows.length
+    let manifestStatus: EligibleAppDepot['manifestStatus'] = rows.length
       ? 'outdated'
       : 'missing'
     if (current && depot.manifestId) {
@@ -112,13 +154,15 @@ export async function normalizeAppDetails(
     }
 
     const installed = installs.get(depot.depotId)
-    const installStatus: AppDepot['installStatus'] = !installed
+    const installStatus: EligibleAppDepot['installStatus'] = !installed
       ? 'not-installed'
       : installed === depot.manifestId
         ? 'current'
         : 'outdated'
     depots.push({
-      ...depot,
+      ...depotFields,
+      group,
+      eligible: true,
       manifestStatus,
       keyStatus,
       installStatus,
@@ -133,6 +177,43 @@ export async function normalizeAppDetails(
     installPath: library?.installPath ?? null,
     depots,
   }
+}
+
+function isEligibleGroup(
+  group: DepotGroup,
+): group is EligibleAppDepot['group'] {
+  return group === 'Base Game' || group === 'DLC'
+}
+
+function classifyDepot(
+  depotId: number,
+  ownedByBase: boolean,
+  oslist: unknown,
+  publicManifest: Record<string, unknown>,
+): DepotGroup {
+  if (isSteamworksDepot(depotId)) return 'Steamworks Common Redistributables'
+  if (
+    rawEmpty(oslist) &&
+    rawEmpty(publicManifest.gid) &&
+    rawEmpty(publicManifest.size) &&
+    rawEmpty(publicManifest.download)
+  )
+    return 'Unused'
+  return ownedByBase ? 'Base Game' : 'DLC'
+}
+
+function isSteamworksDepot(depotId: number): boolean {
+  return (
+    (depotId >= 228981 && depotId <= 228990) ||
+    (depotId >= 229000 && depotId <= 229007) ||
+    (depotId >= 229010 && depotId <= 229012) ||
+    depotId === 229020 ||
+    (depotId >= 229030 && depotId <= 229033)
+  )
+}
+
+function rawEmpty(value: unknown): boolean {
+  return value === undefined || value === null || value === ''
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

@@ -65,6 +65,7 @@ watch(
 )
 
 function unavailableReason(depot: AppDepot) {
+  if (!depot.eligible) return 'Not eligible for download'
   if (depot.installStatus === 'current') return 'Already installed and current'
   if (depot.manifestStatus !== 'ready')
     return `Manifest ${depot.manifestStatus}`

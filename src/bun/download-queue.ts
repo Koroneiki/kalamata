@@ -8,19 +8,20 @@ import type {
   DownloadEvent,
   DownloadResult,
 } from '../backend/depot/types.ts'
-import type { ProductInfo } from '../backend/steam/types.ts'
+import type { ProductInfoResult } from '../backend/steam/types.ts'
 import { normalizeAppDetails } from '../backend/steam/product-normalizer.ts'
 import type { KalamataDatabase } from '../db/database.ts'
 import { validateManagedManifest } from '../db/manifest-files.ts'
 import { depotKeyFromHex, validateId } from '../db/validation.ts'
 
 interface QueueSteamService {
-  getProductInfo(appId: number): Promise<ProductInfo>
+  getProductInfoWithDlc(appId: number): Promise<ProductInfoResult>
   downloadDepot(options: DownloadDepotOptions): Promise<DownloadResult>
 }
 
 interface PlannedDepot {
   depotId: number
+  ownerAppId: number
   manifestId: string
   manifestPath: string
   depotKey: Buffer
@@ -61,14 +62,17 @@ export class DownloadQueueCoordinator {
         request.appId,
         request.installPath,
       )
-      const product = await this.steam.getProductInfo(request.appId)
-      const details = await normalizeAppDetails(product, this.database)
+      const products = await this.steam.getProductInfoWithDlc(request.appId)
+      const details = await normalizeAppDetails(products, this.database)
       const detailsById = new Map(
         details.depots.map((depot) => [depot.depotId, depot]),
       )
       const plan: PlannedDepot[] = []
       for (const depotId of request.depotIds) {
         const detailsDepot = detailsById.get(depotId)
+        if (!detailsDepot?.eligible) {
+          throw new Error(`Depot ${depotId} is not available for download`)
+        }
         if (!detailsDepot?.manifestId) {
           throw new Error(`Depot ${depotId} has no public manifest`)
         }
@@ -92,6 +96,7 @@ export class DownloadQueueCoordinator {
         )
         plan.push({
           depotId,
+          ownerAppId: detailsDepot.ownerAppId,
           manifestId: detailsDepot.manifestId,
           manifestPath,
           depotKey,
@@ -137,7 +142,7 @@ export class DownloadQueueCoordinator {
       let failureKind: 'download' | 'persistence' = 'download'
       try {
         const result = await this.steam.downloadDepot({
-          appId: this.#state.appId,
+          appId: depot.ownerAppId,
           depotId: depot.depotId,
           manifestPath: depot.manifestPath,
           depotKey: depot.depotKey,

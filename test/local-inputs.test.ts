@@ -1,7 +1,10 @@
 import { expect, test } from 'bun:test'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { parseManifest, validateManifest } from '../src/backend/depot/local-inputs.ts'
+import {
+  parseManifest,
+  validateManifest,
+} from '../src/backend/depot/local-inputs.ts'
 import type { DepotManifest } from '../src/backend/depot/types.ts'
 
 test('parses and validates the checked-in Balatro manifest without network access', async () => {
@@ -41,6 +44,12 @@ test('rejects non-decimal manifest integers', () => {
     manifest.files[0]!.size = value
     expect(() => validateManifest(manifest, 20)).toThrow('invalid size')
   }
+})
+
+test('rejects a manifest with a different embedded depot ID', () => {
+  expect(() => validateManifest(basicManifest(), 21)).toThrow(
+    'Manifest belongs to depot 20, expected 21',
+  )
 })
 
 test('rejects manifest paths that differ only by separators', () => {

@@ -25,3 +25,8 @@ export interface ProductInfo {
   missingToken: boolean
   appinfo: SteamUser.AppInfoContent
 }
+
+export interface ProductInfoResult {
+  baseProduct: ProductInfo
+  dlcProducts: ProductInfo[]
+}

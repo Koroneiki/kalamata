@@ -6,18 +6,42 @@ export interface AppSummary {
   artworkUrl: string | null
 }
 
-export interface AppDepot {
+export type DepotGroup =
+  | 'Base Game'
+  | 'DLC'
+  | 'Steamworks Common Redistributables'
+  | 'Unused'
+
+interface AppDepotBase {
   depotId: number
+  ownerAppId: number
+  group: DepotGroup
   platform: string | null
   language: string | null
   manifestId: string | null
   sizeBytes: string | null
   downloadBytes: string | null
+}
+
+export interface EligibleAppDepot extends AppDepotBase {
+  eligible: true
+  group: 'Base Game' | 'DLC'
   manifestStatus: 'ready' | 'missing' | 'outdated' | 'invalid'
   keyStatus: 'ready' | 'missing' | 'invalid'
   installStatus: 'not-installed' | 'current' | 'outdated'
   selectable: boolean
 }
+
+export interface IneligibleAppDepot extends AppDepotBase {
+  eligible: false
+  group: 'Steamworks Common Redistributables' | 'Unused'
+  manifestStatus: null
+  keyStatus: null
+  installStatus: null
+  selectable: false
+}
+
+export type AppDepot = EligibleAppDepot | IneligibleAppDepot
 
 export interface AppDetails extends AppSummary {
   installPath: string | null

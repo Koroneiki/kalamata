@@ -2,14 +2,14 @@ import { DepotDownloadService } from './depot/depot-download-service.ts'
 import type { DownloadDepotOptions, DownloadResult } from './depot/types.ts'
 import { ProductInfoService } from './steam/product-info-service.ts'
 import { SteamSession } from './steam/steam-session.ts'
-import type { ProductInfo } from './steam/types.ts'
+import type { ProductInfo, ProductInfoResult } from './steam/types.ts'
 
 export type {
   DownloadDepotOptions,
   DownloadEvent,
   DownloadResult,
 } from './depot/types.ts'
-export type { ProductInfo } from './steam/types.ts'
+export type { ProductInfo, ProductInfoResult } from './steam/types.ts'
 
 export class SteamService {
   readonly #session: SteamSession
@@ -32,6 +32,10 @@ export class SteamService {
 
   getProductInfo(appId: number): Promise<ProductInfo> {
     return this.#products.getProductInfo(appId)
+  }
+
+  getProductInfoWithDlc(appId: number): Promise<ProductInfoResult> {
+    return this.#products.getProductInfoWithDlc(appId)
   }
 
   dispose(): void {
