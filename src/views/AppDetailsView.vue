@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { useQuery } from '@pinia/colada'
-import { ArrowLeft, Download, FolderOpen, ImageOff, Lock } from '@lucide/vue'
+import { Download, FolderOpen, ImageOff, Lock } from '@lucide/vue'
 import { computed, nextTick, ref, watch } from 'vue'
-import { RouterLink, useRoute } from 'vue-router'
+import { useRoute } from 'vue-router'
 
 import { selectInstallDirectory } from '@/api/install-directory'
 import DownloadDepotsDialog from '@/components/forms/DownloadDepotsDialog.vue'
@@ -133,17 +133,7 @@ async function focusDownloadQueue() {
 </script>
 
 <template>
-  <main
-    class="mx-auto min-h-screen w-full max-w-5xl px-4 py-6 sm:px-8 sm:py-10"
-  >
-    <RouterLink
-      class="text-muted-foreground hover:text-foreground focus-visible:ring-ring inline-flex items-center gap-1.5 rounded-sm text-sm outline-none focus-visible:ring-2"
-      to="/"
-    >
-      <ArrowLeft class="size-4" aria-hidden="true" />
-      Library and search
-    </RouterLink>
-
+  <div class="mx-auto w-full max-w-5xl px-4 py-6 sm:px-8 sm:py-10">
     <p v-if="!validAppId" class="text-destructive mt-8" role="alert">
       Invalid App ID.
     </p>
@@ -390,5 +380,5 @@ async function focusDownloadQueue() {
         @download-started="focusDownloadQueue"
       />
     </template>
-  </main>
+  </div>
 </template>
