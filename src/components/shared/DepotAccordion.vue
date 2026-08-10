@@ -49,10 +49,6 @@ function installLabel(status: AppDepot['installStatus']) {
   return null
 }
 
-function manifestLabel(status: NonNullable<AppDepot['manifestStatus']>) {
-  return `Manifest ${status}`
-}
-
 function platforms(platform: string | null) {
   if (!platform) return []
   return platform
@@ -128,7 +124,7 @@ function formattedBytes(value: string | null) {
                     class="flex max-w-full flex-wrap justify-end gap-2"
                   >
                     <Badge :variant="resourceVariant(depot.manifestStatus)">
-                      {{ manifestLabel(depot.manifestStatus) }}
+                      Manifest {{ depot.manifestStatus }}
                     </Badge>
                     <Badge :variant="resourceVariant(depot.keyStatus)">
                       Key {{ depot.keyStatus }}
