@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import {
+  copyFile,
   mkdir,
   mkdtemp,
+  readFile,
   realpath,
   rm,
   symlink,
@@ -36,6 +38,30 @@ async function openDatabase(): Promise<KalamataDatabase> {
   return database
 }
 
+async function openDatabaseAtMigration(index: number): Promise<KalamataDatabase> {
+  root = await mkdtemp(join(tmpdir(), 'kalamata-db-'))
+  const migrations = join(root, 'migrations')
+  const metadata = join(migrations, 'meta')
+  await mkdir(metadata, { recursive: true })
+  const source = join(import.meta.dir, '..', 'src', 'db', 'migrations')
+  const journal = JSON.parse(
+    await readFile(join(source, 'meta', '_journal.json'), 'utf8'),
+  )
+  journal.entries = journal.entries.slice(0, index + 1)
+  await writeFile(
+    join(metadata, '_journal.json'),
+    `${JSON.stringify(journal, null, 2)}\n`,
+  )
+  for (const entry of journal.entries) {
+    await copyFile(
+      join(source, `${entry.tag}.sql`),
+      join(migrations, `${entry.tag}.sql`),
+    )
+  }
+  database = await KalamataDatabase.open(root, migrations)
+  return database
+}
+
 describe('foundation database', () => {
   test('migrates an empty database and enables WAL foreign keys', async () => {
     const db = await openDatabase()
@@ -66,6 +92,30 @@ describe('foundation database', () => {
         .all()
         .map(({ table }) => table),
     ).toEqual(['library'])
+  })
+
+  test('preserves installed depots when upgrading a populated database', async () => {
+    let db = await openDatabaseAtMigration(1)
+    db.sqlite
+      .query(
+        'INSERT INTO library (app_id, install_path, created_at) VALUES (?, ?, ?)',
+      )
+      .run(10, root!, 1000)
+    db.addManifest(20, '123')
+    db.recordInstalledDepot(10, root!, 20, '123', 2000)
+    db.close()
+    database = undefined
+
+    db = await KalamataDatabase.open(
+      root!,
+      join(import.meta.dir, '..', 'src', 'db', 'migrations'),
+    )
+    database = db
+
+    expect(db.getInstalls(10)).toEqual([
+      { depotId: 20, installedManifestId: '123' },
+    ])
+    expect(db.sqlite.query('PRAGMA foreign_key_check').all()).toEqual([])
   })
 
   test('requires a library entry and registered manifests', async () => {

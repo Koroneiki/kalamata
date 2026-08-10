@@ -52,7 +52,7 @@ const rpc = BrowserView.defineRPC<AppRpc>({
         database.removeLibraryEntry(appId)
       },
       setSelectedDepots({ appId, depotIds }) {
-        return database.replaceSelectedDepotIds(appId, depotIds)
+        return foundation.setSelectedDepots(appId, depotIds)
       },
       async selectInstallDirectory({ startingPath }) {
         const selected = await Utils.openFileDialog({

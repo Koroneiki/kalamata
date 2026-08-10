@@ -13,6 +13,7 @@ import type {
   ProductInfoResult,
 } from '../src/backend/steam/types.ts'
 import { KalamataDatabase } from '../src/db/database.ts'
+import { FoundationService } from '../src/backend/foundation-service.ts'
 
 const DEPOT_ID = 2379781
 const MANIFEST_ID = '3512319404653808464'
@@ -145,6 +146,25 @@ test('derives ready, invalid, outdated, and installed readiness independently', 
     manifestStatus: 'outdated',
     installStatus: 'outdated',
   })
+})
+
+test('persists only depots belonging to the app', async () => {
+  const db = await setup()
+  db.addLibraryEntry(10)
+  const service = new FoundationService(
+    {
+      getProductInfo: async () => makeProduct(),
+      getProductInfoWithDlc: async () => products(makeProduct()),
+    },
+    db,
+  )
+
+  await expect(service.setSelectedDepots(10, [20])).rejects.toThrow(
+    'not available for this app',
+  )
+  await expect(service.setSelectedDepots(10, [DEPOT_ID])).resolves.toEqual([
+    DEPOT_ID,
+  ])
 })
 
 test('collects base then direct DLC depots with first-owner precedence', () => {
