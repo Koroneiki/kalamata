@@ -54,7 +54,7 @@ function manifestLabel(status: NonNullable<AppDepot['manifestStatus']>) {
 }
 
 function platforms(platform: string | null) {
-  if (!platform) return ['All platforms']
+  if (!platform) return []
   return platform
     .split(',')
     .map((value) => value.trim())
@@ -105,7 +105,10 @@ function formattedBytes(value: string | null) {
               >
                 <div class="flex flex-wrap items-start justify-between gap-3">
                   <div class="min-w-0 space-y-2">
-                    <p class="font-medium tabular-nums">{{ depot.depotId }}</p>
+                    <p class="font-medium tabular-nums">
+                      <span class="text-muted-foreground">ID</span>
+                      {{ depot.depotId }}
+                    </p>
                     <div class="flex flex-wrap gap-2">
                       <Badge
                         v-for="platform in platforms(depot.platform)"
@@ -114,13 +117,10 @@ function formattedBytes(value: string | null) {
                       >
                         {{ platform }}
                       </Badge>
+                      <Badge v-if="depot.language" variant="outline">
+                        {{ depot.language }}
+                      </Badge>
                     </div>
-                    <p
-                      v-if="depot.language"
-                      class="text-muted-foreground text-xs"
-                    >
-                      Language: {{ depot.language }}
-                    </p>
                   </div>
 
                   <div
@@ -178,62 +178,77 @@ function formattedBytes(value: string | null) {
       v-if="redistributables.length"
       class="border-border rounded-lg border p-4"
     >
-      <header class="flex flex-wrap items-center gap-2">
-        <h2 class="text-base font-semibold">
-          Steamworks Common Redistributables
-        </h2>
-        <Badge variant="secondary" class="tabular-nums">{{
-          redistributables.length
-        }}</Badge>
-      </header>
-
-      <ul
-        class="border-border mt-4 overflow-hidden rounded-lg border"
-        aria-label="Steamworks Common Redistributables depots"
-      >
-        <li
-          v-for="depot in redistributables"
-          :key="depot.depotId"
-          class="border-border border-b px-4 py-4 last:border-b-0"
+      <Accordion type="single" collapsible>
+        <AccordionItem
+          value="Steamworks Common Redistributables"
+          class="border-b-0"
         >
-          <div class="min-w-0 space-y-2">
-            <p class="font-medium tabular-nums">{{ depot.depotId }}</p>
-            <div class="flex flex-wrap gap-2">
-              <Badge
-                v-for="platform in platforms(depot.platform)"
-                :key="platform"
-                variant="outline"
-              >
-                {{ platform }}
+          <AccordionTrigger class="py-0 hover:no-underline">
+            <span class="flex min-w-0 items-center gap-2">
+              <span class="text-base font-semibold">
+                Steamworks Common Redistributables
+              </span>
+              <Badge variant="secondary" class="tabular-nums">
+                {{ redistributables.length }}
               </Badge>
-            </div>
-            <p v-if="depot.language" class="text-muted-foreground text-xs">
-              Language: {{ depot.language }}
-            </p>
-          </div>
+            </span>
+          </AccordionTrigger>
+          <AccordionContent class="pb-0">
+            <ul
+              class="border-border mt-4 overflow-hidden rounded-lg border"
+              aria-label="Steamworks Common Redistributables depots"
+            >
+              <li
+                v-for="depot in redistributables"
+                :key="depot.depotId"
+                class="border-border border-b px-4 py-4 last:border-b-0"
+              >
+                <div class="min-w-0 space-y-2">
+                  <p class="font-medium tabular-nums">
+                    <span class="text-muted-foreground">ID</span>
+                    {{ depot.depotId }}
+                  </p>
+                  <div class="flex flex-wrap gap-2">
+                    <Badge
+                      v-for="platform in platforms(depot.platform)"
+                      :key="platform"
+                      variant="outline"
+                    >
+                      {{ platform }}
+                    </Badge>
+                    <Badge v-if="depot.language" variant="outline">
+                      {{ depot.language }}
+                    </Badge>
+                  </div>
+                </div>
 
-          <dl class="mt-4 grid min-w-0 gap-x-6 gap-y-3 sm:grid-cols-3">
-            <div class="min-w-0 space-y-1">
-              <dt class="text-muted-foreground text-xs">Latest Manifest GID</dt>
-              <dd class="font-mono text-sm break-all">
-                {{ depot.manifestId ?? 'Unavailable' }}
-              </dd>
-            </div>
-            <div class="space-y-1">
-              <dt class="text-muted-foreground text-xs">Download Size</dt>
-              <dd class="text-sm font-medium tabular-nums">
-                {{ formattedBytes(depot.downloadBytes) }}
-              </dd>
-            </div>
-            <div class="space-y-1">
-              <dt class="text-muted-foreground text-xs">Size on Disk</dt>
-              <dd class="text-sm font-medium tabular-nums">
-                {{ formattedBytes(depot.sizeBytes) }}
-              </dd>
-            </div>
-          </dl>
-        </li>
-      </ul>
+                <dl class="mt-4 grid min-w-0 gap-x-6 gap-y-3 sm:grid-cols-3">
+                  <div class="min-w-0 space-y-1">
+                    <dt class="text-muted-foreground text-xs">
+                      Latest Manifest GID
+                    </dt>
+                    <dd class="font-mono text-sm break-all">
+                      {{ depot.manifestId ?? 'Unavailable' }}
+                    </dd>
+                  </div>
+                  <div class="space-y-1">
+                    <dt class="text-muted-foreground text-xs">Download Size</dt>
+                    <dd class="text-sm font-medium tabular-nums">
+                      {{ formattedBytes(depot.downloadBytes) }}
+                    </dd>
+                  </div>
+                  <div class="space-y-1">
+                    <dt class="text-muted-foreground text-xs">Size on Disk</dt>
+                    <dd class="text-sm font-medium tabular-nums">
+                      {{ formattedBytes(depot.sizeBytes) }}
+                    </dd>
+                  </div>
+                </dl>
+              </li>
+            </ul>
+          </AccordionContent>
+        </AccordionItem>
+      </Accordion>
     </section>
   </div>
 </template>
