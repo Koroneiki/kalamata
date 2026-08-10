@@ -29,7 +29,7 @@ interface PlannedDepot {
 
 export class DownloadQueueCoordinator {
   #state: DownloadQueueState = { status: 'idle' }
-  #starting = false
+  #startingAppId: number | null = null
   #progressEmissionHandle: ReturnType<typeof setImmediate> | undefined
 
   constructor(
@@ -42,11 +42,18 @@ export class DownloadQueueCoordinator {
     return structuredClone(this.#state)
   }
 
+  isBusyForApp(appId: number): boolean {
+    return (
+      this.#startingAppId === appId ||
+      (this.#state.status === 'running' && this.#state.appId === appId)
+    )
+  }
+
   async start(request: StartDownloadRequest): Promise<RunningDownloadQueue> {
-    if (this.#starting || this.#state.status === 'running') {
+    if (this.#startingAppId !== null || this.#state.status === 'running') {
       throw new Error('Another download queue is already running')
     }
-    this.#starting = true
+    this.#startingAppId = request.appId
     try {
       validateId(request.appId, 'appId')
       if (!request.depotIds.length) {
@@ -121,7 +128,7 @@ export class DownloadQueueCoordinator {
       void this.run(plan)
       return structuredClone(initial)
     } finally {
-      this.#starting = false
+      this.#startingAppId = null
     }
   }
 

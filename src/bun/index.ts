@@ -45,8 +45,7 @@ const rpc = BrowserView.defineRPC<AppRpc>({
         return database.addLibraryEntry(appId)
       },
       removeLibraryEntry({ appId }) {
-        const state = queue.getState()
-        if (state.status === 'running' && state.appId === appId) {
+        if (queue.isBusyForApp(appId)) {
           throw new Error('A game cannot be removed while it is downloading')
         }
         database.removeLibraryEntry(appId)

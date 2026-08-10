@@ -138,6 +138,42 @@ test('validates the whole plan, runs in order, maps events, and persists atomica
   expect(() => JSON.stringify(emitted)).not.toThrow()
 })
 
+test('reports the app as busy while its download is being planned', async () => {
+  const { database, installPath } = await setup()
+  let releaseProductInfo!: () => void
+  const productInfoBlocked = new Promise<void>(
+    (resolve) => (releaseProductInfo = resolve),
+  )
+  let planningStarted!: () => void
+  const planning = new Promise<void>((resolve) => (planningStarted = resolve))
+  const queue = new DownloadQueueCoordinator(
+    {
+      getProductInfoWithDlc: async () => {
+        planningStarted()
+        await productInfoBlocked
+        return products()
+      },
+      downloadDepot: async () => resultFor(DEPOTS[0]),
+    },
+    database,
+  )
+
+  const start = queue.start({
+    appId: APP_ID,
+    installPath,
+    depotIds: [DEPOTS[0].depotId],
+  })
+  await planning
+  expect(queue.getState()).toEqual({ status: 'idle' })
+  expect(queue.isBusyForApp(APP_ID)).toBe(true)
+  expect(queue.isBusyForApp(DLC_APP_ID)).toBe(false)
+
+  releaseProductInfo()
+  await start
+  await waitForTerminal(queue)
+  expect(queue.isBusyForApp(APP_ID)).toBe(false)
+})
+
 test('rejects duplicate IDs and unavailable later depots before downloading', async () => {
   const { database, installPath } = await setup(false)
   const downloadDepot = mock(async () => resultFor(DEPOTS[0]))
