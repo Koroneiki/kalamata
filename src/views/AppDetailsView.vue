@@ -205,27 +205,27 @@ async function focusDownloadQueue() {
             </h1>
           </div>
           <dl
-            class="mt-6 grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm"
+            class="mt-6 grid grid-cols-2 gap-x-6 gap-y-3 text-sm"
           >
-            <div class="contents">
+            <div class="min-w-0 space-y-1">
               <dt class="text-muted-foreground">App ID</dt>
               <dd class="font-mono tabular-nums">{{ data.appId }}</dd>
             </div>
-            <div class="contents">
+            <div class="min-w-0 space-y-1">
               <dt class="text-muted-foreground">Developer</dt>
               <dd class="min-w-0 break-words">
                 {{ data.developers.join(', ') || 'Unavailable' }}
               </dd>
             </div>
-            <div class="contents">
+            <div class="min-w-0 space-y-1">
+              <dt class="text-muted-foreground">Release Date</dt>
+              <dd>{{ releaseDate }}</dd>
+            </div>
+            <div class="min-w-0 space-y-1">
               <dt class="text-muted-foreground">Publisher</dt>
               <dd class="min-w-0 break-words">
                 {{ data.publishers.join(', ') || 'Unavailable' }}
               </dd>
-            </div>
-            <div class="contents">
-              <dt class="text-muted-foreground">Release Date</dt>
-              <dd>{{ releaseDate }}</dd>
             </div>
           </dl>
         </div>
