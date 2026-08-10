@@ -1,4 +1,4 @@
-const BYTE_UNITS = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB'] as const
+const BYTE_UNITS = ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB'] as const
 
 export function formatBytes(value: string): string {
   const bytes = BigInt(value)

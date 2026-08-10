@@ -105,7 +105,7 @@
       "name": "Download Queue",
       "kind": "custom",
       "description": "A tonal operational panel for one application-wide queue.",
-      "html": "<section class=\"ds-queue\" aria-label=\"Download queue running\"><div class=\"ds-queue-head\"><strong>Downloading depot 228984</strong><span>42%</span></div><p>Queue 1 of 2 · 1.2 GB of 2.8 GB</p><div class=\"ds-progress\"><span></span></div><code>/Users/local/Games/example</code></section>",
+      "html": "<section class=\"ds-queue\" aria-label=\"Download queue running\"><div class=\"ds-queue-head\"><strong>Downloading depot 228984</strong><span>42%</span></div><p>Queue 1 of 2 · 1.2 GiB of 2.8 GiB</p><div class=\"ds-progress\"><span></span></div><code>/Users/local/Games/example</code></section>",
       "css": ".ds-queue { padding: 1rem; border-radius: 0.625rem; background: color-mix(in oklch, var(--muted) 70%, transparent); color: var(--foreground); font: 400 0.875rem/1.5 ui-sans-serif, system-ui, sans-serif; } .ds-queue-head { display: flex; justify-content: space-between; gap: 0.75rem; font-variant-numeric: tabular-nums; } .ds-queue p { margin: 0.25rem 0 0; color: var(--muted-foreground); font-size: 0.75rem; } .ds-progress { height: 0.5rem; margin-top: 0.75rem; overflow: hidden; border-radius: 9999px; background: var(--secondary); } .ds-progress span { display: block; width: 42%; height: 100%; background: var(--primary); } .ds-queue code { display: block; margin-top: 0.5rem; overflow: hidden; color: var(--foreground); font: 400 0.75rem/1.4 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }"
     }
   ],
