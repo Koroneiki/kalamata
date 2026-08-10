@@ -133,13 +133,13 @@ async function focusDownloadQueue() {
 
 <template>
   <div class="mx-auto w-full max-w-5xl px-4 py-6 sm:px-8 sm:py-10">
-    <p v-if="!validAppId" class="text-destructive mt-8" role="alert">
+    <p v-if="!validAppId" class="text-destructive" role="alert">
       Invalid App ID.
     </p>
 
     <div
       v-else-if="isPending"
-      class="mt-6 space-y-6"
+      class="space-y-6"
       aria-label="Loading app details"
     >
       <div
@@ -162,7 +162,7 @@ async function focusDownloadQueue() {
       <Skeleton class="h-12 w-full rounded-lg" />
     </div>
 
-    <div v-else-if="error" class="bg-muted mt-8 rounded-lg p-4" role="alert">
+    <div v-else-if="error" class="bg-muted rounded-lg p-4" role="alert">
       <p class="font-medium">App details could not be loaded</p>
       <p class="text-muted-foreground mt-1 text-sm">{{ error.message }}</p>
       <Button
@@ -177,7 +177,7 @@ async function focusDownloadQueue() {
 
     <template v-else-if="data">
       <header
-        class="mt-6 grid gap-6 sm:grid-cols-[minmax(0,1fr)_15rem] sm:items-start lg:grid-cols-[minmax(0,1fr)_18rem]"
+        class="grid gap-6 sm:grid-cols-[minmax(0,1fr)_15rem] sm:items-start lg:grid-cols-[minmax(0,1fr)_18rem]"
       >
         <div class="min-w-0">
           <div class="flex min-w-0 items-start gap-4">
@@ -250,7 +250,7 @@ async function focusDownloadQueue() {
         </div>
       </header>
 
-      <Tabs default-value="info" class="mt-8">
+      <Tabs default-value="info" class="mt-8 gap-0">
         <TabsList>
           <TabsTrigger value="info">Install</TabsTrigger>
           <TabsTrigger value="depots">Depots</TabsTrigger>

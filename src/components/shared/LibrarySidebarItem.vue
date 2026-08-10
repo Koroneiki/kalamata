@@ -57,7 +57,7 @@ function handleIconError() {
         @click="setOpenMobile(false)"
       >
         <span
-          class="bg-muted text-muted-foreground grid size-5 shrink-0 place-items-center overflow-hidden rounded-sm"
+          class="bg-muted text-muted-foreground grid size-4 shrink-0 place-items-center overflow-hidden rounded-sm"
         >
           <img
             v-if="iconUrl"

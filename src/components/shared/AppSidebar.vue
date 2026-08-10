@@ -41,13 +41,13 @@ watch(
 
 <template>
   <Sidebar collapsible="icon">
-    <SidebarHeader>
+    <SidebarHeader class="pb-0">
       <SidebarGroupLabel
         class="text-sidebar-foreground text-sm font-semibold tracking-tight group-data-[collapsible=icon]:mt-0!"
       >
         Kalamata
       </SidebarGroupLabel>
-      <SidebarSeparator class="-translate-y-px" />
+      <SidebarSeparator />
       <SidebarMenu>
         <SidebarMenuItem>
           <SidebarMenuButton
@@ -127,7 +127,7 @@ watch(
       </SidebarGroup>
     </SidebarContent>
 
-    <SidebarFooter>
+    <SidebarFooter class="pt-0">
       <SidebarSeparator />
       <SidebarMenu>
         <SidebarMenuItem>
