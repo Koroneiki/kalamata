@@ -73,6 +73,7 @@ watch(
       selectedDepotIds.value = [...app.selectedDepotIds]
     }
   },
+  { immediate: true },
 )
 
 watch(
@@ -107,8 +108,7 @@ const queueForApp = computed(() => {
 const canOpenDownload = computed(
   () =>
     Boolean(data.value?.inLibrary) &&
-    selectedDepotIds.value.length > 0 &&
-    selectedDepotIds.value.every(
+    selectedDepotIds.value.some(
       (depotId) =>
         data.value?.depots.find((depot) => depot.depotId === depotId)
           ?.selectable,
@@ -128,10 +128,10 @@ function openDownload() {
   dialogOpen.value = true
 }
 
-async function invalidateDetailsAndLibrary() {
+async function invalidateDetailsAndLibrary(id = appId.value) {
   await Promise.all([
     queryCache.invalidateQueries({
-      key: appQueryKeys.details(appId.value),
+      key: appQueryKeys.details(id),
       exact: true,
     }),
     queryCache.invalidateQueries({ key: libraryQueryKey, exact: true }),
@@ -139,43 +139,57 @@ async function invalidateDetailsAndLibrary() {
 }
 
 async function addToLibrary() {
+  const targetAppId = appId.value
   mutationError.value = ''
   try {
-    await addMutation.mutateAsync(appId.value)
-    await invalidateDetailsAndLibrary()
+    await addMutation.mutateAsync(targetAppId)
+    await invalidateDetailsAndLibrary(targetAppId)
   } catch (error) {
-    mutationError.value = error instanceof Error ? error.message : String(error)
+    if (appId.value === targetAppId) {
+      mutationError.value =
+        error instanceof Error ? error.message : String(error)
+    }
   }
 }
 
 async function updateSelectedDepots(depotIds: number[]) {
+  const targetAppId = appId.value
   const previous = selectedDepotIds.value
   selectedDepotIds.value = depotIds
   mutationError.value = ''
   try {
-    selectedDepotIds.value = await selectionMutation.mutateAsync({
-      appId: appId.value,
+    const selected = await selectionMutation.mutateAsync({
+      appId: targetAppId,
       depotIds,
     })
     await queryCache.invalidateQueries({
-      key: appQueryKeys.details(appId.value),
+      key: appQueryKeys.details(targetAppId),
       exact: true,
     })
+    if (appId.value === targetAppId) selectedDepotIds.value = selected
   } catch (error) {
-    selectedDepotIds.value = previous
-    mutationError.value = error instanceof Error ? error.message : String(error)
+    if (appId.value === targetAppId) {
+      selectedDepotIds.value = previous
+      mutationError.value =
+        error instanceof Error ? error.message : String(error)
+    }
   }
 }
 
 async function removeFromLibrary() {
+  const targetAppId = appId.value
   removeError.value = ''
   try {
-    await removeMutation.mutateAsync(appId.value)
-    removeDialogOpen.value = false
-    selectedDepotIds.value = []
-    await invalidateDetailsAndLibrary()
+    await removeMutation.mutateAsync(targetAppId)
+    if (appId.value === targetAppId) {
+      removeDialogOpen.value = false
+      selectedDepotIds.value = []
+    }
+    await invalidateDetailsAndLibrary(targetAppId)
   } catch (error) {
-    removeError.value = error instanceof Error ? error.message : String(error)
+    if (appId.value === targetAppId) {
+      removeError.value = error instanceof Error ? error.message : String(error)
+    }
   }
 }
 

@@ -52,20 +52,25 @@ const starting = ref(false)
 const downloadStarted = ref(false)
 
 const selectedIds = computed(() => new Set(props.selectedDepotIds))
+const selectableDepots = computed(() =>
+  installableDepots(props.app.depots).filter((depot) => depot.selectable),
+)
 const selectedDepots = computed(() =>
-  installableDepots(props.app.depots).filter((depot) =>
+  selectableDepots.value.filter((depot) =>
     selectedIds.value.has(depot.depotId),
   ),
 )
 const depotSummary = computed(() => ({
-  ...summarizeDepots(installableDepots(props.app.depots), selectedIds.value),
+  ...summarizeDepots(selectableDepots.value, selectedIds.value),
   missing: selectedDepots.value.some(
     (depot) => depot.manifestStatus !== 'ready' || depot.keyStatus !== 'ready',
   ),
 }))
 const depotGroups = computed(() =>
   installableDepotGroups.flatMap((name) => {
-    const allDepots = depotsInGroup(props.app.depots, name)
+    const allDepots = depotsInGroup(props.app.depots, name).filter(
+      (depot) => depot.selectable,
+    )
     const depots = allDepots.filter((depot) =>
       selectedIds.value.has(depot.depotId),
     )
