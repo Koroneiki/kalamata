@@ -17,6 +17,7 @@ export type DepotGroup =
 interface AppDepotBase {
   depotId: number
   ownerAppId: number
+  ownerAppName: string | null
   group: DepotGroup
   platform: string | null
   language: string | null

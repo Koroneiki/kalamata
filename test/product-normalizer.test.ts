@@ -178,6 +178,30 @@ test('collects base then direct DLC depots with first-owner precedence', () => {
   ])
 })
 
+test('classifies DLC from dlcappid or a containing DLC product', () => {
+  const base = makeProductWithDepots(323320, {
+    '353590': { ...depotMetadata('1'), dlcappid: '353590' },
+  })
+  const dlc = makeProductWithDepots(353590, {
+    '300': depotMetadata('2'),
+  })
+
+  expect(extractPublicDepots(products(base, [dlc]))).toEqual([
+    expect.objectContaining({
+      depotId: 300,
+      ownerAppId: 353590,
+      ownerAppName: 'App 353590',
+      group: 'DLC',
+    }),
+    expect.objectContaining({
+      depotId: 353590,
+      ownerAppId: 353590,
+      ownerAppName: 'App 353590',
+      group: 'DLC',
+    }),
+  ])
+})
+
 test('classifies every Steamworks range boundary before ownership', () => {
   const steamworks = [
     228981, 228990, 229000, 229007, 229010, 229012, 229020, 229030, 229033,

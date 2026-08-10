@@ -13,6 +13,7 @@ import type { ProductInfo, ProductInfoResult } from './types.ts'
 export interface PublicDepot {
   depotId: number
   ownerAppId: number
+  ownerAppName: string | null
   group: DepotGroup
   platform: string | null
   language: string | null
@@ -61,6 +62,12 @@ export function extractPublicDepots(
 ): PublicDepot[] {
   const result: PublicDepot[] = []
   const seen = new Set<number>()
+  const productNames = new Map(
+    [products.baseProduct, ...products.dlcProducts].map((product) => [
+      product.appId,
+      stringValue(asRecord(product.appinfo.common).name),
+    ]),
+  )
   for (const product of [products.baseProduct, ...products.dlcProducts]) {
     const depots = asRecord(asRecord(product.appinfo).depots)
     for (const [rawDepotId, rawDepot] of Object.entries(depots)) {
@@ -76,15 +83,22 @@ export function extractPublicDepots(
       const depot = asRecord(rawDepot)
       const config = asRecord(depot.config)
       const publicManifest = asRecord(asRecord(depot.manifests).public)
+      // Steam can list a DLC depot under the base app. In that case dlcappid is
+      // the authoritative classification and download owner (for example 323320/353590).
+      const dlcAppId = positiveId(depot.dlcappid)
       const group = classifyDepot(
         depotId,
         product.appId === products.baseProduct.appId,
+        dlcAppId !== null,
         config.oslist,
         publicManifest,
       )
+      const ownerAppId = dlcAppId ?? product.appId
       result.push({
         depotId,
-        ownerAppId: product.appId,
+        ownerAppId,
+        ownerAppName:
+          group === 'DLC' ? (productNames.get(ownerAppId) ?? null) : null,
         group,
         platform: restriction(config.oslist),
         language: restriction(config.language),
@@ -201,6 +215,7 @@ function isEligibleGroup(
 function classifyDepot(
   depotId: number,
   ownedByBase: boolean,
+  hasDlcOwner: boolean,
   oslist: unknown,
   publicManifest: Record<string, unknown>,
 ): DepotGroup {
@@ -212,6 +227,9 @@ function classifyDepot(
     rawEmpty(publicManifest.download)
   )
     return 'Unused'
+  // DLC is identified either explicitly by dlcappid or by the depot belonging
+  // to a separately fetched DLC product.
+  if (hasDlcOwner) return 'DLC'
   return ownedByBase ? 'Base Game' : 'DLC'
 }
 
@@ -261,6 +279,12 @@ function steamCommunityImageUrl(
 
 function decimalString(value: unknown): string | null {
   return typeof value === 'string' && /^\d+$/u.test(value) ? value : null
+}
+
+function positiveId(value: unknown): number | null {
+  if (typeof value !== 'string' || !/^[1-9]\d*$/u.test(value)) return null
+  const id = Number(value)
+  return Number.isInteger(id) && id <= 0xffffffff ? id : null
 }
 
 function restriction(value: unknown): string | null {

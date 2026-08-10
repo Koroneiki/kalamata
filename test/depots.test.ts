@@ -10,6 +10,7 @@ function depot(
   return {
     depotId,
     ownerAppId: 10,
+    ownerAppName: null,
     group: 'Base Game',
     platform: null,
     language: null,
@@ -75,6 +76,7 @@ test('redistributables expose restrictions without resource badges', () => {
   const redistributable: AppDepot = {
     depotId: 228981,
     ownerAppId: 10,
+    ownerAppName: null,
     group: 'Steamworks Common Redistributables',
     platform: 'windows',
     language: null,

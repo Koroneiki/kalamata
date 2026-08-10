@@ -166,9 +166,13 @@ function updateGroup(
                 />
                 <div class="min-w-0 flex-1">
                   <div class="flex flex-wrap items-start justify-between gap-3">
-                    <p class="font-medium tabular-nums">
+                    <p class="flex items-center gap-1 font-medium tabular-nums">
                       <span class="text-muted-foreground">ID</span>
-                      {{ depot.depotId }}
+                      <span>{{ depot.depotId }}</span>
+                      <template v-if="depot.ownerAppName">
+                        <span aria-hidden="true">·</span>
+                        <span>{{ depot.ownerAppName }}</span>
+                      </template>
                     </p>
                     <DepotBadges :depot="depot" />
                   </div>
