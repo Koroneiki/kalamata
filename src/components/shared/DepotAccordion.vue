@@ -3,7 +3,7 @@ import { computed } from 'vue'
 
 import DepotBadges from '@/components/shared/DepotBadges.vue'
 import DepotSummary from '@/components/shared/DepotSummary.vue'
-import type { AppDepot } from '@/types/rpc'
+import type { AppDepot, EligibleAppDepot } from '@/types/rpc'
 import { formatBytes } from '@/utils/bytes'
 import {
   depotsInGroup,
@@ -61,6 +61,40 @@ function updateDepot(depotId: number, checked: boolean | 'indeterminate') {
   else next.delete(depotId)
   emit('update:selectedDepotIds', [...next])
 }
+
+function groupSelectionState(
+  depots: EligibleAppDepot[],
+): boolean | 'indeterminate' {
+  const actionable = depots.filter(
+    (depot) => depot.selectable || selectedIds.value.has(depot.depotId),
+  )
+  const selected = actionable.filter((depot) =>
+    selectedIds.value.has(depot.depotId),
+  )
+
+  if (selected.length === 0) return false
+  return selected.length === actionable.length ? true : 'indeterminate'
+}
+
+function canUpdateGroup(depots: EligibleAppDepot[]) {
+  return depots.some(
+    (depot) => depot.selectable || selectedIds.value.has(depot.depotId),
+  )
+}
+
+function updateGroup(
+  depots: EligibleAppDepot[],
+  checked: boolean | 'indeterminate',
+) {
+  const next = new Set(props.selectedDepotIds)
+
+  for (const depot of depots) {
+    if (checked === true && depot.selectable) next.add(depot.depotId)
+    else if (checked !== true) next.delete(depot.depotId)
+  }
+
+  emit('update:selectedDepotIds', [...next])
+}
 </script>
 
 <template>
@@ -85,10 +119,19 @@ function updateDepot(depotId: number, checked: boolean | 'indeterminate') {
           v-for="group in depotGroups"
           :key="group.name"
           :value="group.name"
-          class="border-border overflow-hidden rounded-lg border last:border-b"
+          class="border-border relative overflow-hidden rounded-lg border last:border-b"
         >
+          <Checkbox
+            v-if="!readOnly"
+            class="absolute top-3.5 left-4 z-10"
+            :model-value="groupSelectionState(group.depots)"
+            :disabled="selectionPending || !canUpdateGroup(group.depots)"
+            :aria-label="`Select all ${group.name} depots`"
+            @update:model-value="updateGroup(group.depots, $event)"
+          />
           <AccordionTrigger
-            class="hover:bg-accent/50 rounded-none px-4 py-3 hover:no-underline"
+            class="hover:bg-accent/50 rounded-none py-3 pr-4 hover:no-underline"
+            :class="readOnly ? 'pl-4' : 'pl-11'"
           >
             <span
               class="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-3 pr-2"
