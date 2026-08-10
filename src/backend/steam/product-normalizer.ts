@@ -24,12 +24,8 @@ export interface PublicDepot {
 export function normalizeAppSummary(product: ProductInfo): AppSummary {
   const common = asRecord(product.appinfo.common)
   const associations = Object.values(asRecord(common.associations))
-  const developers = associations.flatMap((association) => {
-    const value = asRecord(association)
-    return value.type === 'developer' && typeof value.name === 'string'
-      ? [value.name]
-      : []
-  })
+  const developers = associationNames(associations, 'developer')
+  const publishers = associationNames(associations, 'publisher')
   const releaseSeconds = decimalString(common.steam_release_date)
   const releaseDate = releaseSeconds ? Number(releaseSeconds) * 1000 : NaN
   const headerImages = asRecord(common.header_image)
@@ -39,14 +35,23 @@ export function normalizeAppSummary(product: ProductInfo): AppSummary {
       (value): value is string => typeof value === 'string' && value.length > 0,
     ) ??
     null
+  const clientIcon = stringValue(common.clienticon)
+  const icon = stringValue(common.icon)
 
   return {
     appId: product.appId,
     name: stringValue(common.name) ?? `App ${product.appId}`,
     developers,
+    publishers,
     releaseDate: Number.isSafeInteger(releaseDate) ? releaseDate : null,
+    iconUrls: [
+      ...(clientIcon
+        ? [steamCommunityImageUrl(product.appId, clientIcon, 'ico')]
+        : []),
+      ...(icon ? [steamCommunityImageUrl(product.appId, icon, 'jpg')] : []),
+    ],
     artworkUrl: header
-      ? `https://cdn.akamai.steamstatic.com/steam/apps/${product.appId}/${header}`
+      ? `https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${product.appId}/${header}`
       : null,
   }
 }
@@ -224,6 +229,26 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function stringValue(value: unknown): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null
+}
+
+function associationNames(
+  associations: unknown[],
+  type: 'developer' | 'publisher',
+): string[] {
+  return associations.flatMap((association) => {
+    const value = asRecord(association)
+    return value.type === type && typeof value.name === 'string'
+      ? [value.name]
+      : []
+  })
+}
+
+function steamCommunityImageUrl(
+  appId: number,
+  hash: string,
+  extension: 'ico' | 'jpg',
+): string {
+  return `https://cdn.akamai.steamstatic.com/steamcommunity/public/images/apps/${appId}/${hash}.${extension}`
 }
 
 function decimalString(value: unknown): string | null {

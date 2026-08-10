@@ -36,6 +36,7 @@ const { data, error, isPending, refetch } = useQuery(() => ({
 const selectedPath = ref('')
 const pathError = ref('')
 const artworkFailed = ref(false)
+const iconIndex = ref(0)
 const choosingPath = ref(false)
 const dialogOpen = ref(false)
 const queuePanel = ref<{ focusHeading: () => void } | null>(null)
@@ -54,12 +55,27 @@ watch(
         selectedPath.value = app.installPath
       }
     }
+  },
+)
+
+watch(
+  () => data.value?.artworkUrl,
+  () => {
     artworkFailed.value = false
   },
 )
 
+watch(
+  () => data.value?.iconUrls,
+  () => {
+    iconIndex.value = 0
+  },
+)
+
+const iconUrl = computed(() => data.value?.iconUrls?.[iconIndex.value] ?? null)
+
 const releaseDate = computed(() => {
-  if (!data.value?.releaseDate) return 'Release date unavailable'
+  if (!data.value?.releaseDate) return 'Unavailable'
   return new Intl.DateTimeFormat(undefined, {
     year: 'numeric',
     month: 'long',
@@ -106,6 +122,10 @@ function openDownload() {
   dialogOpen.value = true
 }
 
+function handleIconError() {
+  iconIndex.value += 1
+}
+
 async function focusDownloadQueue() {
   await nextTick()
   queuePanel.value?.focusHeading()
@@ -133,14 +153,21 @@ async function focusDownloadQueue() {
       class="mt-6 space-y-6"
       aria-label="Loading app details"
     >
-      <div class="grid gap-5 sm:grid-cols-[15rem_minmax(0,1fr)]">
-        <Skeleton class="aspect-[46/21] w-full rounded-lg" />
-        <div class="space-y-3 py-1">
-          <Skeleton class="h-4 w-24" />
-          <Skeleton class="h-8 w-3/5" />
-          <Skeleton class="h-4 w-2/5" />
-          <Skeleton class="h-4 w-1/3" />
+      <div
+        class="grid gap-6 sm:grid-cols-[minmax(0,1fr)_15rem] sm:items-start lg:grid-cols-[minmax(0,1fr)_18rem]"
+      >
+        <div class="min-w-0">
+          <div class="flex items-start gap-4">
+            <Skeleton class="size-9 shrink-0 rounded-lg sm:size-10" />
+            <Skeleton class="mt-1 h-9 w-3/5" />
+          </div>
+          <div
+            class="mt-6 grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-4 gap-y-3"
+          >
+            <Skeleton v-for="index in 8" :key="index" class="h-4 w-full" />
+          </div>
         </div>
+        <Skeleton class="aspect-[46/21] w-full rounded-lg" />
       </div>
       <Skeleton class="h-28 w-full rounded-lg" />
       <Skeleton class="h-12 w-full rounded-lg" />
@@ -161,8 +188,59 @@ async function focusDownloadQueue() {
 
     <template v-else-if="data">
       <header
-        class="mt-6 grid gap-5 sm:grid-cols-[15rem_minmax(0,1fr)] sm:items-start"
+        class="mt-6 grid gap-6 sm:grid-cols-[minmax(0,1fr)_15rem] sm:items-start lg:grid-cols-[minmax(0,1fr)_18rem]"
       >
+        <div class="min-w-0">
+          <div class="flex min-w-0 items-start gap-4">
+            <div
+              class="bg-muted grid size-9 shrink-0 place-items-center overflow-hidden rounded-lg sm:size-10"
+            >
+              <img
+                v-if="iconUrl"
+                class="size-full object-cover"
+                :src="iconUrl"
+                :alt="`${data.name} icon`"
+                @error="handleIconError"
+              />
+              <ImageOff
+                v-else
+                class="text-muted-foreground size-5"
+                aria-hidden="true"
+              />
+              <span v-if="!iconUrl" class="sr-only">Icon unavailable</span>
+            </div>
+            <h1
+              class="min-w-0 text-3xl font-semibold tracking-tight sm:text-4xl"
+            >
+              {{ data.name }}
+            </h1>
+          </div>
+          <dl
+            class="mt-6 grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm"
+          >
+            <div class="contents">
+              <dt class="text-muted-foreground">App ID</dt>
+              <dd class="font-mono tabular-nums">{{ data.appId }}</dd>
+            </div>
+            <div class="contents">
+              <dt class="text-muted-foreground">Developer</dt>
+              <dd class="min-w-0 break-words">
+                {{ data.developers.join(', ') || 'Unavailable' }}
+              </dd>
+            </div>
+            <div class="contents">
+              <dt class="text-muted-foreground">Publisher</dt>
+              <dd class="min-w-0 break-words">
+                {{ data.publishers.join(', ') || 'Unavailable' }}
+              </dd>
+            </div>
+            <div class="contents">
+              <dt class="text-muted-foreground">Release Date</dt>
+              <dd>{{ releaseDate }}</dd>
+            </div>
+          </dl>
+        </div>
+
         <div class="bg-muted aspect-[46/21] overflow-hidden rounded-lg">
           <img
             v-if="data.artworkUrl && !artworkFailed"
@@ -173,34 +251,13 @@ async function focusDownloadQueue() {
           />
           <div
             v-else
-            class="text-muted-foreground grid size-full place-items-center"
+            class="text-muted-foreground grid size-full place-items-center gap-1 text-xs"
           >
-            <ImageOff class="size-6" aria-hidden="true" />
-            <span class="sr-only">Artwork unavailable</span>
+            <span class="grid justify-items-center gap-1">
+              <ImageOff class="size-5" aria-hidden="true" />
+              Artwork unavailable
+            </span>
           </div>
-        </div>
-
-        <div class="min-w-0">
-          <p class="text-muted-foreground text-xs tabular-nums">
-            App {{ data.appId }}
-          </p>
-          <h1 class="mt-1 text-3xl font-semibold tracking-tight sm:text-4xl">
-            {{ data.name }}
-          </h1>
-          <dl class="mt-4 grid gap-2 text-sm">
-            <div
-              class="grid min-w-0 gap-1 sm:grid-cols-[6rem_minmax(0,1fr)] sm:gap-3"
-            >
-              <dt class="text-muted-foreground">Developer</dt>
-              <dd>{{ data.developers.join(', ') || 'Unavailable' }}</dd>
-            </div>
-            <div
-              class="grid min-w-0 gap-1 sm:grid-cols-[6rem_minmax(0,1fr)] sm:gap-3"
-            >
-              <dt class="text-muted-foreground">Released</dt>
-              <dd>{{ releaseDate }}</dd>
-            </div>
-          </dl>
         </div>
       </header>
 

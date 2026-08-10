@@ -15,14 +15,16 @@ const props = defineProps<{ entry: LibraryEntry }>()
 const { data, error, isPending, refetch } = useAppSummaryQuery(
   computed(() => props.entry.appId),
 )
-const artworkFailed = ref(false)
+const iconIndex = ref(0)
 
 watch(
-  () => data.value?.artworkUrl,
+  () => data.value?.iconUrls,
   () => {
-    artworkFailed.value = false
+    iconIndex.value = 0
   },
 )
+
+const iconUrl = computed(() => data.value?.iconUrls?.[iconIndex.value] ?? null)
 
 const releaseDate = computed(() => {
   if (!data.value?.releaseDate) return 'Release date unavailable'
@@ -32,15 +34,19 @@ const releaseDate = computed(() => {
     day: 'numeric',
   }).format(data.value.releaseDate)
 })
+
+function handleIconError() {
+  iconIndex.value += 1
+}
 </script>
 
 <template>
   <article class="group border-border border-b last:border-b-0">
     <div
       v-if="isPending"
-      class="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-4 py-4"
+      class="grid grid-cols-[3rem_minmax(0,1fr)] gap-4 py-4"
     >
-      <Skeleton class="aspect-[46/21] w-full rounded-md" />
+      <Skeleton class="size-12 rounded-md" />
       <div class="min-w-0 space-y-2 py-0.5">
         <Skeleton class="h-4 w-2/5" />
         <Skeleton class="h-3 w-3/5" />
@@ -72,17 +78,19 @@ const releaseDate = computed(() => {
 
     <RouterLink
       v-else-if="data"
-      class="focus-visible:ring-ring grid grid-cols-[4.5rem_minmax(0,1fr)_auto] items-center gap-4 rounded-md py-4 outline-none focus-visible:ring-2"
+      class="focus-visible:ring-ring grid grid-cols-[3rem_minmax(0,1fr)_auto] items-center gap-4 rounded-md py-4 outline-none focus-visible:ring-2"
       :to="{ name: 'app-details', params: { appId: entry.appId } }"
       :aria-label="`Open ${data.name}, App ${data.appId}`"
     >
-      <div class="bg-muted aspect-[46/21] overflow-hidden rounded-md">
+      <div
+        class="bg-muted grid size-12 place-items-center overflow-hidden rounded-md"
+      >
         <img
-          v-if="data.artworkUrl && !artworkFailed"
+          v-if="iconUrl"
           class="size-full object-cover"
-          :src="data.artworkUrl"
-          :alt="`${data.name} artwork`"
-          @error="artworkFailed = true"
+          :src="iconUrl"
+          :alt="`${data.name} icon`"
+          @error="handleIconError"
         />
         <div
           v-else

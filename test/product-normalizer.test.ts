@@ -45,7 +45,14 @@ test('normalizes identity, restrictions, and large decimal metadata', async () =
     appId: 10,
     name: 'Example',
     developers: ['Developer'],
+    publishers: ['Publisher'],
     releaseDate: 1_700_000_000_000,
+    iconUrls: [
+      'https://cdn.akamai.steamstatic.com/steamcommunity/public/images/apps/10/client-icon-hash.ico',
+      'https://cdn.akamai.steamstatic.com/steamcommunity/public/images/apps/10/icon-hash.jpg',
+    ],
+    artworkUrl:
+      'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/10/header.jpg',
   })
   expect(details.depots).toEqual([
     expect.objectContaining({
@@ -76,7 +83,9 @@ test('handles malformed app metadata and ignores non-depot keys', async () => {
   const details = await normalizeAppDetails(products(product), db)
   expect(details).toMatchObject({
     name: 'App 10',
+    publishers: [],
     releaseDate: null,
+    iconUrls: [],
     artworkUrl: null,
   })
   expect(details.depots).toHaveLength(1)
@@ -283,7 +292,12 @@ function makeProduct(manifestId = MANIFEST_ID): ProductInfo {
         name: 'Example',
         steam_release_date: '1700000000',
         header_image: { english: 'header.jpg' },
-        associations: { '0': { type: 'developer', name: 'Developer' } },
+        clienticon: 'client-icon-hash',
+        icon: 'icon-hash',
+        associations: {
+          '0': { type: 'developer', name: 'Developer' },
+          '1': { type: 'publisher', name: 'Publisher' },
+        },
       },
       depots: {
         branches: {},

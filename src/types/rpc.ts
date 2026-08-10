@@ -2,7 +2,9 @@ export interface AppSummary {
   appId: number
   name: string
   developers: string[]
+  publishers: string[]
   releaseDate: number | null
+  iconUrls: string[]
   artworkUrl: string | null
 }
 
