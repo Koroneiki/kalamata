@@ -51,6 +51,7 @@ async function setup(
   )
   const installPath = join(root, 'install')
   await mkdir(installPath)
+  database.addLibraryEntry(APP_ID)
   for (const [index, depot] of DEPOTS.entries()) {
     const relativePath = database.addManifest(depot.depotId, depot.manifestId)
     await copyFile(
@@ -102,7 +103,9 @@ test('validates the whole plan, runs in order, maps events, and persists atomica
     depotIds: DEPOTS.map(({ depotId }) => depotId),
   })
   expect(initial).toMatchObject({ status: 'running', position: 1, total: 2 })
-  expect(database.getLibrary()).toEqual([])
+  expect(database.getLibrary()).toEqual([
+    expect.objectContaining({ appId: APP_ID, installPath: null }),
+  ])
   expect(calls).toEqual([DEPOTS[0].depotId])
   await expect(
     queue.start({ appId: APP_ID, installPath, depotIds: [DEPOTS[0].depotId] }),
@@ -157,7 +160,9 @@ test('rejects duplicate IDs and unavailable later depots before downloading', as
     }),
   ).rejects.toThrow(`Depot ${DEPOTS[1].depotId} is not available`)
   expect(downloadDepot).not.toHaveBeenCalled()
-  expect(database.getLibrary()).toEqual([])
+  expect(database.getLibrary()).toEqual([
+    expect.objectContaining({ appId: APP_ID, installPath: null }),
+  ])
 })
 
 test('stops after a download failure and retains prior committed installs', async () => {

@@ -1,23 +1,28 @@
 <script setup lang="ts">
-import { useQuery } from '@pinia/colada'
-import { Download, FolderOpen, ImageOff, Lock } from '@lucide/vue'
+import { useMutation, useQuery, useQueryCache } from '@pinia/colada'
+import { Download, ImageOff, Plus, Trash2 } from '@lucide/vue'
 import { computed, nextTick, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
-import { selectInstallDirectory } from '@/api/install-directory'
 import DownloadDepotsDialog from '@/components/forms/DownloadDepotsDialog.vue'
+import RemoveLibraryEntryDialog from '@/components/forms/RemoveLibraryEntryDialog.vue'
 import DepotAccordion from '@/components/shared/DepotAccordion.vue'
 import DownloadQueuePanel from '@/components/shared/DownloadQueuePanel.vue'
-import { appQueryKeys } from '@/composables/queries'
+import { appQueryKeys, libraryQueryKey } from '@/composables/queries'
 import { getAppDetails } from '@/api/apps'
+import {
+  addLibraryEntry,
+  removeLibraryEntry,
+  setSelectedDepots,
+} from '@/api/library'
 import { useDownloadQueueStore } from '@/stores/download-queue'
 
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 const route = useRoute()
 const queue = useDownloadQueueStore()
+const queryCache = useQueryCache()
 const appId = computed(() => Number(route.params.appId))
 const validAppId = computed(
   () =>
@@ -33,13 +38,26 @@ const { data, error, isPending, refetch } = useQuery(() => ({
 }))
 
 const selectedPath = ref('')
-const pathError = ref('')
 const artworkFailed = ref(false)
 const iconIndex = ref(0)
-const choosingPath = ref(false)
 const dialogOpen = ref(false)
+const removeDialogOpen = ref(false)
+const selectedDepotIds = ref<number[]>([])
+const mutationError = ref('')
+const removeError = ref('')
 const queuePanel = ref<{ focusHeading: () => void } | null>(null)
 const loadedAppId = ref<number | null>(null)
+
+const addMutation = useMutation({
+  mutation: (id: number) => addLibraryEntry(id),
+})
+const removeMutation = useMutation({
+  mutation: (id: number) => removeLibraryEntry(id),
+})
+const selectionMutation = useMutation({
+  mutation: ({ appId, depotIds }: { appId: number; depotIds: number[] }) =>
+    setSelectedDepots(appId, depotIds),
+})
 
 watch(
   () => data.value,
@@ -49,10 +67,10 @@ watch(
       loadedAppId.value = app.appId
       if (appChanged) {
         selectedPath.value = app.installPath ?? ''
-        pathError.value = ''
       } else if (app.installPath) {
         selectedPath.value = app.installPath
       }
+      selectedDepotIds.value = [...app.selectedDepotIds]
     }
   },
 )
@@ -82,18 +100,20 @@ const releaseDate = computed(() => {
   }).format(data.value.releaseDate)
 })
 
-const readyDepotCount = computed(
-  () => data.value?.depots.filter((depot) => depot.selectable).length ?? 0,
-)
 const queueForApp = computed(() => {
   const state = queue.state
   return state.status !== 'idle' && state.appId === appId.value ? state : null
 })
-const anotherQueueRunning = computed(
-  () => queue.state.status === 'running' && queue.state.appId !== appId.value,
-)
 const canOpenDownload = computed(
-  () => readyDepotCount.value > 0 && queue.state.status !== 'running',
+  () =>
+    Boolean(data.value?.inLibrary) &&
+    selectedDepotIds.value.length > 0 &&
+    selectedDepotIds.value.every(
+      (depotId) =>
+        data.value?.depots.find((depot) => depot.depotId === depotId)
+          ?.selectable,
+    ) &&
+    queue.state.status !== 'running',
 )
 
 watch(
@@ -104,21 +124,59 @@ watch(
   { immediate: true },
 )
 
-async function chooseDirectory() {
-  choosingPath.value = true
-  pathError.value = ''
+function openDownload() {
+  dialogOpen.value = true
+}
+
+async function invalidateDetailsAndLibrary() {
+  await Promise.all([
+    queryCache.invalidateQueries({
+      key: appQueryKeys.details(appId.value),
+      exact: true,
+    }),
+    queryCache.invalidateQueries({ key: libraryQueryKey, exact: true }),
+  ])
+}
+
+async function addToLibrary() {
+  mutationError.value = ''
   try {
-    const path = await selectInstallDirectory(selectedPath.value || undefined)
-    if (path) selectedPath.value = path
+    await addMutation.mutateAsync(appId.value)
+    await invalidateDetailsAndLibrary()
   } catch (error) {
-    pathError.value = error instanceof Error ? error.message : String(error)
-  } finally {
-    choosingPath.value = false
+    mutationError.value = error instanceof Error ? error.message : String(error)
   }
 }
 
-function openDownload() {
-  dialogOpen.value = true
+async function updateSelectedDepots(depotIds: number[]) {
+  const previous = selectedDepotIds.value
+  selectedDepotIds.value = depotIds
+  mutationError.value = ''
+  try {
+    selectedDepotIds.value = await selectionMutation.mutateAsync({
+      appId: appId.value,
+      depotIds,
+    })
+    await queryCache.invalidateQueries({
+      key: appQueryKeys.details(appId.value),
+      exact: true,
+    })
+  } catch (error) {
+    selectedDepotIds.value = previous
+    mutationError.value = error instanceof Error ? error.message : String(error)
+  }
+}
+
+async function removeFromLibrary() {
+  removeError.value = ''
+  try {
+    await removeMutation.mutateAsync(appId.value)
+    removeDialogOpen.value = false
+    selectedDepotIds.value = []
+    await invalidateDetailsAndLibrary()
+  } catch (error) {
+    removeError.value = error instanceof Error ? error.message : String(error)
+  }
 }
 
 function handleIconError() {
@@ -177,7 +235,7 @@ async function focusDownloadQueue() {
 
     <template v-else-if="data">
       <header
-        class="grid gap-6 sm:grid-cols-[minmax(0,1fr)_15rem] sm:items-start lg:grid-cols-[minmax(0,1fr)_18rem]"
+        class="relative grid gap-6 sm:grid-cols-[minmax(0,1fr)_15rem] sm:items-start lg:grid-cols-[minmax(0,1fr)_18rem]"
       >
         <div class="min-w-0">
           <div class="flex min-w-0 items-start gap-4">
@@ -204,9 +262,7 @@ async function focusDownloadQueue() {
               {{ data.name }}
             </h1>
           </div>
-          <dl
-            class="mt-6 grid grid-cols-2 gap-x-6 gap-y-3 text-sm"
-          >
+          <dl class="mt-6 grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
             <div class="min-w-0 space-y-1">
               <dt class="text-muted-foreground">App ID</dt>
               <dd class="font-mono tabular-nums">{{ data.appId }}</dd>
@@ -248,137 +304,85 @@ async function focusDownloadQueue() {
             </span>
           </div>
         </div>
+
+        <Button
+          v-if="data.inLibrary"
+          class="absolute top-0 right-0"
+          type="button"
+          size="icon-sm"
+          variant="outline"
+          :disabled="queueForApp?.status === 'running'"
+          aria-label="Remove from library"
+          @click="removeDialogOpen = true"
+        >
+          <Trash2 aria-hidden="true" />
+        </Button>
       </header>
 
-      <Tabs default-value="info" class="mt-8 gap-0">
-        <TabsList>
-          <TabsTrigger value="info">Install</TabsTrigger>
-          <TabsTrigger value="depots">Depots</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="info" class="mt-6">
-          <section
-            class="border-border grid gap-4 border-y py-5 lg:grid-cols-[minmax(0,1fr)_18rem] lg:items-start"
+      <section class="mt-8" aria-label="Install game content">
+        <div class="border-border flex border-t py-5">
+          <Button
+            v-if="data.inLibrary"
+            class="h-14 w-full min-w-44 gap-3 rounded-sm px-8 text-lg font-semibold tracking-wider shadow-sm sm:w-auto [&_svg:not([class*='size-'])]:size-7"
+            type="button"
+            :disabled="!canOpenDownload"
+            @click="openDownload"
           >
-            <div class="min-w-0">
-              <div class="flex items-center gap-2">
-                <Lock
-                  v-if="data.installPath"
-                  class="text-muted-foreground size-4"
-                  aria-hidden="true"
-                />
-                <FolderOpen
-                  v-else
-                  class="text-muted-foreground size-4"
-                  aria-hidden="true"
-                />
-                <h2 class="text-base font-medium">Install directory</h2>
-                <span
-                  v-if="data.installPath"
-                  class="text-muted-foreground text-xs"
-                  >Locked</span
-                >
-              </div>
-              <div
-                class="mt-2 flex min-w-0 flex-col items-stretch gap-2 sm:flex-row sm:items-center"
-              >
-                <span
-                  v-if="selectedPath"
-                  class="min-w-0 flex-1 truncate font-mono text-xs"
-                  :aria-label="`Install path: ${selectedPath}`"
-                >
-                  {{ selectedPath }}
-                </span>
-                <span
-                  v-else
-                  class="text-muted-foreground min-w-0 flex-1 text-sm"
-                  >No directory selected</span
-                >
-                <Button
-                  v-if="!data.installPath"
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  :disabled="choosingPath || queue.state.status === 'running'"
-                  @click="chooseDirectory"
-                >
-                  {{
-                    choosingPath
-                      ? 'Choosing…'
-                      : selectedPath
-                        ? 'Change'
-                        : 'Choose directory'
-                  }}
-                </Button>
-              </div>
-              <p
-                v-if="pathError"
-                class="text-destructive mt-2 text-sm"
-                role="alert"
-              >
-                {{ pathError }}
-              </p>
-            </div>
+            <Download aria-hidden="true" />
+            INSTALL
+          </Button>
+          <Button
+            v-else
+            class="h-14 w-full min-w-44 gap-3 rounded-sm px-8 text-lg font-semibold tracking-wider shadow-sm sm:w-auto [&_svg:not([class*='size-'])]:size-7"
+            type="button"
+            :disabled="addMutation.isLoading.value"
+            @click="addToLibrary"
+          >
+            <Plus aria-hidden="true" />
+            {{ addMutation.isLoading.value ? 'ADDING…' : 'ADD TO LIBRARY' }}
+          </Button>
+        </div>
 
-            <div class="space-y-2 lg:text-right">
-              <Button
-                class="w-full lg:w-auto"
-                type="button"
-                :disabled="!canOpenDownload"
-                @click="openDownload"
-              >
-                <Download aria-hidden="true" />
-                Download depots
-              </Button>
-              <p
-                v-if="queueForApp?.status === 'running'"
-                class="text-muted-foreground text-sm"
-              >
-                Download in progress.
-              </p>
-              <p
-                v-else-if="anotherQueueRunning"
-                class="text-muted-foreground text-sm"
-              >
-                Another app is currently downloading.
-              </p>
-              <p
-                v-else-if="readyDepotCount === 0"
-                class="text-muted-foreground text-sm"
-              >
-                No depots are ready to download.
-              </p>
-              <p
-                v-else-if="!selectedPath"
-                class="text-muted-foreground text-sm"
-              >
-                Choose an install directory to continue.
-              </p>
-              <p v-else class="text-muted-foreground text-sm">
-                {{ readyDepotCount }} ready
-                {{ readyDepotCount === 1 ? 'depot' : 'depots' }}
-              </p>
-            </div>
-          </section>
+        <p
+          v-if="mutationError"
+          class="text-destructive mb-5 text-sm"
+          role="alert"
+        >
+          {{ mutationError }}
+        </p>
 
-          <DownloadQueuePanel
-            v-if="queueForApp"
-            ref="queuePanel"
-            class="mt-5"
-            :state="queueForApp"
-          />
-        </TabsContent>
+        <DownloadQueuePanel
+          v-if="queueForApp"
+          ref="queuePanel"
+          class="mb-6"
+          :state="queueForApp"
+        />
 
-        <TabsContent value="depots" class="mt-6">
-          <DepotAccordion :depots="data.depots" />
-        </TabsContent>
-      </Tabs>
+        <DepotAccordion
+          :depots="data.depots"
+          :selected-depot-ids="selectedDepotIds"
+          :read-only="!data.inLibrary"
+          :selection-pending="selectionMutation.isLoading.value"
+          @update:selected-depot-ids="updateSelectedDepots"
+        />
+      </section>
 
       <DownloadDepotsDialog
+        v-if="data.inLibrary"
         v-model:open="dialogOpen"
         :app="data"
         :initial-path="selectedPath"
+        :selected-depot-ids="selectedDepotIds"
         @download-started="focusDownloadQueue"
+      />
+
+      <RemoveLibraryEntryDialog
+        v-if="data.inLibrary"
+        v-model:open="removeDialogOpen"
+        :app-name="data.name"
+        :removing="removeMutation.isLoading.value"
+        :error="removeError"
+        @confirm="removeFromLibrary"
       />
     </template>
   </div>

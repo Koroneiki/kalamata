@@ -109,7 +109,15 @@ test('derives ready, invalid, outdated, and installed readiness independently', 
   })
 
   db.setDepotKey(DEPOT_ID, KEY)
-  depot = (await normalizeAppDetails(products(makeProduct()), db)).depots[0]!
+  db.addLibraryEntry(10)
+  db.replaceSelectedDepotIds(10, [DEPOT_ID])
+  const selectedDetails = await normalizeAppDetails(products(makeProduct()), db)
+  expect(selectedDetails).toMatchObject({
+    inLibrary: true,
+    installPath: null,
+    selectedDepotIds: [DEPOT_ID],
+  })
+  depot = selectedDetails.depots[0]!
   expect(depot).toMatchObject({
     manifestStatus: 'ready',
     keyStatus: 'ready',

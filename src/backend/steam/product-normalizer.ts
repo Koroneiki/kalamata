@@ -179,7 +179,15 @@ export async function normalizeAppDetails(
   }
   return {
     ...normalizeAppSummary(product),
+    inLibrary: library !== null,
     installPath: library?.installPath ?? null,
+    selectedDepotIds: library
+      ? database
+          .getSelectedDepotIds(product.appId)
+          .filter((depotId) =>
+            depots.some((depot) => depot.eligible && depot.depotId === depotId),
+          )
+      : [],
     depots,
   }
 }

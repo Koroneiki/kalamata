@@ -69,6 +69,52 @@ export class KalamataDatabase {
     )
   }
 
+  addLibraryEntry(appId: number, now = Date.now()): LibraryEntry {
+    validateId(appId, 'appId')
+    this.sqlite
+      .query(
+        'INSERT INTO library (app_id, install_path, created_at) VALUES (?, NULL, ?) ON CONFLICT(app_id) DO NOTHING',
+      )
+      .run(appId, now)
+    return this.getLibraryEntry(appId)!
+  }
+
+  removeLibraryEntry(appId: number): void {
+    validateId(appId, 'appId')
+    this.sqlite.query('DELETE FROM library WHERE app_id = ?').run(appId)
+  }
+
+  getSelectedDepotIds(appId: number): number[] {
+    validateId(appId, 'appId')
+    return this.sqlite
+      .query<{ depotId: number }, [number]>(
+        'SELECT depot_id AS depotId FROM library_depot_selections WHERE app_id = ? ORDER BY depot_id',
+      )
+      .all(appId)
+      .map(({ depotId }) => depotId)
+  }
+
+  replaceSelectedDepotIds(appId: number, depotIds: number[]): number[] {
+    validateId(appId, 'appId')
+    const uniqueDepotIds = new Set(depotIds)
+    if (uniqueDepotIds.size !== depotIds.length) {
+      throw new Error('depotIds must not contain duplicates')
+    }
+    for (const depotId of depotIds) validateId(depotId, 'depotId')
+    if (!this.getLibraryEntry(appId)) throw new Error('App is not in library')
+
+    this.sqlite.transaction(() => {
+      this.sqlite
+        .query('DELETE FROM library_depot_selections WHERE app_id = ?')
+        .run(appId)
+      const insert = this.sqlite.query(
+        'INSERT INTO library_depot_selections (app_id, depot_id) VALUES (?, ?)',
+      )
+      for (const depotId of uniqueDepotIds) insert.run(appId, depotId)
+    })()
+    return this.getSelectedDepotIds(appId)
+  }
+
   getManifestRows(depotId: number): ManifestRow[] {
     return this.sqlite
       .query<ManifestRow, [number]>(
@@ -101,14 +147,15 @@ export class KalamataDatabase {
     validateId(appId, 'appId')
     const requested = await canonicalizeInstallDirectory(path)
     const own = this.getLibraryEntry(appId)
-    if (own) {
+    if (!own) throw new Error('App is not in library')
+    if (own.installPath) {
       const locked = await canonicalizeInstallDirectory(own.installPath)
       if (locked.comparisonKey !== requested.comparisonKey) {
         throw new Error('An installed app cannot change its install path')
       }
     }
     for (const entry of this.getLibrary()) {
-      if (entry.appId === appId) continue
+      if (entry.appId === appId || !entry.installPath) continue
       const existing = await canonicalizeInstallDirectory(entry.installPath)
       if (existing.comparisonKey === requested.comparisonKey) {
         throw new Error('Install path is already used by another app')
@@ -155,11 +202,13 @@ export class KalamataDatabase {
         .get(depotId, manifestId)
       if (!manifest) throw new Error('Manifest file is not registered')
 
+      const library = this.getLibraryEntry(appId)
+      if (!library) throw new Error('App is not in library')
       this.sqlite
         .query(
-          'INSERT INTO library (app_id, install_path, created_at) VALUES (?, ?, ?) ON CONFLICT(app_id) DO NOTHING',
+          'UPDATE library SET install_path = COALESCE(install_path, ?) WHERE app_id = ?',
         )
-        .run(appId, installPath, now)
+        .run(installPath, appId)
       this.sqlite
         .query(
           'INSERT INTO library_depot_installs (app_id, depot_id, installed_manifest_id, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(app_id, depot_id) DO UPDATE SET installed_manifest_id = excluded.installed_manifest_id, updated_at = excluded.updated_at',

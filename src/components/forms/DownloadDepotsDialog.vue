@@ -3,12 +3,25 @@ import { FolderOpen, Lock } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
 
 import { selectInstallDirectory } from '@/api/install-directory'
+import DepotBadges from '@/components/shared/DepotBadges.vue'
+import DepotSummary from '@/components/shared/DepotSummary.vue'
 import { useDownloadQueueStore } from '@/stores/download-queue'
-import type { AppDepot, AppDetails } from '@/types/rpc'
+import type { AppDetails } from '@/types/rpc'
 import { formatBytes } from '@/utils/bytes'
+import {
+  depotsInGroup,
+  installableDepotGroups,
+  installableDepots,
+  summarizeDepots,
+} from '@/utils/depots'
 
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
   DialogContent,
@@ -22,6 +35,7 @@ const props = defineProps<{
   open: boolean
   app: AppDetails
   initialPath: string
+  selectedDepotIds: number[]
 }>()
 
 const emit = defineEmits<{
@@ -31,20 +45,51 @@ const emit = defineEmits<{
 
 const queue = useDownloadQueueStore()
 const selectedPath = ref('')
-const selectedDepotIds = ref<number[]>([])
 const pathError = ref('')
-const depotError = ref('')
 const startError = ref('')
 const choosingPath = ref(false)
 const starting = ref(false)
 const downloadStarted = ref(false)
 
-const queueIdle = computed(() => queue.state.status !== 'running')
+const selectedIds = computed(() => new Set(props.selectedDepotIds))
+const selectedDepots = computed(() =>
+  installableDepots(props.app.depots).filter((depot) =>
+    selectedIds.value.has(depot.depotId),
+  ),
+)
+const depotSummary = computed(() => ({
+  ...summarizeDepots(installableDepots(props.app.depots), selectedIds.value),
+  missing: selectedDepots.value.some(
+    (depot) => depot.manifestStatus !== 'ready' || depot.keyStatus !== 'ready',
+  ),
+}))
+const depotGroups = computed(() =>
+  installableDepotGroups.flatMap((name) => {
+    const allDepots = depotsInGroup(props.app.depots, name)
+    const depots = allDepots.filter((depot) =>
+      selectedIds.value.has(depot.depotId),
+    )
+    if (!depots.length) return []
+    return [
+      {
+        name,
+        depots,
+        summary: {
+          ...summarizeDepots(allDepots, selectedIds.value),
+          missing: depots.some(
+            (depot) =>
+              depot.manifestStatus !== 'ready' || depot.keyStatus !== 'ready',
+          ),
+        },
+      },
+    ]
+  }),
+)
 const canStart = computed(
   () =>
     Boolean(selectedPath.value) &&
-    selectedDepotIds.value.length > 0 &&
-    queueIdle.value &&
+    selectedDepots.value.length > 0 &&
+    queue.state.status !== 'running' &&
     !starting.value,
 )
 
@@ -53,31 +98,14 @@ watch(
   (open) => {
     if (!open) return
     selectedPath.value = props.app.installPath ?? props.initialPath
-    selectedDepotIds.value = []
     pathError.value = ''
-    depotError.value = ''
     startError.value = ''
     downloadStarted.value = false
   },
 )
 
-function unavailableReason(depot: AppDepot) {
-  if (!depot.eligible) return 'Not eligible for download'
-  if (depot.installStatus === 'current') return 'Already installed and current'
-  if (depot.manifestStatus !== 'ready')
-    return `Manifest ${depot.manifestStatus}`
-  if (depot.keyStatus !== 'ready') return `Depot key ${depot.keyStatus}`
-  return 'Unavailable'
-}
-
-function depotSizeEvidence(depot: AppDepot) {
-  const download = depot.downloadBytes
-    ? `Download size: ${formatBytes(depot.downloadBytes)}`
-    : 'Download size unavailable from Steam'
-  const installed = depot.sizeBytes
-    ? `Installed size: ${formatBytes(depot.sizeBytes)}`
-    : 'Installed size unavailable from Steam'
-  return `${download} · ${installed}`
+function formattedBytes(value: string | null) {
+  return value ? formatBytes(value) : 'Unavailable'
 }
 
 function handleCloseAutoFocus(event: Event) {
@@ -101,24 +129,8 @@ async function chooseDirectory() {
   }
 }
 
-function updateDepot(depotId: number, checked: boolean | 'indeterminate') {
-  if (checked === true) {
-    if (!selectedDepotIds.value.includes(depotId)) {
-      selectedDepotIds.value = [...selectedDepotIds.value, depotId]
-    }
-  } else {
-    selectedDepotIds.value = selectedDepotIds.value.filter(
-      (id) => id !== depotId,
-    )
-  }
-  depotError.value = ''
-}
-
 async function submit() {
   pathError.value = selectedPath.value ? '' : 'Choose an install directory.'
-  depotError.value = selectedDepotIds.value.length
-    ? ''
-    : 'Select at least one ready depot.'
   startError.value = ''
   if (!canStart.value) return
 
@@ -127,7 +139,7 @@ async function submit() {
     await queue.startDownload({
       appId: props.app.appId,
       installPath: selectedPath.value,
-      depotIds: selectedDepotIds.value,
+      depotIds: selectedDepots.value.map((depot) => depot.depotId),
     })
     downloadStarted.value = true
     emit('update:open', false)
@@ -142,14 +154,14 @@ async function submit() {
 <template>
   <Dialog :open="open" @update:open="emit('update:open', $event)">
     <DialogContent
-      class="max-h-[calc(100dvh-2rem)] gap-4 overflow-y-auto sm:max-w-xl"
+      class="max-h-[calc(100dvh-2rem)] gap-5 overflow-y-auto sm:max-w-xl"
       @close-auto-focus="handleCloseAutoFocus"
     >
       <DialogHeader class="min-w-0">
-        <DialogTitle>Download depots</DialogTitle>
-        <DialogDescription
-          >{{ app.name }} · App {{ app.appId }}</DialogDescription
-        >
+        <DialogTitle>Install {{ app.name }}</DialogTitle>
+        <DialogDescription class="sr-only">
+          Review selected depots and choose an install directory.
+        </DialogDescription>
       </DialogHeader>
 
       <section class="min-w-0 space-y-2" aria-labelledby="install-path-title">
@@ -176,9 +188,9 @@ async function submit() {
           >
             {{ selectedPath }}
           </span>
-          <span v-else class="text-muted-foreground min-w-0 flex-1 text-sm"
-            >No directory selected</span
-          >
+          <span v-else class="text-muted-foreground min-w-0 flex-1 text-sm">
+            No directory selected
+          </span>
           <Button
             v-if="!app.installPath"
             type="button"
@@ -193,96 +205,80 @@ async function submit() {
         <p v-if="pathError" class="text-destructive text-xs" role="alert">
           {{ pathError }}
         </p>
-        <p v-else-if="!selectedPath" class="text-muted-foreground text-xs">
-          Choose a directory before starting the download.
-        </p>
       </section>
 
-      <fieldset class="min-h-0 min-w-0 space-y-2">
-        <legend class="sr-only">Select depots</legend>
-        <div class="flex items-baseline justify-between gap-3">
-          <span class="text-sm font-medium">Select depots</span>
-          <span class="text-muted-foreground text-xs"
-            >None selected by default</span
+      <section class="min-w-0" aria-labelledby="selected-depots-title">
+        <header class="flex flex-wrap items-center justify-between gap-3">
+          <h3 id="selected-depots-title" class="text-sm font-medium">Depots</h3>
+          <DepotSummary :summary="depotSummary" :show-missing="false" />
+        </header>
+
+        <Accordion type="multiple" class="mt-2 space-y-2">
+          <AccordionItem
+            v-for="group in depotGroups"
+            :key="group.name"
+            :value="group.name"
+            class="border-border overflow-hidden rounded-lg border last:border-b"
           >
-        </div>
-        <div class="rounded-md border">
-          <div class="divide-border divide-y">
-            <label
-              v-for="depot in app.depots"
-              :key="depot.depotId"
-              class="flex gap-3 px-3 py-3"
-              :class="
-                depot.selectable
-                  ? 'hover:bg-muted/50 cursor-pointer'
-                  : 'cursor-not-allowed opacity-65'
-              "
+            <AccordionTrigger
+              class="hover:bg-accent/50 rounded-none px-3 py-2.5 hover:no-underline"
             >
-              <Checkbox
-                class="mt-0.5"
-                :model-value="selectedDepotIds.includes(depot.depotId)"
-                :disabled="!depot.selectable"
-                :aria-describedby="`depot-${depot.depotId}-status`"
-                @update:model-value="updateDepot(depot.depotId, $event)"
-              />
-              <span class="min-w-0 flex-1">
-                <span class="flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <span class="font-medium tabular-nums"
-                    >Depot {{ depot.depotId }}</span
-                  >
-                  <span class="text-muted-foreground text-xs">
-                    Platform: {{ depot.platform || 'All platforms' }}
-                  </span>
-                  <span class="text-muted-foreground text-xs">
-                    Language: {{ depot.language || 'All languages' }}
-                  </span>
-                </span>
-                <span
-                  :id="`depot-${depot.depotId}-status`"
-                  class="text-muted-foreground mt-1 block text-xs"
-                >
-                  {{
-                    depot.selectable
-                      ? 'Ready to download'
-                      : unavailableReason(depot)
-                  }}
-                </span>
-                <span class="mt-1 block text-sm">
-                  {{ depotSizeEvidence(depot) }}
-                </span>
+              <span
+                class="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-3 pr-2"
+              >
+                <span>{{ group.name }}</span>
+                <DepotSummary :summary="group.summary" />
               </span>
-            </label>
-            <p
-              v-if="app.depots.length === 0"
-              class="text-muted-foreground p-4 text-sm"
-            >
-              No public depots are available.
-            </p>
-          </div>
-        </div>
-        <p v-if="depotError" class="text-destructive text-xs" role="alert">
-          {{ depotError }}
-        </p>
-        <p
-          v-else-if="selectedDepotIds.length === 0"
-          class="text-muted-foreground text-xs"
-        >
-          Select at least one ready depot to continue.
-        </p>
-        <p v-if="startError" class="text-destructive text-sm" role="alert">
-          {{ startError }}
-        </p>
-      </fieldset>
+            </AccordionTrigger>
+            <AccordionContent class="pb-0">
+              <ul :aria-label="`Selected ${group.name} depots`">
+                <li
+                  v-for="depot in group.depots"
+                  :key="depot.depotId"
+                  class="border-border border-t px-3 py-3"
+                >
+                  <div class="flex flex-wrap items-start justify-between gap-3">
+                    <p class="font-medium tabular-nums">
+                      <span class="text-muted-foreground">ID</span>
+                      {{ depot.depotId }}
+                    </p>
+                    <DepotBadges :depot="depot" />
+                  </div>
+                  <dl class="mt-3 grid gap-3 text-xs sm:grid-cols-2">
+                    <div>
+                      <dt class="text-muted-foreground">Download Size</dt>
+                      <dd class="mt-1 font-medium tabular-nums">
+                        {{ formattedBytes(depot.downloadBytes) }}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt class="text-muted-foreground">Size on Disk</dt>
+                      <dd class="mt-1 font-medium tabular-nums">
+                        {{ formattedBytes(depot.sizeBytes) }}
+                      </dd>
+                    </div>
+                  </dl>
+                </li>
+              </ul>
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
+      </section>
+
+      <p v-if="startError" class="text-destructive text-sm" role="alert">
+        {{ startError }}
+      </p>
 
       <DialogFooter class="min-w-0">
         <Button
           type="button"
           variant="outline"
           @click="emit('update:open', false)"
-          >Cancel</Button
         >
+          Cancel
+        </Button>
         <Button type="button" :disabled="!canStart" @click="submit">
-          {{ starting ? 'Starting…' : 'Start download' }}
+          {{ starting ? 'Installing…' : 'Install' }}
         </Button>
       </DialogFooter>
     </DialogContent>

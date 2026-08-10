@@ -46,13 +46,15 @@ export interface IneligibleAppDepot extends AppDepotBase {
 export type AppDepot = EligibleAppDepot | IneligibleAppDepot
 
 export interface AppDetails extends AppSummary {
+  inLibrary: boolean
   installPath: string | null
+  selectedDepotIds: number[]
   depots: AppDepot[]
 }
 
 export interface LibraryEntry {
   appId: number
-  installPath: string
+  installPath: string | null
   createdAt: number
 }
 
@@ -117,6 +119,18 @@ export type AppRpc = {
       getLibrary: {
         params: Record<string, never>
         response: LibraryEntry[]
+      }
+      addLibraryEntry: {
+        params: { appId: number }
+        response: LibraryEntry
+      }
+      removeLibraryEntry: {
+        params: { appId: number }
+        response: void
+      }
+      setSelectedDepots: {
+        params: { appId: number; depotIds: number[] }
+        response: number[]
       }
       selectInstallDirectory: {
         params: { startingPath?: string }

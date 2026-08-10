@@ -16,12 +16,27 @@ export const library = sqliteTable(
   'library',
   {
     appId: integer('app_id').primaryKey(),
-    installPath: text('install_path').notNull(),
+    installPath: text('install_path'),
     createdAt: integer('created_at').notNull(),
   },
   (table) => [
     unique('library_install_path_unique').on(table.installPath),
     check('library_app_id_valid', validId(table.appId)),
+  ],
+)
+
+export const libraryDepotSelections = sqliteTable(
+  'library_depot_selections',
+  {
+    appId: integer('app_id')
+      .notNull()
+      .references(() => library.appId, { onDelete: 'cascade' }),
+    depotId: integer('depot_id').notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.appId, table.depotId] }),
+    check('library_depot_selections_app_id_valid', validId(table.appId)),
+    check('library_depot_selections_depot_id_valid', validId(table.depotId)),
   ],
 )
 

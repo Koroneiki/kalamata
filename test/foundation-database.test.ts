@@ -50,19 +50,31 @@ describe('foundation database', () => {
     expect(tables).toContain('manifest_files')
     expect(tables).toContain('depot_keys')
     expect(tables).toContain('library_depot_installs')
+    expect(tables).toContain('library_depot_selections')
     expect(db.sqlite.query('PRAGMA foreign_keys').get()).toEqual({
       foreign_keys: 1,
     })
     expect(db.sqlite.query('PRAGMA journal_mode').get()).toEqual({
       journal_mode: 'wal',
     })
+    expect(db.sqlite.query('PRAGMA foreign_key_check').all()).toEqual([])
+    expect(
+      db.sqlite
+        .query<{ table: string }, []>(
+          'PRAGMA foreign_key_list(library_depot_selections)',
+        )
+        .all()
+        .map(({ table }) => table),
+    ).toEqual(['library'])
   })
 
-  test('requires registered manifests and rolls back library creation', async () => {
+  test('requires a library entry and registered manifests', async () => {
     const db = await openDatabase()
     expect(() => db.recordInstalledDepot(10, root!, 20, '123')).toThrow()
     expect(db.getLibrary()).toEqual([])
 
+    db.addLibraryEntry(10)
+    expect(() => db.recordInstalledDepot(10, root!, 20, '123')).toThrow()
     db.addManifest(20, '123')
     db.recordInstalledDepot(10, root!, 20, '123')
     db.sqlite.query('DELETE FROM library WHERE app_id = 10').run()
@@ -71,6 +83,7 @@ describe('foundation database', () => {
 
   test('syncs manifest rows to regular files without losing install state', async () => {
     const db = await openDatabase()
+    db.addLibraryEntry(10)
     db.addManifest(20, '123')
     db.recordInstalledDepot(10, root!, 20, '123')
     await writeFile(join(root!, 'manifest-files', '30_456.manifest'), '')
@@ -98,6 +111,8 @@ describe('foundation database', () => {
     await mkdir(install)
     await mkdir(other)
     await symlink(install, alias)
+    db.addLibraryEntry(10)
+    db.addLibraryEntry(11)
     db.addManifest(20, '123')
     db.recordInstalledDepot(10, install, 20, '123')
 
@@ -110,6 +125,31 @@ describe('foundation database', () => {
     await expect(db.assertInstallPathAvailable(10, alias)).resolves.toBe(
       await realpath(install),
     )
+  })
+
+  test('persists independent library selections and cascades their removal', async () => {
+    let db = await openDatabase()
+    expect(db.addLibraryEntry(10, 1000)).toEqual({
+      appId: 10,
+      installPath: null,
+      createdAt: 1000,
+    })
+    expect(db.replaceSelectedDepotIds(10, [30, 20])).toEqual([20, 30])
+
+    db.close()
+    database = undefined
+    db = await KalamataDatabase.open(
+      root!,
+      join(import.meta.dir, '..', 'src', 'db', 'migrations'),
+    )
+    database = db
+    expect(db.getSelectedDepotIds(10)).toEqual([20, 30])
+    expect(db.replaceSelectedDepotIds(10, [40])).toEqual([40])
+    expect(() => db.replaceSelectedDepotIds(10, [40, 40])).toThrow('duplicates')
+
+    db.removeLibraryEntry(10)
+    expect(db.getLibraryEntry(10)).toBeNull()
+    expect(db.getSelectedDepotIds(10)).toEqual([])
   })
 })
 
