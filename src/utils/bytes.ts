@@ -12,10 +12,10 @@ export function formatBytes(value: string): string {
 
   if (unit === 0) return `${bytes.toLocaleString()} B`
 
-  const tenths = (bytes * 10n + divisor / 2n) / divisor
-  const whole = tenths / 10n
-  const fraction = tenths % 10n
-  return `${whole.toLocaleString()}${fraction ? `.${fraction}` : ''} ${BYTE_UNITS[unit]}`
+  const hundredths = (bytes * 100n + divisor / 2n) / divisor
+  const whole = hundredths / 100n
+  const fraction = (hundredths % 100n).toString().padStart(2, '0')
+  return `${whole.toLocaleString()}.${fraction} ${BYTE_UNITS[unit]}`
 }
 
 export function bytePercentage(downloaded: string, total: string): number {
