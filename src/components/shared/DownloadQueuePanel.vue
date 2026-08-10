@@ -5,8 +5,12 @@ import { computed, ref } from 'vue'
 import type { DownloadQueueState } from '@/types/rpc'
 import { bytePercentage, formatBytes } from '@/utils/bytes'
 
-import InstallPathValue from './InstallPathValue.vue'
 import { Progress } from '@/components/ui/progress'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 
 const props = defineProps<{
   state: Exclude<DownloadQueueState, { status: 'idle' }>
@@ -85,25 +89,26 @@ defineExpose({
         :aria-label="`Download progress for depot ${state.currentDepotId}`"
         :aria-valuetext="progressValueText"
       />
+      <Tooltip v-if="state.operation">
+        <TooltipTrigger as-child>
+          <span
+            class="text-muted-foreground focus-visible:ring-ring mt-3 block min-w-0 truncate rounded-sm text-xs outline-none focus-visible:ring-3"
+            tabindex="0"
+            :aria-label="`Current operation: ${state.operation}`"
+          >
+            {{ state.operation }}
+          </span>
+        </TooltipTrigger>
+        <TooltipContent class="max-w-[min(36rem,80vw)] text-xs break-all">
+          {{ state.operation }}
+        </TooltipContent>
+      </Tooltip>
       <span
-        v-if="state.operation"
-        class="group/operation relative mt-3 block min-w-0"
+        class="mt-2 block truncate font-mono text-xs"
+        :aria-label="`Install path: ${state.installPath}`"
       >
-        <span
-          class="text-muted-foreground focus-visible:ring-ring block truncate rounded-sm text-xs outline-none focus-visible:ring-2"
-          tabindex="0"
-          :aria-label="`Current operation: ${state.operation}`"
-        >
-          {{ state.operation }}
-        </span>
-        <span
-          class="bg-popover text-popover-foreground pointer-events-none absolute bottom-full left-0 z-50 mb-1 hidden max-w-[min(36rem,80vw)] rounded-md px-2 py-1 text-xs break-all shadow-md group-focus-within/operation:block group-hover/operation:block"
-          aria-hidden="true"
-        >
-          {{ state.operation }}
-        </span>
+        {{ state.installPath }}
       </span>
-      <InstallPathValue class="mt-2" :path="state.installPath" />
     </template>
 
     <template v-else-if="state.status === 'completed'">
@@ -117,7 +122,12 @@ defineExpose({
         installed · {{ formatBytes(state.downloadedBytes) }} downloaded ·
         {{ formatBytes(state.reusedBytes) }} reused
       </p>
-      <InstallPathValue class="mt-2" :path="state.installPath" />
+      <span
+        class="mt-2 block truncate font-mono text-xs"
+        :aria-label="`Install path: ${state.installPath}`"
+      >
+        {{ state.installPath }}
+      </span>
     </template>
 
     <template v-else>

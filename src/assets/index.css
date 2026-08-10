@@ -117,3 +117,18 @@
     color: var(--accent-foreground);
   }
 }
+
+@layer utilities {
+  [data-sidebar='menu-button'][data-active='true'] {
+    background-color: color-mix(
+      in oklab,
+      var(--sidebar-primary) 12%,
+      var(--sidebar-accent)
+    );
+    background-image: linear-gradient(
+      to right,
+      var(--sidebar-primary) 0 1px,
+      transparent 1px
+    );
+  }
+}

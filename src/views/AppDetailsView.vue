@@ -7,7 +7,6 @@ import { useRoute } from 'vue-router'
 import { selectInstallDirectory } from '@/api/install-directory'
 import DownloadDepotsDialog from '@/components/forms/DownloadDepotsDialog.vue'
 import DepotAccordion from '@/components/shared/DepotAccordion.vue'
-import InstallPathValue from '@/components/shared/InstallPathValue.vue'
 import DownloadQueuePanel from '@/components/shared/DownloadQueuePanel.vue'
 import { appQueryKeys } from '@/composables/queries'
 import { getAppDetails } from '@/api/apps'
@@ -253,7 +252,7 @@ async function focusDownloadQueue() {
 
       <Tabs default-value="info" class="mt-8">
         <TabsList>
-          <TabsTrigger value="info">Info</TabsTrigger>
+          <TabsTrigger value="info">Install</TabsTrigger>
           <TabsTrigger value="depots">Depots</TabsTrigger>
         </TabsList>
 
@@ -273,7 +272,7 @@ async function focusDownloadQueue() {
                   class="text-muted-foreground size-4"
                   aria-hidden="true"
                 />
-                <h2 class="text-sm font-medium">Install directory</h2>
+                <h2 class="text-base font-medium">Install directory</h2>
                 <span
                   v-if="data.installPath"
                   class="text-muted-foreground text-xs"
@@ -283,11 +282,13 @@ async function focusDownloadQueue() {
               <div
                 class="mt-2 flex min-w-0 flex-col items-stretch gap-2 sm:flex-row sm:items-center"
               >
-                <InstallPathValue
+                <span
                   v-if="selectedPath"
-                  class="min-w-0 flex-1"
-                  :path="selectedPath"
-                />
+                  class="min-w-0 flex-1 truncate font-mono text-xs"
+                  :aria-label="`Install path: ${selectedPath}`"
+                >
+                  {{ selectedPath }}
+                </span>
                 <span
                   v-else
                   class="text-muted-foreground min-w-0 flex-1 text-sm"
@@ -312,7 +313,7 @@ async function focusDownloadQueue() {
               </div>
               <p
                 v-if="pathError"
-                class="text-destructive mt-2 text-xs"
+                class="text-destructive mt-2 text-sm"
                 role="alert"
               >
                 {{ pathError }}
@@ -331,29 +332,29 @@ async function focusDownloadQueue() {
               </Button>
               <p
                 v-if="queueForApp?.status === 'running'"
-                class="text-muted-foreground text-xs"
+                class="text-muted-foreground text-sm"
               >
                 Download in progress.
               </p>
               <p
                 v-else-if="anotherQueueRunning"
-                class="text-muted-foreground text-xs"
+                class="text-muted-foreground text-sm"
               >
                 Another app is currently downloading.
               </p>
               <p
                 v-else-if="readyDepotCount === 0"
-                class="text-muted-foreground text-xs"
+                class="text-muted-foreground text-sm"
               >
                 No depots are ready to download.
               </p>
               <p
                 v-else-if="!selectedPath"
-                class="text-muted-foreground text-xs"
+                class="text-muted-foreground text-sm"
               >
                 Choose an install directory to continue.
               </p>
-              <p v-else class="text-muted-foreground text-xs">
+              <p v-else class="text-muted-foreground text-sm">
                 {{ readyDepotCount }} ready
                 {{ readyDepotCount === 1 ? 'depot' : 'depots' }}
               </p>

@@ -7,7 +7,6 @@ import { useDownloadQueueStore } from '@/stores/download-queue'
 import type { AppDepot, AppDetails } from '@/types/rpc'
 import { formatBytes } from '@/utils/bytes'
 
-import InstallPathValue from '@/components/shared/InstallPathValue.vue'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -18,8 +17,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Label } from '@/components/ui/label'
-import { ScrollArea } from '@/components/ui/scroll-area'
 
 const props = defineProps<{
   open: boolean
@@ -155,8 +152,10 @@ async function submit() {
         >
       </DialogHeader>
 
-      <div class="min-w-0 space-y-2">
-        <Label>Install directory</Label>
+      <section class="min-w-0 space-y-2" aria-labelledby="install-path-title">
+        <h3 id="install-path-title" class="text-sm font-medium">
+          Install directory
+        </h3>
         <div
           class="bg-muted/40 flex min-w-0 flex-col items-stretch gap-2 rounded-md border px-3 py-2 sm:flex-row sm:items-center"
         >
@@ -170,11 +169,13 @@ async function submit() {
             class="text-muted-foreground size-4 shrink-0"
             aria-hidden="true"
           />
-          <InstallPathValue
+          <span
             v-if="selectedPath"
-            class="min-w-0 flex-1"
-            :path="selectedPath"
-          />
+            class="min-w-0 flex-1 truncate font-mono text-xs"
+            :aria-label="`Install path: ${selectedPath}`"
+          >
+            {{ selectedPath }}
+          </span>
           <span v-else class="text-muted-foreground min-w-0 flex-1 text-sm"
             >No directory selected</span
           >
@@ -195,16 +196,17 @@ async function submit() {
         <p v-else-if="!selectedPath" class="text-muted-foreground text-xs">
           Choose a directory before starting the download.
         </p>
-      </div>
+      </section>
 
-      <div class="min-h-0 min-w-0 space-y-2">
+      <fieldset class="min-h-0 min-w-0 space-y-2">
+        <legend class="sr-only">Select depots</legend>
         <div class="flex items-baseline justify-between gap-3">
-          <Label>Select depots</Label>
+          <span class="text-sm font-medium">Select depots</span>
           <span class="text-muted-foreground text-xs"
             >None selected by default</span
           >
         </div>
-        <ScrollArea class="h-[min(19rem,42vh)] rounded-md border">
+        <div class="rounded-md border">
           <div class="divide-border divide-y">
             <label
               v-for="depot in app.depots"
@@ -257,7 +259,7 @@ async function submit() {
               No public depots are available.
             </p>
           </div>
-        </ScrollArea>
+        </div>
         <p v-if="depotError" class="text-destructive text-xs" role="alert">
           {{ depotError }}
         </p>
@@ -270,7 +272,7 @@ async function submit() {
         <p v-if="startError" class="text-destructive text-sm" role="alert">
           {{ startError }}
         </p>
-      </div>
+      </fieldset>
 
       <DialogFooter class="min-w-0">
         <Button

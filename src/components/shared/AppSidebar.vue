@@ -87,6 +87,7 @@ watch(
 
     <SidebarContent class="group-data-[collapsible=icon]:overflow-y-auto">
       <SidebarGroup class="min-h-0 flex-1">
+        <SidebarGroupLabel>Installed games</SidebarGroupLabel>
         <SidebarGroupContent>
           <SidebarMenu aria-label="Installed games">
             <template v-if="isPending">
@@ -114,9 +115,11 @@ watch(
             </template>
 
             <SidebarMenuItem v-else>
-              <SidebarMenuButton disabled tooltip="No installed games">
-                <Library aria-hidden="true" />
-                <span>No installed games</span>
+              <SidebarMenuButton as-child tooltip="No installed games">
+                <span aria-disabled="true">
+                  <Library aria-hidden="true" />
+                  <span>No installed games</span>
+                </span>
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>
