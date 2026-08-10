@@ -13,11 +13,6 @@ const router = createRouter({
       name: 'app-details',
       component: () => import('@/views/AppDetailsView.vue'),
     },
-    {
-      path: '/downloads',
-      name: 'downloads',
-      component: () => import('@/views/DownloadsView.vue'),
-    },
   ],
 })
 

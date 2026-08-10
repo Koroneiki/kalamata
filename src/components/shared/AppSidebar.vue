@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { Download, House, Library, Plus, RefreshCw } from '@lucide/vue'
-import { watch } from 'vue'
+import { House, Library, Plus, RefreshCw } from '@lucide/vue'
 import { RouterLink, useRoute } from 'vue-router'
 
 import AddGameDialog from '@/components/forms/AddGameDialog.vue'
@@ -32,11 +31,6 @@ const {
   isPending,
   refetch,
 } = useLibraryQuery()
-
-watch(
-  () => route.fullPath,
-  () => setOpenMobile(false),
-)
 </script>
 
 <template>
@@ -62,22 +56,6 @@ watch(
             >
               <House aria-hidden="true" />
               <span>Home</span>
-            </RouterLink>
-          </SidebarMenuButton>
-        </SidebarMenuItem>
-        <SidebarMenuItem>
-          <SidebarMenuButton
-            as-child
-            :is-active="route.name === 'downloads'"
-            tooltip="Downloads"
-          >
-            <RouterLink
-              :to="{ name: 'downloads' }"
-              :aria-current="route.name === 'downloads' ? 'page' : undefined"
-              @click="setOpenMobile(false)"
-            >
-              <Download aria-hidden="true" />
-              <span>Downloads</span>
             </RouterLink>
           </SidebarMenuButton>
         </SidebarMenuItem>
