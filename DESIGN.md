@@ -175,7 +175,7 @@ Gently rounded rectangles keep the application practical rather than playful. Co
 - **Primary:** Field Olive with Olive Ink, used once per decision area for the next committed action.
 - **Hover / Focus:** A slight tonal shift on hover and a three-pixel translucent Focus Olive ring on keyboard focus.
 - **Outline:** Parchment with a Pencil Line edge; hover moves to Olive Wash.
-- **Disabled:** Preserve the label and reduce opacity. Pair consequential disabled actions with nearby text explaining the unmet condition.
+- **Disabled:** Preserve the label and reduce opacity. Keep disabled-state reasons discoverable through the surrounding workflow. Do not add visible explanatory copy solely because a control is disabled.
 
 ### Chips
 - **Style:** Fully rounded, compact status badges. Dry Grass denotes ready or grouped status, an outline denotes neutral state, and Signal Red denotes invalid state.
