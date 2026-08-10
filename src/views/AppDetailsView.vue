@@ -15,6 +15,7 @@ import { useDownloadQueueStore } from '@/stores/download-queue'
 
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 const route = useRoute()
 const queue = useDownloadQueueStore()
@@ -203,111 +204,127 @@ async function focusDownloadQueue() {
         </div>
       </header>
 
-      <section
-        class="border-border mt-6 grid gap-4 border-y py-5 lg:grid-cols-[minmax(0,1fr)_18rem] lg:items-start"
-      >
-        <div class="min-w-0">
-          <div class="flex items-center gap-2">
-            <Lock
-              v-if="data.installPath"
-              class="text-muted-foreground size-4"
-              aria-hidden="true"
-            />
-            <FolderOpen
-              v-else
-              class="text-muted-foreground size-4"
-              aria-hidden="true"
-            />
-            <h2 class="text-sm font-medium">Install directory</h2>
-            <span v-if="data.installPath" class="text-muted-foreground text-xs"
-              >Locked</span
-            >
-          </div>
-          <div
-            class="mt-2 flex min-w-0 flex-col items-stretch gap-2 sm:flex-row sm:items-center"
-          >
-            <InstallPathValue
-              v-if="selectedPath"
-              class="min-w-0 flex-1"
-              :path="selectedPath"
-            />
-            <span v-else class="text-muted-foreground min-w-0 flex-1 text-sm"
-              >No directory selected</span
-            >
-            <Button
-              v-if="!data.installPath"
-              type="button"
-              size="sm"
-              variant="outline"
-              :disabled="choosingPath || queue.state.status === 'running'"
-              @click="chooseDirectory"
-            >
-              {{
-                choosingPath
-                  ? 'Choosing…'
-                  : selectedPath
-                    ? 'Change'
-                    : 'Choose directory'
-              }}
-            </Button>
-          </div>
-          <p
-            v-if="pathError"
-            class="text-destructive mt-2 text-xs"
-            role="alert"
-          >
-            {{ pathError }}
-          </p>
-        </div>
+      <Tabs default-value="info" class="mt-8">
+        <TabsList>
+          <TabsTrigger value="info">Info</TabsTrigger>
+          <TabsTrigger value="depots">Depots</TabsTrigger>
+        </TabsList>
 
-        <div class="space-y-2 lg:text-right">
-          <Button
-            class="w-full lg:w-auto"
-            type="button"
-            :disabled="!canOpenDownload"
-            @click="openDownload"
+        <TabsContent value="info" class="mt-6">
+          <section
+            class="border-border grid gap-4 border-y py-5 lg:grid-cols-[minmax(0,1fr)_18rem] lg:items-start"
           >
-            <Download aria-hidden="true" />
-            Download depots
-          </Button>
-          <p
-            v-if="queueForApp?.status === 'running'"
-            class="text-muted-foreground text-xs"
-          >
-            Download in progress.
-          </p>
-          <p
-            v-else-if="anotherQueueRunning"
-            class="text-muted-foreground text-xs"
-          >
-            Another app is currently downloading.
-          </p>
-          <p
-            v-else-if="readyDepotCount === 0"
-            class="text-muted-foreground text-xs"
-          >
-            No depots are ready to download.
-          </p>
-          <p v-else-if="!selectedPath" class="text-muted-foreground text-xs">
-            Choose an install directory to continue.
-          </p>
-          <p v-else class="text-muted-foreground text-xs">
-            {{ readyDepotCount }} ready
-            {{ readyDepotCount === 1 ? 'depot' : 'depots' }}
-          </p>
-        </div>
-      </section>
+            <div class="min-w-0">
+              <div class="flex items-center gap-2">
+                <Lock
+                  v-if="data.installPath"
+                  class="text-muted-foreground size-4"
+                  aria-hidden="true"
+                />
+                <FolderOpen
+                  v-else
+                  class="text-muted-foreground size-4"
+                  aria-hidden="true"
+                />
+                <h2 class="text-sm font-medium">Install directory</h2>
+                <span
+                  v-if="data.installPath"
+                  class="text-muted-foreground text-xs"
+                  >Locked</span
+                >
+              </div>
+              <div
+                class="mt-2 flex min-w-0 flex-col items-stretch gap-2 sm:flex-row sm:items-center"
+              >
+                <InstallPathValue
+                  v-if="selectedPath"
+                  class="min-w-0 flex-1"
+                  :path="selectedPath"
+                />
+                <span
+                  v-else
+                  class="text-muted-foreground min-w-0 flex-1 text-sm"
+                  >No directory selected</span
+                >
+                <Button
+                  v-if="!data.installPath"
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  :disabled="choosingPath || queue.state.status === 'running'"
+                  @click="chooseDirectory"
+                >
+                  {{
+                    choosingPath
+                      ? 'Choosing…'
+                      : selectedPath
+                        ? 'Change'
+                        : 'Choose directory'
+                  }}
+                </Button>
+              </div>
+              <p
+                v-if="pathError"
+                class="text-destructive mt-2 text-xs"
+                role="alert"
+              >
+                {{ pathError }}
+              </p>
+            </div>
 
-      <DownloadQueuePanel
-        v-if="queueForApp"
-        ref="queuePanel"
-        class="mt-5"
-        :state="queueForApp"
-      />
+            <div class="space-y-2 lg:text-right">
+              <Button
+                class="w-full lg:w-auto"
+                type="button"
+                :disabled="!canOpenDownload"
+                @click="openDownload"
+              >
+                <Download aria-hidden="true" />
+                Download depots
+              </Button>
+              <p
+                v-if="queueForApp?.status === 'running'"
+                class="text-muted-foreground text-xs"
+              >
+                Download in progress.
+              </p>
+              <p
+                v-else-if="anotherQueueRunning"
+                class="text-muted-foreground text-xs"
+              >
+                Another app is currently downloading.
+              </p>
+              <p
+                v-else-if="readyDepotCount === 0"
+                class="text-muted-foreground text-xs"
+              >
+                No depots are ready to download.
+              </p>
+              <p
+                v-else-if="!selectedPath"
+                class="text-muted-foreground text-xs"
+              >
+                Choose an install directory to continue.
+              </p>
+              <p v-else class="text-muted-foreground text-xs">
+                {{ readyDepotCount }} ready
+                {{ readyDepotCount === 1 ? 'depot' : 'depots' }}
+              </p>
+            </div>
+          </section>
 
-      <section class="mt-6">
-        <DepotAccordion :depots="data.depots" />
-      </section>
+          <DownloadQueuePanel
+            v-if="queueForApp"
+            ref="queuePanel"
+            class="mt-5"
+            :state="queueForApp"
+          />
+        </TabsContent>
+
+        <TabsContent value="depots" class="mt-6">
+          <DepotAccordion :depots="data.depots" />
+        </TabsContent>
+      </Tabs>
 
       <DownloadDepotsDialog
         v-model:open="dialogOpen"

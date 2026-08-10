@@ -77,6 +77,11 @@
     @apply border-border outline-ring/50;
   }
 
+  html {
+    /* Prevent centered content shifting when accordions add a scrollbar. */
+    scrollbar-gutter: stable;
+  }
+
   body {
     @apply bg-background text-foreground;
     caret-color: var(--primary);
