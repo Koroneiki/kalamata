@@ -47,7 +47,7 @@ test('planning failure is a terminal typed state and does not reject start', asy
       installPath: fixture.installPath,
       depotIds: [DEPOTS[0].depotId],
     }),
-  ).resolves.toMatchObject({ status: 'running' })
+  ).resolves.toMatchObject({ status: 'active', phase: 'planning' })
   await waitForTerminal(queue)
 
   expect(queue.getOperationState()).toEqual({

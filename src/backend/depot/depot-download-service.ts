@@ -11,10 +11,8 @@ import {
   type InstalledApplicationDepot,
 } from './install/transaction/types.ts'
 import { recoverAndRunApplicationTransaction } from './install/transaction/transaction.ts'
-import {
-  parseManifest,
-  validateManifest,
-} from './manifests/manifest-codec.ts'
+import { parseManifest, validateManifest } from './manifests/manifest-codec.ts'
+import type { DepotManifest } from './manifests/types.ts'
 import { SteamContentClient } from './transfer/steam-content-client.ts'
 import type { ChunkClient, ContentServer } from './transfer/chunk-client.ts'
 import type { SteamSession } from '../steam/steam-session.ts'
@@ -41,6 +39,18 @@ export interface ReconcileApplicationOptions {
 export class DepotDownloadService {
   constructor(private readonly session: SteamSession) {}
 
+  loadApplicationDepots(
+    inputs: ApplicationDepotInput[],
+  ): Promise<InstalledApplicationDepot[]> {
+    return Promise.all(
+      inputs.map(async (input) => ({
+        depotId: input.depotId,
+        ownerAppId: input.ownerAppId,
+        manifest: await loadApplicationManifest(input),
+      })),
+    )
+  }
+
   async reconcileApplication(
     options: ReconcileApplicationOptions,
   ): Promise<ApplicationTransactionResult> {
@@ -48,20 +58,12 @@ export class DepotDownloadService {
     let result: ApplicationTransactionResult
     {
       throwIfAborted(options.signal)
-      const manifestCache = new Map<
-        string,
-        Promise<InstalledApplicationDepot>
-      >()
-      const installedDepots = await Promise.all(
-        options.installedDepots.map((depot) =>
-          loadApplicationDepot(depot, manifestCache),
-        ),
-      )
-      const desiredInputs = await Promise.all(
-        options.desiredDepots.map((depot) =>
-          loadApplicationDepot(depot, manifestCache),
-        ),
-      )
+      const loaded = await this.loadApplicationDepots([
+        ...options.installedDepots,
+        ...options.desiredDepots,
+      ])
+      const installedDepots = loaded.slice(0, options.installedDepots.length)
+      const desiredInputs = loaded.slice(options.installedDepots.length)
       throwIfAborted(options.signal)
 
       const clients: LazySteamContentClient[] = []
@@ -158,10 +160,7 @@ class LazySteamContentClient implements ChunkClient {
   }
 
   private getClient(): Promise<SteamContentClient> {
-    this.#client ??= abortable(
-      this.session.getClient(),
-      this.operationSignal,
-    )
+    this.#client ??= abortable(this.session.getClient(), this.operationSignal)
       .then((user) => new SteamContentClient(user, this.depotKey, this.agents))
       .catch((error) => {
         if (this.operationSignal.aborted) throw this.operationSignal.reason
@@ -175,28 +174,15 @@ class LazySteamContentClient implements ChunkClient {
   }
 }
 
-async function loadApplicationDepot(
+async function loadApplicationManifest(
   input: ApplicationDepotInput,
-  cache: Map<string, Promise<InstalledApplicationDepot>>,
-): Promise<InstalledApplicationDepot> {
-  const key = `${input.depotId}:${input.manifestId}`
-  let loaded = cache.get(key)
-  if (!loaded) {
-    loaded = (async () => {
-      const contents = await readFile(input.manifestPath)
-      const manifest = parseManifest(contents, Buffer.from(input.depotKey))
-      validateManifest(manifest, input.depotId)
-      if (manifest.gid_manifest !== input.manifestId)
-        throw new Error(`Depot ${input.depotId} manifest identity changed`)
-      return {
-        depotId: input.depotId,
-        ownerAppId: input.ownerAppId,
-        manifest,
-      }
-    })()
-    cache.set(key, loaded)
-  }
-  return loaded
+): Promise<DepotManifest> {
+  const contents = await readFile(input.manifestPath)
+  const manifest = parseManifest(contents, Buffer.from(input.depotKey))
+  validateManifest(manifest, input.depotId)
+  if (manifest.gid_manifest !== input.manifestId)
+    throw new Error(`Depot ${input.depotId} manifest identity changed`)
+  return manifest
 }
 
 function validateApplicationOptions(

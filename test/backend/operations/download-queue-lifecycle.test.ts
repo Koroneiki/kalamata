@@ -28,7 +28,7 @@ async function setup(): Promise<DownloadQueueFixture> {
   return currentFixture
 }
 
-test('start returns active legacy state before product planning completes', async () => {
+test('start returns active operation state before product planning completes', async () => {
   const fixture = await setup()
   const planningStarted = deferred<void>()
   const productInfo = deferred<ProductInfoResult>()
@@ -52,9 +52,9 @@ test('start returns active legacy state before product planning completes', asyn
   await planningStarted.promise
 
   expect(started).toMatchObject({
-    status: 'running',
-    depotIds: [DEPOTS[0].depotId],
-    operation: 'planning',
+    status: 'active',
+    desiredDepotIds: [DEPOTS[0].depotId],
+    phase: 'planning',
   })
   expect(queue.getOperationState()).toMatchObject({
     status: 'active',
@@ -107,6 +107,37 @@ test('cancellation aborts precommit work and yields cancelled typed state', asyn
     error: { kind: 'cancellation' },
   })
   expect(reconcileApplication).not.toHaveBeenCalled()
+})
+
+test('planning can pause before cancellation confirmation', async () => {
+  const fixture = await setup()
+  const planningStarted = deferred<void>()
+  const productInfo = deferred<ProductInfoResult>()
+  const queue = new DownloadQueueCoordinator(
+    {
+      getProductInfoWithDlc: async () => {
+        planningStarted.resolve()
+        return productInfo.promise
+      },
+      reconcileApplication: successfulReconciliation,
+    },
+    fixture.database,
+  )
+
+  await queue.start({
+    appId: APP_ID,
+    installPath: fixture.installPath,
+    depotIds: [DEPOTS[0].depotId],
+  })
+  await planningStarted.promise
+
+  expect(await queue.pause()).toEqual({ accepted: true })
+  expect(queue.getOperationState()).toMatchObject({
+    status: 'paused',
+    phase: 'planning',
+  })
+  expect(await queue.cancel()).toEqual({ accepted: true })
+  expect(queue.getOperationState()).toMatchObject({ status: 'cancelled' })
 })
 
 test('cancellation is rejected after committing starts', async () => {
@@ -171,6 +202,24 @@ test('cancellation is rejected while metadata reconciliation is committing', asy
   await waitForTerminal(queue)
 })
 
+test('releases the install path after a successful uninstall', async () => {
+  const fixture = await setup()
+  await install(fixture, DEPOTS[0])
+  const queue = new DownloadQueueCoordinator(
+    {
+      getProductInfoWithDlc: async () => products(),
+      reconcileApplication: successfulReconciliation,
+    },
+    fixture.database,
+  )
+
+  await queue.queueDepotUpdate({ appId: APP_ID, desiredDepotIds: [] })
+  await waitForTerminal(queue)
+
+  expect(fixture.database.getInstalls(APP_ID)).toEqual([])
+  expect(fixture.database.getLibraryEntry(APP_ID)?.installPath).toBeNull()
+})
+
 test('pause keeps the queue occupied and resume continues the operation', async () => {
   const fixture = await setup()
   const staging = deferred<void>()
@@ -203,7 +252,7 @@ test('pause keeps the queue occupied and resume continues the operation', async 
     depotIds: [DEPOTS[0].depotId],
   })
   await staging.promise
-  expect(queue.pause()).toEqual({ accepted: true })
+  expect(await queue.pause()).toEqual({ accepted: true })
   await waitForTerminal(queue)
   expect(queue.getOperationState().status).toBe('paused')
   expect(queue.resume()).toEqual({ accepted: true })
@@ -240,7 +289,7 @@ test('cancel overrides a pending pause and discards resumable work', async () =>
     depotIds: [DEPOTS[0].depotId],
   })
   await staging.promise
-  expect(queue.pause()).toEqual({ accepted: true })
+  expect(await queue.pause()).toEqual({ accepted: true })
   await expect(queue.cancel()).resolves.toEqual({ accepted: true })
   await waitForTerminal(queue)
 
@@ -278,7 +327,7 @@ test('resume is rejected while paused cancellation is pending', async () => {
     depotIds: [DEPOTS[0].depotId],
   })
   await staging.promise
-  expect(queue.pause()).toEqual({ accepted: true })
+  expect(await queue.pause()).toEqual({ accepted: true })
   await waitForTerminal(queue)
 
   const cancellation = queue.cancel()

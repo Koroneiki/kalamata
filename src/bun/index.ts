@@ -8,9 +8,7 @@ import Electrobun, {
 import { createSteamService } from '../backend/index.ts'
 import { AppService } from '../backend/apps/app-service.ts'
 import { DownloadQueueCoordinator } from '../backend/operations/download-queue.ts'
-import {
-  recoverApplicationTransaction,
-} from '../backend/depot/install/transaction/recovery.ts'
+import { recoverApplicationTransaction } from '../backend/depot/install/transaction/recovery.ts'
 import { openKalamataDatabase } from '../db/index.ts'
 import { syncManifestFiles } from '../db/manifest-files.ts'
 import { canonicalizeInstallDirectory } from '../db/validation.ts'
@@ -74,14 +72,14 @@ const rpc = BrowserView.defineRPC<AppRpc>({
         const path = selected[0]
         return path ? (await canonicalizeInstallDirectory(path)).path : null
       },
-      getDownloadState() {
-        return queue.getState()
-      },
       startDownload(request) {
         return queue.start(request)
       },
       queueDepotUpdate(request) {
         return queue.queueDepotUpdate(request)
+      },
+      previewApplicationOperation(request) {
+        return queue.previewApplicationOperation(request)
       },
       repairApplication(request) {
         return queue.repairApplication(request)
@@ -105,9 +103,6 @@ const rpc = BrowserView.defineRPC<AppRpc>({
 queue = new DownloadQueueCoordinator(
   steam,
   database,
-  (state) => {
-    if (rpcReady) rpc.send.downloadStateChanged(state)
-  },
   (state) => {
     if (rpcReady) rpc.send.operationStateChanged(state)
   },
@@ -164,6 +159,7 @@ startup = (async () => {
             })),
           ),
       })
+      database.clearUnusedInstallPath(entry.appId)
     } catch {
       recoveryFailures.push({
         appId: entry.appId,
@@ -173,10 +169,7 @@ startup = (async () => {
   }
   await queue.restoreInterrupted()
   for (const recoveryFailure of recoveryFailures)
-    queue.markRepairRequired(
-      recoveryFailure.appId,
-      recoveryFailure.installPath,
-    )
+    queue.markRepairRequired(recoveryFailure.appId, recoveryFailure.installPath)
 })()
 await startup
 

@@ -167,6 +167,37 @@ test('persists only depots belonging to the app', async () => {
   ])
 })
 
+test('drops selected depot IDs that are neither published nor installed', async () => {
+  const db = await setup()
+  db.addLibraryEntry(10)
+  db.replaceSelectedDepotIds(10, [DEPOT_ID, 999])
+
+  const details = await normalizeAppDetails(products(makeProduct()), db)
+
+  expect(details.selectedDepotIds).toEqual([DEPOT_ID])
+})
+
+test('exposes installed depots hidden from current Steam metadata', async () => {
+  const db = await setup()
+  db.addLibraryEntry(10)
+  db.addManifest(999, '123')
+  db.recordInstalledDepot(10, root!, 999, '123')
+  db.replaceSelectedDepotIds(10, [999])
+
+  const details = await normalizeAppDetails(products(makeProduct()), db)
+
+  expect(details.selectedDepotIds).toEqual([999])
+  expect(details.depots).toContainEqual(
+    expect.objectContaining({
+      depotId: 999,
+      manifestId: '123',
+      installStatus: 'current',
+      manifestStatus: 'invalid',
+      selectable: false,
+    }),
+  )
+})
+
 test('collects base then direct DLC depots with first-owner precedence', () => {
   const base = makeProductWithDepots(10, {
     '200': depotMetadata('1'),

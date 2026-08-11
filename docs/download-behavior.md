@@ -32,7 +32,13 @@ At startup, Kalamata first rolls forward commit-ready transactions for every ins
 
 ## Persistence Boundaries
 
-Depot selection is saved after planning and can remain selected when later staging fails. The live filesystem commits before installed-depot metadata is replaced atomically in SQLite. Transaction evidence and backups remain available until that metadata reconciliation succeeds.
+Before first installation, depot selection edits are saved immediately. For an installed application, edits remain an in-memory draft until Update or Uninstall is confirmed; reconciliation saves that selection after planning and before staging, so it can remain selected when later staging fails. Stored selections are not pruned when Steam metadata temporarily omits a depot.
+
+The live filesystem commits before installed-depot metadata is replaced atomically in SQLite. Reconciling to an empty selection removes installed-depot metadata and releases the install path. Transaction evidence and backups remain available until that metadata reconciliation succeeds.
+
+## Operation Preview
+
+Preview is advisory: it occupies no queue slot, reserves no install path, and persists no selection. Logical size change is target size minus source size. Maximum temporary disk space totals changed effective file sizes, while the network upper bound totals unique compressed chunks before local reuse is considered.
 
 ## Progress Counters
 
@@ -43,7 +49,7 @@ Depot selection is saved after planning and can remain selected when later stagi
 | Reused local | Trusted retained bytes plus locally validated copied chunks. |
 | Network payload | Successful encrypted response payload accepted for installation. |
 
-Network payload excludes headers, failed responses, and transport overhead. Kalamata does not estimate expected network bytes, ETA, or speed.
+Network payload excludes headers, failed responses, and transport overhead. Kalamata does not estimate ETA or speed.
 
 ## Durability Boundary
 

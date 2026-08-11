@@ -91,12 +91,6 @@ test('application transaction progress maps exact decimal counters', async () =>
     reusedLocalBytes: '9223372036854775808',
     networkBytes: '18446744073709551617',
   })
-  expect(queue.getState()).toMatchObject({
-    status: 'running',
-    downloadedBytes: '9007199254740993',
-    totalBytes: '18014398509481987',
-  })
-
   finish.resolve()
   await waitForTerminal(queue)
 })

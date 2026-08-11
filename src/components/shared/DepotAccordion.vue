@@ -65,8 +65,12 @@ function updateDepot(depotId: number, checked: boolean | 'indeterminate') {
 function groupSelectionState(
   depots: EligibleAppDepot[],
 ): boolean | 'indeterminate' {
+  // Installed depots stay actionable so unavailable content can still be removed or reselected.
   const actionable = depots.filter(
-    (depot) => depot.selectable || selectedIds.value.has(depot.depotId),
+    (depot) =>
+      depot.selectable ||
+      depot.installStatus !== 'not-installed' ||
+      selectedIds.value.has(depot.depotId),
   )
   const selected = actionable.filter((depot) =>
     selectedIds.value.has(depot.depotId),
@@ -78,7 +82,10 @@ function groupSelectionState(
 
 function canUpdateGroup(depots: EligibleAppDepot[]) {
   return depots.some(
-    (depot) => depot.selectable || selectedIds.value.has(depot.depotId),
+    (depot) =>
+      depot.selectable ||
+      depot.installStatus !== 'not-installed' ||
+      selectedIds.value.has(depot.depotId),
   )
 }
 
@@ -89,7 +96,11 @@ function updateGroup(
   const next = new Set(props.selectedDepotIds)
 
   for (const depot of depots) {
-    if (checked === true && depot.selectable) next.add(depot.depotId)
+    if (
+      checked === true &&
+      (depot.selectable || depot.installStatus !== 'not-installed')
+    )
+      next.add(depot.depotId)
     else if (checked !== true) next.delete(depot.depotId)
   }
 
@@ -151,7 +162,10 @@ function updateGroup(
                 v-for="depot in group.depots"
                 :key="depot.depotId"
                 class="border-border flex gap-3 border-t px-4 py-4"
-                :class="{ 'opacity-65': !depot.selectable }"
+                :class="{
+                  'opacity-65':
+                    !depot.selectable && !selectedIds.has(depot.depotId),
+                }"
               >
                 <Checkbox
                   v-if="!readOnly"
@@ -159,7 +173,9 @@ function updateGroup(
                   :model-value="selectedIds.has(depot.depotId)"
                   :disabled="
                     selectionPending ||
-                    (!depot.selectable && !selectedIds.has(depot.depotId))
+                    (!depot.selectable &&
+                      depot.installStatus === 'not-installed' &&
+                      !selectedIds.has(depot.depotId))
                   "
                   :aria-label="`Select depot ${depot.depotId}`"
                   @update:model-value="updateDepot(depot.depotId, $event)"

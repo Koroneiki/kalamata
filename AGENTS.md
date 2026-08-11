@@ -74,8 +74,8 @@ A normal Playwright browser cannot use Electrobun RPC because the native webview
 - Navigate with hash URLs such as `http://localhost:5173/#/app/440`.
 - Initialize `window.__electrobun = {}` and handle RPC through `window.__electrobunBunBridge.postMessage`.
 - Return request responses through `window.__electrobun.receiveMessageFromBun({ type: 'response', id, success, payload })`.
-- Emit Bun messages with `{ type: 'message', id: 'downloadStateChanged', payload }`.
-- Derive mock methods and payloads from `src/types/rpc.ts` and `src/api`; startup requires `getLibrary` and `getDownloadState`, while app routes also require their summary and details requests.
+- Emit Bun messages with `{ type: 'message', id: 'operationStateChanged', payload }`.
+- Derive mock methods and payloads from `src/types/rpc.ts` and `src/api`; startup requires `getLibrary` and `getOperationState`, while app routes also require their summary and details requests.
 - Clear the `sidebar_state` cookie before navigation when an expanded sidebar is required for deterministic screenshots.
 - Keep this harness inside Playwright; do not add production or test-only RPC bypasses to the repository.
 - Stop any Vite server started only for browser testing.

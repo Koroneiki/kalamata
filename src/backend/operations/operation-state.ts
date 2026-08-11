@@ -1,10 +1,6 @@
 import { ApplicationTransactionError } from '../depot/install/transaction/types.ts'
 import { validateId } from '../../db/validation.ts'
-import type {
-  DownloadQueueState,
-  OperationErrorKind,
-  OperationState,
-} from '../../types/rpc.ts'
+import type { OperationErrorKind, OperationState } from '../../types/rpc.ts'
 
 export function validateDepotIds(
   depotIds: number[],
@@ -62,9 +58,7 @@ export function isOperationShutdown(
   )
 }
 
-export function isRecoverableOperationError(
-  kind: OperationErrorKind,
-): boolean {
+export function isRecoverableOperationError(kind: OperationErrorKind): boolean {
   return [
     'unavailable-resource',
     'insufficient-space',
@@ -89,64 +83,5 @@ export function repairRequiredState(
       message:
         'The interrupted installation cannot be verified. Repair is required.',
     },
-  }
-}
-
-export function toDownloadState(state: OperationState): DownloadQueueState {
-  if (state.status === 'idle') return state
-  if (
-    state.status === 'active' ||
-    state.status === 'paused' ||
-    state.status === 'resumable'
-  ) {
-    return {
-      status: 'running',
-      appId: state.appId,
-      installPath: state.installPath,
-      depotIds: [...state.desiredDepotIds],
-      completedDepotIds: [],
-      currentDepotId: state.desiredDepotIds[0] ?? 0,
-      position: state.desiredDepotIds.length ? 1 : 0,
-      total: state.desiredDepotIds.length,
-      downloadedBytes: state.installedBytesCompleted,
-      totalBytes: state.installedBytesTotal,
-      operation: state.status === 'active' ? state.phase : state.status,
-    }
-  }
-  if (state.status === 'completed') {
-    return {
-      status: 'completed',
-      appId: state.appId,
-      installPath: state.installPath,
-      depotIds: [...state.desiredDepotIds],
-      completedDepotIds: [...state.desiredDepotIds],
-      downloadedBytes: state.installedBytes,
-      reusedBytes: state.reusedLocalBytes,
-    }
-  }
-  if (state.status === 'repair-required') {
-    return {
-      status: 'failed',
-      appId: state.appId,
-      installPath: state.installPath,
-      depotIds: [],
-      completedDepotIds: [],
-      failedDepotId: 0,
-      failureKind: 'persistence',
-      error: state.error.message,
-    }
-  }
-  return {
-    status: 'failed',
-    appId: state.appId,
-    installPath: state.installPath,
-    depotIds: [...state.desiredDepotIds],
-    completedDepotIds: [],
-    failedDepotId: state.desiredDepotIds[0] ?? 0,
-    failureKind:
-      state.status === 'failed' && state.error.kind === 'persistence'
-        ? 'persistence'
-        : 'download',
-    error: state.error.message,
   }
 }

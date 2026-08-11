@@ -139,6 +139,31 @@ export function chunkKey(chunk: ManifestChunk): string {
   return `${chunk.sha.toLowerCase()}:${chunk.cb_original}`
 }
 
+export function changedProjectionFiles(
+  source: Map<string, ProjectionEntry>,
+  target: Map<string, ProjectionEntry>,
+): ProjectionEntry[] {
+  // Only an unchanged winning depot and manifest can reuse the live file.
+  return [...target.values()].filter(
+    (entry) =>
+      !isDirectory(entry.file) &&
+      !sameManifestOwner(source.get(entry.key), entry),
+  )
+}
+
+export function sumUniqueCompressedChunks(entries: ProjectionEntry[]): bigint {
+  const chunks = new Map<string, number>()
+  for (const { file } of entries)
+    for (const chunk of file.chunks) {
+      const key = chunkKey(chunk)
+      // Equivalent chunks can advertise different compressed transfer sizes.
+      chunks.set(key, Math.max(chunks.get(key) ?? 0, chunk.cb_compressed))
+    }
+  let total = 0n
+  for (const size of chunks.values()) total += BigInt(size)
+  return total
+}
+
 export function isDirectory(file: ManifestFile): boolean {
   return Boolean(file.flags & DIRECTORY)
 }

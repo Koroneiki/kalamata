@@ -71,6 +71,26 @@ export interface QueueDepotUpdateRequest {
   desiredDepotIds: number[]
 }
 
+export interface PreviewApplicationOperationRequest {
+  appId: number
+  desiredDepotIds: number[]
+}
+
+export interface ApplicationOperationPreview {
+  depots: Array<{
+    depotId: number
+    action: 'install' | 'remove' | 'update'
+  }>
+  counts: {
+    install: number
+    remove: number
+    update: number
+  }
+  logicalSizeDeltaBytes: string
+  networkPayloadUpperBoundBytes: string | null
+  stagingLogicalUpperBoundBytes: string
+}
+
 export interface RepairApplicationRequest {
   appId: number
 }
@@ -111,13 +131,17 @@ export interface ActiveOperationState {
   networkBytes: string
 }
 
-export interface PausedOperationState
-  extends Omit<ActiveOperationState, 'status'> {
+export interface PausedOperationState extends Omit<
+  ActiveOperationState,
+  'status'
+> {
   status: 'paused'
 }
 
-export interface ResumableOperationState
-  extends Omit<ActiveOperationState, 'status'> {
+export interface ResumableOperationState extends Omit<
+  ActiveOperationState,
+  'status'
+> {
   status: 'resumable'
   error: { kind: OperationErrorKind; message: string }
 }
@@ -178,47 +202,6 @@ export type ResumeOperationResult =
   | { accepted: true }
   | { accepted: false; reason: 'no-resumable-operation' }
 
-export interface RunningDownloadQueue {
-  status: 'running'
-  appId: number
-  installPath: string
-  depotIds: number[]
-  completedDepotIds: number[]
-  currentDepotId: number
-  position: number
-  total: number
-  downloadedBytes: string
-  totalBytes: string
-  operation: string | null
-}
-
-export interface CompletedDownloadQueue {
-  status: 'completed'
-  appId: number
-  installPath: string
-  depotIds: number[]
-  completedDepotIds: number[]
-  downloadedBytes: string
-  reusedBytes: string
-}
-
-export interface FailedDownloadQueue {
-  status: 'failed'
-  appId: number
-  installPath: string
-  depotIds: number[]
-  completedDepotIds: number[]
-  failedDepotId: number
-  failureKind: 'download' | 'persistence'
-  error: string
-}
-
-export type DownloadQueueState =
-  | { status: 'idle' }
-  | RunningDownloadQueue
-  | CompletedDownloadQueue
-  | FailedDownloadQueue
-
 export type AppRpc = {
   bun: {
     requests: {
@@ -250,17 +233,17 @@ export type AppRpc = {
         params: { startingPath?: string }
         response: string | null
       }
-      getDownloadState: {
-        params: Record<string, never>
-        response: DownloadQueueState
-      }
       startDownload: {
         params: StartDownloadRequest
-        response: RunningDownloadQueue
+        response: ActiveOperationState
       }
       queueDepotUpdate: {
         params: QueueDepotUpdateRequest
         response: ActiveOperationState
+      }
+      previewApplicationOperation: {
+        params: PreviewApplicationOperationRequest
+        response: ApplicationOperationPreview
       }
       repairApplication: {
         params: RepairApplicationRequest
@@ -288,7 +271,6 @@ export type AppRpc = {
   webview: {
     requests: Record<never, never>
     messages: {
-      downloadStateChanged: DownloadQueueState
       operationStateChanged: OperationState
     }
   }

@@ -38,7 +38,9 @@ async function openDatabase(): Promise<KalamataDatabase> {
   return database
 }
 
-async function openDatabaseAtMigration(index: number): Promise<KalamataDatabase> {
+async function openDatabaseAtMigration(
+  index: number,
+): Promise<KalamataDatabase> {
   root = await mkdtemp(join(tmpdir(), 'kalamata-db-'))
   const migrations = join(root, 'migrations')
   const metadata = join(migrations, 'meta')
@@ -189,6 +191,22 @@ describe('foundation database', () => {
     await expect(db.assertInstallPathAvailable(10, alias)).resolves.toBe(
       await realpath(install),
     )
+  })
+
+  test('retains the install path until an empty reconciliation is released', async () => {
+    const db = await openDatabase()
+    const install = join(root!, 'install')
+    await mkdir(install)
+    db.addLibraryEntry(10)
+    db.addManifest(20, '123')
+    db.recordInstalledDepot(10, install, 20, '123')
+
+    db.reconcileInstalledDepots(10, install, [])
+
+    expect(db.getInstalls(10)).toEqual([])
+    expect(db.getLibraryEntry(10)?.installPath).toBe(install)
+    db.clearUnusedInstallPath(10)
+    expect(db.getLibraryEntry(10)?.installPath).toBeNull()
   })
 
   test('persists independent library selections and cascades their removal', async () => {

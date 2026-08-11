@@ -24,14 +24,15 @@ Current capabilities:
 - Look up and display public Steam app metadata by App ID.
 - Show installed apps from a local library and public-branch depot readiness.
 - Let the user choose an install directory for a new app.
-- Let the user select ready depots and download them sequentially through one application-wide queue.
-- Show active download progress inline and persist successful installation state locally.
+- Preview depot actions and size bounds before confirming an operation.
+- Let the user install, update, uninstall, and verify selected depots through one application-wide operation queue.
+- Show active operation progress and controls inline and persist successful installation state locally.
 
 Durable constraints:
 
 - Kalamata does not acquire manifests, depot keys, licenses, entitlements, or account credentials.
 - The foundation exposes only public-branch manifests and does not provide branch selection.
-- The foundation does not include parallel downloads, durable queue recovery, download history, pause, cancel, retry, repair, verification, or partial file selection.
+- The foundation does not include parallel downloads, download history, retries, automatic rollback, or partial file selection.
 
 ## Brand Commitments
 

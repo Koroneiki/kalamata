@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { useMutation, useQuery, useQueryCache } from '@pinia/colada'
-import { Download, ImageOff, Plus, Trash2 } from '@lucide/vue'
-import { computed, nextTick, ref, watch } from 'vue'
+import { Download, ImageOff, Plus, ShieldCheck, Trash2 } from '@lucide/vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 import DownloadDepotsDialog from '@/components/forms/DownloadDepotsDialog.vue'
 import RemoveLibraryEntryDialog from '@/components/forms/RemoveLibraryEntryDialog.vue'
 import DepotAccordion from '@/components/shared/DepotAccordion.vue'
-import DownloadQueuePanel from '@/components/shared/DownloadQueuePanel.vue'
+import InlineOperationStatus from '@/components/shared/InlineOperationStatus.vue'
 import { appQueryKeys, libraryQueryKey } from '@/composables/queries'
 import { getAppDetails } from '@/api/apps'
 import {
@@ -15,13 +15,19 @@ import {
   removeLibraryEntry,
   setSelectedDepots,
 } from '@/api/library'
-import { useDownloadQueueStore } from '@/stores/download-queue'
+import { useOperationStore } from '@/stores/operation'
+import type {
+  ActiveOperationState,
+  OperationState,
+  PausedOperationState,
+  ResumableOperationState,
+} from '@/types/rpc'
 
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 
 const route = useRoute()
-const queue = useDownloadQueueStore()
+const operation = useOperationStore()
 const queryCache = useQueryCache()
 const appId = computed(() => Number(route.params.appId))
 const validAppId = computed(
@@ -45,8 +51,9 @@ const removeDialogOpen = ref(false)
 const selectedDepotIds = ref<number[]>([])
 const mutationError = ref('')
 const removeError = ref('')
-const queuePanel = ref<{ focusHeading: () => void } | null>(null)
+const operationPanel = ref<{ focusHeading: () => void } | null>(null)
 const loadedAppId = ref<number | null>(null)
+const draftDirty = ref(false)
 
 const addMutation = useMutation({
   mutation: (id: number) => addLibraryEntry(id),
@@ -70,7 +77,8 @@ watch(
       } else if (app.installPath) {
         selectedPath.value = app.installPath
       }
-      selectedDepotIds.value = [...app.selectedDepotIds]
+      if (appChanged || !draftDirty.value)
+        selectedDepotIds.value = [...app.selectedDepotIds]
     }
   },
   { immediate: true },
@@ -101,28 +109,155 @@ const releaseDate = computed(() => {
   }).format(data.value.releaseDate)
 })
 
-const queueForApp = computed(() => {
-  const state = queue.state
+type ProgressOperation =
+  | ActiveOperationState
+  | PausedOperationState
+  | ResumableOperationState
+type RepairRequiredOperation = Extract<
+  OperationState,
+  { status: 'repair-required' }
+>
+type VisibleOperation = ProgressOperation | RepairRequiredOperation
+
+function isProgressOperation(state: OperationState): state is ProgressOperation {
+  return ['active', 'paused', 'resumable'].includes(state.status)
+}
+
+function latestCounter(current: string, displayed: string) {
+  return BigInt(current) >= BigInt(displayed) ? current : displayed
+}
+
+const currentOperationForApp = computed(() => {
+  const state = operation.state
   return state.status !== 'idle' && state.appId === appId.value ? state : null
 })
-const canOpenDownload = computed(
+const operationForApp = ref<VisibleOperation | null>(null)
+const operationFinished = ref(false)
+let operationVisibleSince = 0
+let hideOperationTimer: ReturnType<typeof setTimeout> | undefined
+const selectedIdSet = computed(() => new Set(selectedDepotIds.value))
+const hasDepotAdditionsOrRemovals = computed(() =>
+  data.value?.depots.some(
+    (depot) =>
+      depot.eligible &&
+      ((depot.installStatus === 'not-installed' &&
+        selectedIdSet.value.has(depot.depotId)) ||
+        (depot.installStatus !== 'not-installed' &&
+          !selectedIdSet.value.has(depot.depotId))),
+  ),
+)
+const primaryActionLabel = computed(() => {
+  if (!data.value?.installPath) return 'Install'
+  if (selectedDepotIds.value.length === 0) return 'Uninstall'
+  return hasDepotAdditionsOrRemovals.value ||
+    data.value.depots.some(
+      (depot) =>
+        depot.eligible &&
+        depot.installStatus === 'outdated' &&
+        selectedIdSet.value.has(depot.depotId),
+    )
+    ? 'Update'
+    : 'Installed'
+})
+const globalOperationBusy = computed(() =>
+  ['active', 'paused', 'resumable'].includes(operation.state.status),
+)
+const repairRequiredForApp = computed(
   () =>
-    Boolean(data.value?.inLibrary) &&
-    selectedDepotIds.value.some(
+    operation.state.status === 'repair-required' &&
+    operation.state.appId === appId.value,
+)
+const operationBusy = computed(
+  () => globalOperationBusy.value || repairRequiredForApp.value,
+)
+const canOpenDownload = computed(() => {
+  if (!data.value?.inLibrary || operationBusy.value) return false
+  if (!data.value.installPath)
+    return selectedDepotIds.value.some(
       (depotId) =>
         data.value?.depots.find((depot) => depot.depotId === depotId)
           ?.selectable,
-    ) &&
-    queue.state.status !== 'running',
-)
+    )
+  return primaryActionLabel.value !== 'Installed'
+})
 
 watch(
-  queueForApp,
-  (state) => {
-    if (state) selectedPath.value = state.installPath
+  [currentOperationForApp, appId],
+  ([state, currentAppId]) => {
+    if (hideOperationTimer) clearTimeout(hideOperationTimer)
+    hideOperationTimer = undefined
+    if (state && isProgressOperation(state)) {
+      const previous = operationForApp.value
+      if (
+        !previous ||
+        previous.status === 'repair-required' ||
+        operationFinished.value ||
+        previous.appId !== state.appId
+      )
+        operationVisibleSince = Date.now()
+      const preserveProgress =
+        !operationFinished.value &&
+        previous?.status !== 'repair-required' &&
+        previous?.appId === state.appId
+      // Resume replans from zero; visible progress must remain monotonic.
+      operationForApp.value = preserveProgress
+        ? {
+            ...state,
+            installedBytesCompleted: latestCounter(
+              state.installedBytesCompleted,
+              previous.installedBytesCompleted,
+            ),
+            installedBytesTotal: latestCounter(
+              state.installedBytesTotal,
+              previous.installedBytesTotal,
+            ),
+            reusedLocalBytes: latestCounter(
+              state.reusedLocalBytes,
+              previous.reusedLocalBytes,
+            ),
+            networkBytes: latestCounter(
+              state.networkBytes,
+              previous.networkBytes,
+            ),
+          }
+        : state
+      operationFinished.value = false
+      selectedPath.value = state.installPath
+      return
+    }
+    if (state?.status === 'repair-required') {
+      operationForApp.value = state
+      operationFinished.value = false
+      selectedPath.value = state.installPath
+      return
+    }
+    if (!state || operationForApp.value?.appId !== currentAppId) {
+      operationForApp.value = null
+      operationFinished.value = false
+      return
+    }
+    if (operationForApp.value.status === 'repair-required') {
+      operationForApp.value = null
+      operationFinished.value = false
+      return
+    }
+    operationFinished.value = true
+    const remaining = Math.max(
+      1_000,
+      3_000 - (Date.now() - operationVisibleSince),
+    )
+    hideOperationTimer = setTimeout(() => {
+      operationForApp.value = null
+      operationFinished.value = false
+      hideOperationTimer = undefined
+    }, remaining)
   },
   { immediate: true },
 )
+
+onBeforeUnmount(() => {
+  if (hideOperationTimer) clearTimeout(hideOperationTimer)
+})
 
 function openDownload() {
   dialogOpen.value = true
@@ -153,6 +288,13 @@ async function addToLibrary() {
 }
 
 async function updateSelectedDepots(depotIds: number[]) {
+  // Installed-app selections remain drafts until confirmed planning persists them.
+  if (data.value?.installPath) {
+    selectedDepotIds.value = depotIds
+    draftDirty.value = true
+    mutationError.value = ''
+    return
+  }
   const targetAppId = appId.value
   const previous = selectedDepotIds.value
   selectedDepotIds.value = depotIds
@@ -167,6 +309,7 @@ async function updateSelectedDepots(depotIds: number[]) {
       exact: true,
     })
     if (appId.value === targetAppId) selectedDepotIds.value = selected
+    draftDirty.value = false
   } catch (error) {
     if (appId.value === targetAppId) {
       selectedDepotIds.value = previous
@@ -198,8 +341,20 @@ function handleIconError() {
 }
 
 async function focusDownloadQueue() {
+  draftDirty.value = false
   await nextTick()
-  queuePanel.value?.focusHeading()
+  operationPanel.value?.focusHeading()
+}
+
+async function verifyGameFiles() {
+  mutationError.value = ''
+  try {
+    await operation.verify({ appId: appId.value })
+    await nextTick()
+    operationPanel.value?.focusHeading()
+  } catch (error) {
+    mutationError.value = error instanceof Error ? error.message : String(error)
+  }
 }
 </script>
 
@@ -325,7 +480,7 @@ async function focusDownloadQueue() {
           type="button"
           size="icon-sm"
           variant="outline"
-          :disabled="queueForApp?.status === 'running'"
+          :disabled="operationBusy"
           aria-label="Remove from library"
           @click="removeDialogOpen = true"
         >
@@ -334,16 +489,22 @@ async function focusDownloadQueue() {
       </header>
 
       <section class="mt-8" aria-label="Install game content">
-        <div class="border-border flex border-t py-5">
+        <div
+          class="border-border flex flex-col gap-3 border-t py-5 sm:flex-row sm:items-center"
+        >
           <Button
             v-if="data.inLibrary"
-            class="h-14 w-full min-w-44 gap-3 rounded-sm px-8 text-lg font-semibold tracking-wider shadow-sm sm:w-auto [&_svg:not([class*='size-'])]:size-7"
+            class="h-16 w-full min-w-44 shrink-0 gap-3 rounded-sm px-8 text-lg font-semibold tracking-wider shadow-sm sm:w-auto [&_svg:not([class*='size-'])]:size-7"
             type="button"
             :disabled="!canOpenDownload"
             @click="openDownload"
           >
-            <Download aria-hidden="true" />
-            INSTALL
+            <Trash2
+              v-if="primaryActionLabel === 'Uninstall'"
+              aria-hidden="true"
+            />
+            <Download v-else aria-hidden="true" />
+            {{ primaryActionLabel }}
           </Button>
           <Button
             v-else
@@ -355,6 +516,24 @@ async function focusDownloadQueue() {
             <Plus aria-hidden="true" />
             {{ addMutation.isLoading.value ? 'ADDING…' : 'ADD TO LIBRARY' }}
           </Button>
+          <InlineOperationStatus
+            v-if="operationForApp"
+            ref="operationPanel"
+            class="min-w-0 flex-1 sm:max-w-100"
+            :state="operationForApp"
+            :finished="operationFinished"
+          />
+          <Button
+            v-if="data.inLibrary && data.installPath"
+            class="h-12 shrink-0 self-stretch px-5 sm:ml-auto sm:self-auto"
+            type="button"
+            variant="outline"
+            :disabled="globalOperationBusy"
+            @click="verifyGameFiles"
+          >
+            <ShieldCheck aria-hidden="true" />
+            Verify Game Files
+          </Button>
         </div>
 
         <p
@@ -365,18 +544,13 @@ async function focusDownloadQueue() {
           {{ mutationError }}
         </p>
 
-        <DownloadQueuePanel
-          v-if="queueForApp"
-          ref="queuePanel"
-          class="mb-6"
-          :state="queueForApp"
-        />
-
         <DepotAccordion
           :depots="data.depots"
           :selected-depot-ids="selectedDepotIds"
           :read-only="!data.inLibrary"
-          :selection-pending="selectionMutation.isLoading.value"
+          :selection-pending="
+            selectionMutation.isLoading.value || operationBusy
+          "
           @update:selected-depot-ids="updateSelectedDepots"
         />
       </section>

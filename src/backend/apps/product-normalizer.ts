@@ -121,13 +121,14 @@ export async function normalizeAppDetails(
 ): Promise<AppDetails> {
   const product = products.baseProduct
   const library = database.getLibraryEntry(product.appId)
+  const installedRows = database.getInstalls(product.appId)
   const installs = new Map(
-    database
-      .getInstalls(product.appId)
-      .map((row) => [row.depotId, row.installedManifestId]),
+    installedRows.map((row) => [row.depotId, row.installedManifestId]),
   )
   const depots: AppDepot[] = []
-  for (const depot of extractPublicDepots(products)) {
+  const publicDepots = extractPublicDepots(products)
+  const publicDepotIds = new Set(publicDepots.map(({ depotId }) => depotId))
+  for (const depot of publicDepots) {
     const { group, ...depotFields } = depot
     if (!isEligibleGroup(group)) {
       depots.push({
@@ -195,6 +196,66 @@ export async function normalizeAppDetails(
         installStatus !== 'current',
     })
   }
+  // Missing Steam metadata must not hide installed depots from removal.
+  for (const installed of installedRows) {
+    if (publicDepotIds.has(installed.depotId)) continue
+    const keyText = database.getDepotKey(installed.depotId)
+    let key: Buffer | undefined
+    let keyStatus: EligibleAppDepot['keyStatus'] = 'missing'
+    if (keyText !== null) {
+      try {
+        key = depotKeyFromHex(keyText)
+        keyStatus = 'ready'
+      } catch {
+        keyStatus = 'invalid'
+      }
+    }
+    const manifest = database
+      .getManifestRows(installed.depotId)
+      .find(({ manifestId }) => manifestId === installed.installedManifestId)
+    let manifestStatus: EligibleAppDepot['manifestStatus'] = manifest
+      ? 'invalid'
+      : 'missing'
+    if (manifest) {
+      try {
+        await validateManagedManifest(
+          database.dataRoot,
+          installed.depotId,
+          installed.installedManifestId,
+          manifest.relativePath,
+          key,
+        )
+        manifestStatus = 'ready'
+      } catch {
+        manifestStatus = 'invalid'
+      }
+    }
+    depots.push({
+      depotId: installed.depotId,
+      mountIndex: installed.mountIndex,
+      ownerAppId: installed.ownerAppId ?? product.appId,
+      ownerAppName: null,
+      group:
+        (installed.ownerAppId ?? product.appId) === product.appId
+          ? 'Base Game'
+          : 'DLC',
+      platform: null,
+      language: null,
+      manifestId: installed.installedManifestId,
+      sizeBytes: null,
+      downloadBytes: null,
+      eligible: true,
+      manifestStatus,
+      keyStatus,
+      installStatus: 'current',
+      selectable: false,
+    })
+  }
+  const availableSelectionIds = new Set(
+    depots
+      .filter((depot) => depot.eligible)
+      .map(({ depotId }) => depotId),
+  )
   return {
     ...normalizeAppSummary(product),
     inLibrary: library !== null,
@@ -202,9 +263,7 @@ export async function normalizeAppDetails(
     selectedDepotIds: library
       ? database
           .getSelectedDepotIds(product.appId)
-          .filter((depotId) =>
-            depots.some((depot) => depot.eligible && depot.depotId === depotId),
-          )
+          .filter((depotId) => availableSelectionIds.has(depotId))
       : [],
     depots,
   }

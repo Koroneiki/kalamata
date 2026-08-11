@@ -1,6 +1,4 @@
-import type {
-  ReconcileApplicationOptions,
-} from '../depot/depot-download-service.ts'
+import type { ReconcileApplicationOptions } from '../depot/depot-download-service.ts'
 import type {
   ApplicationDepotRecord,
   ApplicationTransactionEvent,
@@ -18,14 +16,14 @@ import type { KalamataDatabase } from '../../db/database.ts'
 import { validateId } from '../../db/validation.ts'
 import type {
   ActiveOperationState,
+  ApplicationOperationPreview,
   CancelOperationResult,
-  DownloadQueueState,
   OperationState,
   PauseOperationResult,
+  PreviewApplicationOperationRequest,
   QueueDepotUpdateRequest,
   RepairApplicationRequest,
   ResumeOperationResult,
-  RunningDownloadQueue,
   StartDownloadRequest,
 } from '../../types/rpc.ts'
 import {
@@ -38,7 +36,6 @@ import {
   isRecoverableOperationError,
   repairRequiredState,
   serializeOperationError,
-  toDownloadState,
   validateDepotIds,
 } from './operation-state.ts'
 
@@ -47,6 +44,10 @@ interface QueueSteamService {
   reconcileApplication(
     options: ReconcileApplicationOptions,
   ): Promise<ApplicationTransactionResult>
+  previewApplicationOperation?(
+    appId: number,
+    plan: Awaited<ReturnType<typeof planApplication>>,
+  ): Promise<ApplicationOperationPreview>
 }
 
 export class DownloadQueueCoordinator {
@@ -68,15 +69,8 @@ export class DownloadQueueCoordinator {
   constructor(
     private readonly steam: QueueSteamService,
     private readonly database: KalamataDatabase,
-    private readonly emitDownload: (
-      state: DownloadQueueState,
-    ) => void = () => {},
     private readonly emitOperation: (state: OperationState) => void = () => {},
   ) {}
-
-  getState(): DownloadQueueState {
-    return toDownloadState(this.#state)
-  }
 
   getOperationState(): OperationState {
     return structuredClone(this.#state)
@@ -95,7 +89,7 @@ export class DownloadQueueCoordinator {
     )
   }
 
-  async start(request: StartDownloadRequest): Promise<RunningDownloadQueue> {
+  async start(request: StartDownloadRequest): Promise<ActiveOperationState> {
     validateId(request.appId, 'appId')
     validateDepotIds(request.depotIds, false)
     this.claimAcceptance(request.appId)
@@ -115,7 +109,7 @@ export class DownloadQueueCoordinator {
         },
         true,
       )
-      return toDownloadState(active) as RunningDownloadQueue
+      return active
     } finally {
       this.releaseAcceptance()
     }
@@ -147,6 +141,38 @@ export class DownloadQueueCoordinator {
     } finally {
       this.releaseAcceptance()
     }
+  }
+
+  async previewApplicationOperation(
+    request: PreviewApplicationOperationRequest,
+  ): Promise<ApplicationOperationPreview> {
+    // Preview plans without claiming the queue, reserving a path, or persisting selection.
+    validateId(request.appId, 'appId')
+    validateDepotIds(request.desiredDepotIds, true)
+    const entry = this.database.getLibraryEntry(request.appId)
+    const installed = this.database.getInstalls(request.appId).length > 0
+    const plan = await planApplication(
+      installed
+        ? {
+            kind: 'reconcile',
+            appId: request.appId,
+            installPath: entry?.installPath ?? '',
+            desiredDepotIds: request.desiredDepotIds,
+          }
+        : {
+            kind: 'download',
+            appId: request.appId,
+            installPath: entry?.installPath ?? '',
+            requestedDepotIds: request.desiredDepotIds,
+          },
+      this.steam,
+      this.database,
+      new AbortController().signal,
+      () => {},
+    )
+    if (!this.steam.previewApplicationOperation)
+      throw new Error('Application operation preview is unavailable')
+    return this.steam.previewApplicationOperation(request.appId, plan)
   }
 
   async repairApplication(
@@ -230,25 +256,29 @@ export class DownloadQueueCoordinator {
     return { accepted: true }
   }
 
-  pause(): PauseOperationResult {
+  async pause(): Promise<PauseOperationResult> {
     if (this.#state.status !== 'active' || !this.#controller)
       return { accepted: false, reason: 'no-active-operation' }
     if (
       this.#commitStarted ||
-      !['staging', 'downloading', 'verifying'].includes(this.#state.phase)
+      !['planning', 'staging', 'downloading', 'verifying'].includes(
+        this.#state.phase,
+      )
     )
       return { accepted: false, reason: 'invalid-phase' }
+    const runPromise = this.#runPromise
     const reason = new Error('Operation paused by request')
     reason.name = 'PauseError'
     this.#pausing = true
     this.#controller.abort(reason)
+    // Confirmation may open only after writes checkpoint and state becomes paused.
+    await runPromise
     return { accepted: true }
   }
 
   resume(): ResumeOperationResult {
     if (
-      (this.#state.status !== 'paused' &&
-        this.#state.status !== 'resumable') ||
+      (this.#state.status !== 'paused' && this.#state.status !== 'resumable') ||
       !this.#currentRequest
     )
       return { accepted: false, reason: 'no-resumable-operation' }
@@ -374,7 +404,9 @@ export class DownloadQueueCoordinator {
     )
       this.assertAvailable()
     if (!allowRepair && this.#repairRequirements.has(appId))
-      throw new Error('The application must be repaired before another operation')
+      throw new Error(
+        'The application must be repaired before another operation',
+      )
     this.#acceptingAppId = appId
     this.#acceptanceDone = new Promise((resolve) => {
       this.#resolveAcceptance = resolve
@@ -417,6 +449,8 @@ export class DownloadQueueCoordinator {
         onEvent: (event) => this.handleEvent(event),
         reconcile: async (desired) => this.reconcileDatabase(request, desired),
       })
+      // The transaction journal is gone, so an empty installation can release its path.
+      this.database.clearUnusedInstallPath(request.appId)
       const completedState: OperationState = {
         status: 'completed',
         kind: request.kind,
@@ -600,6 +634,5 @@ export class DownloadQueueCoordinator {
   private emitState(): void {
     const operation = structuredClone(this.#state)
     this.emitOperation(operation)
-    this.emitDownload(toDownloadState(operation))
   }
 }

@@ -6,7 +6,7 @@ import { createApp } from 'vue'
 
 import App from '@/App.vue'
 import router from '@/router'
-import { useDownloadQueueStore } from '@/stores/download-queue'
+import { useOperationStore } from '@/stores/operation'
 
 const app = createApp(App)
 const pinia = createPinia()
@@ -16,7 +16,7 @@ app.use(PiniaColada)
 app.use(router)
 
 async function start() {
-  await useDownloadQueueStore(pinia).initialize()
+  await useOperationStore(pinia).initialize()
   app.mount('#app')
 }
 

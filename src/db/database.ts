@@ -225,6 +225,7 @@ export class KalamataDatabase {
 
       const library = this.getLibraryEntry(appId)
       if (!library) throw new Error('App is not in library')
+      // Keep the path discoverable until the transaction journal is removed.
       this.sqlite
         .query(
           'UPDATE library SET install_path = COALESCE(install_path, ?) WHERE app_id = ?',
@@ -264,12 +265,12 @@ export class KalamataDatabase {
     const unique = new Set(depots.map(({ depotId }) => depotId))
     if (unique.size !== depots.length)
       throw new Error('Installed depots must not contain duplicates')
-      for (const { depotId, manifestId, mountIndex, ownerAppId } of depots) {
-        validateId(depotId, 'depotId')
-        validateManifestId(manifestId)
-        if (!Number.isSafeInteger(mountIndex) || mountIndex < 0)
-          throw new Error('mountIndex must be a non-negative integer')
-        if (ownerAppId !== undefined) validateId(ownerAppId, 'ownerAppId')
+    for (const { depotId, manifestId, mountIndex, ownerAppId } of depots) {
+      validateId(depotId, 'depotId')
+      validateManifestId(manifestId)
+      if (!Number.isSafeInteger(mountIndex) || mountIndex < 0)
+        throw new Error('mountIndex must be a non-negative integer')
+      if (ownerAppId !== undefined) validateId(ownerAppId, 'ownerAppId')
     }
     this.sqlite.transaction(() => {
       if (!this.getLibraryEntry(appId)) throw new Error('App is not in library')
