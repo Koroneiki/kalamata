@@ -1,7 +1,13 @@
-import type { AppDepot, DepotGroup, EligibleAppDepot } from '../types/rpc.ts'
+import type {
+  AppDepot,
+  DepotGroup,
+  DepotPlatform,
+  EligibleAppDepot,
+} from '../types/rpc.ts'
+
+export type { DepotPlatform } from '../types/rpc.ts'
 
 export type InstallableDepotGroup = Extract<DepotGroup, 'Base Game' | 'DLC'>
-
 export interface DepotBadgeItem {
   label: string
   variant: 'outline' | 'destructive'
@@ -18,6 +24,30 @@ export const installableDepotGroups: InstallableDepotGroup[] = [
   'Base Game',
   'DLC',
 ]
+export const depotPlatforms: DepotPlatform[] = ['windows', 'macos', 'linux']
+
+export function filterDepots(
+  depots: AppDepot[],
+  hideRedistributables: boolean,
+  platforms: readonly DepotPlatform[],
+): AppDepot[] {
+  const visiblePlatforms = new Set(platforms)
+
+  return depots.filter((depot) => {
+    if (
+      hideRedistributables &&
+      depot.group === 'Steamworks Common Redistributables'
+    )
+      return false
+    if (!depot.platform) return true
+
+    return depot.platform
+      .split(',')
+      .some((platform) =>
+        visiblePlatforms.has(platform.trim().toLowerCase() as DepotPlatform),
+      )
+  })
+}
 
 export function installableDepots(depots: AppDepot[]): EligibleAppDepot[] {
   return depots.filter((depot): depot is EligibleAppDepot => depot.eligible)

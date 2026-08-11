@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { Database } from 'bun:sqlite'
 import { drizzle } from 'drizzle-orm/bun-sqlite'
 import { migrate } from 'drizzle-orm/bun-sqlite/migrator'
-import type { LibraryEntry } from '../types/rpc.ts'
+import type { AppSettings, DepotPlatform, LibraryEntry } from '../types/rpc.ts'
 import {
   canonicalizeInstallDirectory,
   depotKeyFromHex,
@@ -24,6 +24,15 @@ export interface InstallRow {
   mountIndex: number
   ownerAppId: number | null
 }
+
+interface SettingsRow {
+  hideRedistributables: number
+  showWindows: number
+  showMacos: number
+  showLinux: number
+}
+
+const depotPlatforms: DepotPlatform[] = ['windows', 'macos', 'linux']
 
 export class KalamataDatabase {
   readonly sqlite: Database
@@ -84,6 +93,65 @@ export class KalamataDatabase {
   removeLibraryEntry(appId: number): void {
     validateId(appId, 'appId')
     this.sqlite.query('DELETE FROM library WHERE app_id = ?').run(appId)
+  }
+
+  getSettings(defaults: AppSettings): AppSettings {
+    this.validateSettings(defaults)
+    this.sqlite
+      .query(
+        'INSERT INTO settings (id, hide_redistributables, show_windows, show_macos, show_linux) VALUES (1, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING',
+      )
+      .run(
+        Number(defaults.hideRedistributables),
+        Number(defaults.platforms.includes('windows')),
+        Number(defaults.platforms.includes('macos')),
+        Number(defaults.platforms.includes('linux')),
+      )
+    return this.readSettings()
+  }
+
+  updateSettings(settings: AppSettings): AppSettings {
+    this.validateSettings(settings)
+    this.sqlite
+      .query(
+        'INSERT INTO settings (id, hide_redistributables, show_windows, show_macos, show_linux) VALUES (1, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET hide_redistributables = excluded.hide_redistributables, show_windows = excluded.show_windows, show_macos = excluded.show_macos, show_linux = excluded.show_linux',
+      )
+      .run(
+        Number(settings.hideRedistributables),
+        Number(settings.platforms.includes('windows')),
+        Number(settings.platforms.includes('macos')),
+        Number(settings.platforms.includes('linux')),
+      )
+    return this.readSettings()
+  }
+
+  private readSettings(): AppSettings {
+    const row = this.sqlite
+      .query<SettingsRow, []>(
+        'SELECT hide_redistributables AS hideRedistributables, show_windows AS showWindows, show_macos AS showMacos, show_linux AS showLinux FROM settings WHERE id = 1',
+      )
+      .get()!
+    return {
+      hideRedistributables: Boolean(row.hideRedistributables),
+      platforms: depotPlatforms.filter((platform) => {
+        if (platform === 'windows') return Boolean(row.showWindows)
+        if (platform === 'macos') return Boolean(row.showMacos)
+        return Boolean(row.showLinux)
+      }),
+    }
+  }
+
+  private validateSettings(settings: AppSettings): void {
+    if (typeof settings.hideRedistributables !== 'boolean')
+      throw new Error('hideRedistributables must be a boolean')
+    if (!Array.isArray(settings.platforms))
+      throw new Error('platforms must be an array')
+    const unique = new Set(settings.platforms)
+    if (
+      unique.size !== settings.platforms.length ||
+      settings.platforms.some((platform) => !depotPlatforms.includes(platform))
+    )
+      throw new Error('platforms must contain unique supported platforms')
   }
 
   getSelectedDepotIds(appId: number): number[] {

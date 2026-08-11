@@ -8,6 +8,13 @@ export interface AppSummary {
   artworkUrl: string | null
 }
 
+export type DepotPlatform = 'windows' | 'macos' | 'linux'
+
+export interface AppSettings {
+  hideRedistributables: boolean
+  platforms: DepotPlatform[]
+}
+
 export type DepotGroup =
   | 'Base Game'
   | 'DLC'
@@ -216,6 +223,14 @@ export type AppRpc = {
       getLibrary: {
         params: Record<string, never>
         response: LibraryEntry[]
+      }
+      getSettings: {
+        params: Record<string, never>
+        response: AppSettings
+      }
+      updateSettings: {
+        params: AppSettings
+        response: AppSettings
       }
       addLibraryEntry: {
         params: { appId: number }

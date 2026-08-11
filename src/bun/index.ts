@@ -12,7 +12,7 @@ import { recoverApplicationTransaction } from '../backend/depot/install/transact
 import { openKalamataDatabase } from '../db/index.ts'
 import { syncManifestFiles } from '../db/manifest-files.ts'
 import { canonicalizeInstallDirectory } from '../db/validation.ts'
-import type { AppRpc } from '../types/rpc.ts'
+import type { AppRpc, AppSettings, DepotPlatform } from '../types/rpc.ts'
 
 const DEV_SERVER_URL = 'http://localhost:5173'
 
@@ -36,6 +36,16 @@ const appService = new AppService(steam, database)
 let queue: DownloadQueueCoordinator
 // Recovery runs before BrowserWindow attaches the RPC transport.
 let rpcReady = false
+const systemPlatform: DepotPlatform =
+  process.platform === 'darwin'
+    ? 'macos'
+    : process.platform === 'win32'
+      ? 'windows'
+      : 'linux'
+const defaultSettings: AppSettings = {
+  hideRedistributables: true,
+  platforms: [systemPlatform],
+}
 const rpc = BrowserView.defineRPC<AppRpc>({
   maxRequestTime: 30_000,
   handlers: {
@@ -48,6 +58,12 @@ const rpc = BrowserView.defineRPC<AppRpc>({
       },
       getLibrary() {
         return database.getLibrary()
+      },
+      getSettings() {
+        return database.getSettings(defaultSettings)
+      },
+      updateSettings(settings) {
+        return database.updateSettings(settings)
       },
       addLibraryEntry({ appId }) {
         return database.addLibraryEntry(appId)
@@ -100,13 +116,9 @@ const rpc = BrowserView.defineRPC<AppRpc>({
   },
 })
 
-queue = new DownloadQueueCoordinator(
-  steam,
-  database,
-  (state) => {
-    if (rpcReady) rpc.send.operationStateChanged(state)
-  },
-)
+queue = new DownloadQueueCoordinator(steam, database, (state) => {
+  if (rpcReady) rpc.send.operationStateChanged(state)
+})
 
 let shutdownStarted = false
 let allowQuit = false

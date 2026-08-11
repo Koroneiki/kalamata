@@ -8,7 +8,11 @@ import DownloadDepotsDialog from '@/components/forms/DownloadDepotsDialog.vue'
 import RemoveLibraryEntryDialog from '@/components/forms/RemoveLibraryEntryDialog.vue'
 import DepotAccordion from '@/components/shared/DepotAccordion.vue'
 import InlineOperationStatus from '@/components/shared/InlineOperationStatus.vue'
-import { appQueryKeys, libraryQueryKey } from '@/composables/queries'
+import {
+  appQueryKeys,
+  libraryQueryKey,
+  useSettingsQuery,
+} from '@/composables/queries'
 import { getAppDetails } from '@/api/apps'
 import {
   addLibraryEntry,
@@ -22,6 +26,7 @@ import type {
   PausedOperationState,
   ResumableOperationState,
 } from '@/types/rpc'
+import { filterDepots } from '@/utils/depots'
 
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -29,6 +34,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 const route = useRoute()
 const operation = useOperationStore()
 const queryCache = useQueryCache()
+const { data: settings } = useSettingsQuery()
 const appId = computed(() => Number(route.params.appId))
 const validAppId = computed(
   () =>
@@ -99,6 +105,16 @@ watch(
 )
 
 const iconUrl = computed(() => data.value?.iconUrls?.[iconIndex.value] ?? null)
+const visibleDepots = computed(() => {
+  const depots = data.value?.depots ?? []
+  return settings.value
+    ? filterDepots(
+        depots,
+        settings.value.hideRedistributables,
+        settings.value.platforms,
+      )
+    : depots
+})
 
 const releaseDate = computed(() => {
   if (!data.value?.releaseDate) return 'Unavailable'
@@ -119,7 +135,9 @@ type RepairRequiredOperation = Extract<
 >
 type VisibleOperation = ProgressOperation | RepairRequiredOperation
 
-function isProgressOperation(state: OperationState): state is ProgressOperation {
+function isProgressOperation(
+  state: OperationState,
+): state is ProgressOperation {
   return ['active', 'paused', 'resumable'].includes(state.status)
 }
 
@@ -545,7 +563,7 @@ async function verifyGameFiles() {
         </p>
 
         <DepotAccordion
-          :depots="data.depots"
+          :depots="visibleDepots"
           :selected-depot-ids="selectedDepotIds"
           :read-only="!data.inLibrary"
           :selection-pending="
@@ -558,7 +576,7 @@ async function verifyGameFiles() {
       <DownloadDepotsDialog
         v-if="data.inLibrary"
         v-model:open="dialogOpen"
-        :app="data"
+        :app="{ ...data, depots: visibleDepots }"
         :initial-path="selectedPath"
         :selected-depot-ids="selectedDepotIds"
         @download-started="focusDownloadQueue"

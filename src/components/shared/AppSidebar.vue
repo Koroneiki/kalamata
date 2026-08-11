@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { Download, House, Library, Plus, RefreshCw } from '@lucide/vue'
+import {
+  Download,
+  House,
+  Library,
+  Plus,
+  RefreshCw,
+  Settings,
+} from '@lucide/vue'
 import { watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
@@ -78,6 +85,22 @@ watch(
             >
               <Download aria-hidden="true" />
               <span>Downloads</span>
+            </RouterLink>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+        <SidebarMenuItem>
+          <SidebarMenuButton
+            as-child
+            :is-active="route.name === 'settings'"
+            tooltip="Settings"
+          >
+            <RouterLink
+              :to="{ name: 'settings' }"
+              :aria-current="route.name === 'settings' ? 'page' : undefined"
+              @click="setOpenMobile(false)"
+            >
+              <Settings aria-hidden="true" />
+              <span>Settings</span>
             </RouterLink>
           </SidebarMenuButton>
         </SidebarMenuItem>

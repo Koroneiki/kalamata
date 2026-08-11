@@ -3,6 +3,7 @@ import { toValue, type MaybeRefOrGetter } from 'vue'
 
 import { getAppDetails, getAppSummary } from '@/api/apps'
 import { getLibrary } from '@/api/library'
+import { getSettings } from '@/api/settings'
 
 export const appQueryKeys = {
   summary: (appId: number) => ['app-summary', appId] as const,
@@ -10,6 +11,7 @@ export const appQueryKeys = {
 }
 
 export const libraryQueryKey = ['library'] as const
+export const settingsQueryKey = ['settings'] as const
 
 export const appSummaryQuery = defineQueryOptions((appId: number) => ({
   key: appQueryKeys.summary(appId),
@@ -26,6 +28,11 @@ export const libraryQuery = defineQueryOptions({
   query: getLibrary,
 })
 
+export const settingsQuery = defineQueryOptions({
+  key: settingsQueryKey,
+  query: getSettings,
+})
+
 export function useAppSummaryQuery(appId: MaybeRefOrGetter<number>) {
   return useQuery(() => appSummaryQuery(toValue(appId)))
 }
@@ -36,4 +43,8 @@ export function useAppDetailsQuery(appId: MaybeRefOrGetter<number>) {
 
 export function useLibraryQuery() {
   return useQuery(libraryQuery)
+}
+
+export function useSettingsQuery() {
+  return useQuery(settingsQuery)
 }

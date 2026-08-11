@@ -88,7 +88,10 @@ export const libraryDepotInstalls = sqliteTable(
       'library_depot_installs_owner_app_id_valid',
       sql`${table.ownerAppId} IS NULL OR (${validId(table.ownerAppId)})`,
     ),
-    check('library_depot_installs_mount_index_valid', sql`${table.mountIndex} >= 0`),
+    check(
+      'library_depot_installs_mount_index_valid',
+      sql`${table.mountIndex} >= 0`,
+    ),
     unique('library_depot_installs_mount_index_unique').on(
       table.appId,
       table.mountIndex,
@@ -98,4 +101,18 @@ export const libraryDepotInstalls = sqliteTable(
       sql`${table.installedManifestId} <> '' AND ${table.installedManifestId} NOT GLOB '*[^0-9]*'`,
     ),
   ],
+)
+
+export const settings = sqliteTable(
+  'settings',
+  {
+    id: integer('id').primaryKey(),
+    hideRedistributables: integer('hide_redistributables', {
+      mode: 'boolean',
+    }).notNull(),
+    showWindows: integer('show_windows', { mode: 'boolean' }).notNull(),
+    showMacos: integer('show_macos', { mode: 'boolean' }).notNull(),
+    showLinux: integer('show_linux', { mode: 'boolean' }).notNull(),
+  },
+  (table) => [check('settings_singleton', sql`${table.id} = 1`)],
 )

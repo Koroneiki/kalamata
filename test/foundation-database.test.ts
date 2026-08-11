@@ -79,6 +79,7 @@ describe('foundation database', () => {
     expect(tables).toContain('depot_keys')
     expect(tables).toContain('library_depot_installs')
     expect(tables).toContain('library_depot_selections')
+    expect(tables).toContain('settings')
     expect(db.sqlite.query('PRAGMA foreign_keys').get()).toEqual({
       foreign_keys: 1,
     })
@@ -232,6 +233,37 @@ describe('foundation database', () => {
     db.removeLibraryEntry(10)
     expect(db.getLibraryEntry(10)).toBeNull()
     expect(db.getSelectedDepotIds(10)).toEqual([])
+  })
+
+  test('persists settings after applying native defaults once', async () => {
+    let db = await openDatabase()
+    expect(
+      db.getSettings({ hideRedistributables: true, platforms: ['macos'] }),
+    ).toEqual({ hideRedistributables: true, platforms: ['macos'] })
+
+    expect(
+      db.updateSettings({
+        hideRedistributables: false,
+        platforms: ['windows', 'linux'],
+      }),
+    ).toEqual({
+      hideRedistributables: false,
+      platforms: ['windows', 'linux'],
+    })
+
+    db.close()
+    database = undefined
+    db = await KalamataDatabase.open(
+      root!,
+      join(import.meta.dir, '..', 'src', 'db', 'migrations'),
+    )
+    database = db
+    expect(
+      db.getSettings({ hideRedistributables: true, platforms: ['macos'] }),
+    ).toEqual({
+      hideRedistributables: false,
+      platforms: ['windows', 'linux'],
+    })
   })
 })
 

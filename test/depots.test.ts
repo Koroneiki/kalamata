@@ -1,7 +1,11 @@
 import { expect, test } from 'bun:test'
 
 import type { AppDepot, EligibleAppDepot } from '../src/types/rpc.ts'
-import { depotBadges, summarizeDepots } from '../src/utils/depots.ts'
+import {
+  depotBadges,
+  filterDepots,
+  summarizeDepots,
+} from '../src/utils/depots.ts'
 
 function depot(
   depotId: number,
@@ -95,4 +99,31 @@ test('redistributables expose restrictions without resource badges', () => {
   expect(depotBadges(redistributable)).toEqual([
     { label: 'windows', variant: 'outline' },
   ])
+})
+
+test('filters restricted and redistributable depots using settings', () => {
+  const depots = [
+    depot(1),
+    depot(2, { platform: 'windows' }),
+    depot(3, { platform: 'macos' }),
+    depot(4, { platform: 'windows, linux' }),
+    {
+      ...depot(228981, { platform: 'linux' }),
+      group: 'Steamworks Common Redistributables',
+      eligible: false,
+      manifestStatus: null,
+      keyStatus: null,
+      installStatus: null,
+      selectable: false,
+    } as AppDepot,
+  ]
+
+  expect(
+    filterDepots(depots, true, ['linux']).map(({ depotId }) => depotId),
+  ).toEqual([1, 4])
+  expect(
+    filterDepots(depots, false, ['windows', 'linux']).map(
+      ({ depotId }) => depotId,
+    ),
+  ).toEqual([1, 2, 4, 228981])
 })
