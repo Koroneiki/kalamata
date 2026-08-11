@@ -496,6 +496,22 @@ describe('application filesystem transactions', () => {
     }
   })
 
+  test('ignores non-transaction files while restoring staged work', async () => {
+    directory = await tempDirectory()
+    const desired = depot(10, '1', { 'game.bin': 'good' })
+    await writeStagingJournal(desired, 'good')
+    await writeFile(join(directory, '.Kalamata/transactions/.DS_Store'), '')
+
+    await recoverApplicationTransaction(directory, {
+      appId: 100,
+      reconcile: async () => {},
+    })
+
+    expect(
+      await getResumableApplicationTransaction(directory, 100),
+    ).toMatchObject({ appId: 100, paused: true })
+  })
+
   test('malformed recovery journal leaves live files and backups untouched', async () => {
     directory = await tempDirectory()
     await writeFile(join(directory, 'game.bin'), 'live')

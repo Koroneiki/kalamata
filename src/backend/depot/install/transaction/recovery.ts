@@ -62,11 +62,7 @@ export async function recoverUnlocked(
   for (const entry of entries.sort((left, right) =>
     left.name.localeCompare(right.name),
   )) {
-    if (!entry.isDirectory())
-      throw new ApplicationTransactionError(
-        'recovery',
-        `Unexpected transaction entry: ${entry.name}`,
-      )
+    if (!entry.isDirectory()) continue
     const transactionRoot = join(root, entry.name)
     const journalPath = join(transactionRoot, 'journal.json')
     let journal: TransactionJournal
@@ -115,7 +111,8 @@ export async function getResumableApplicationTransaction(
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
     throw error
   }
-  if (entries.length !== 1 || !entries[0]!.isDirectory()) return null
+  entries = entries.filter((entry) => entry.isDirectory())
+  if (entries.length !== 1) return null
   const journal = await readJournal(
     join(root, entries[0]!.name, 'journal.json'),
   )

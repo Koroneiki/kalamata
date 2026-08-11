@@ -36,6 +36,8 @@ await syncManifestFiles(database)
 const steam = createSteamService()
 const appService = new AppService(steam, database)
 let queue: DownloadQueueCoordinator
+// Recovery runs before BrowserWindow attaches the RPC transport.
+let rpcReady = false
 const rpc = BrowserView.defineRPC<AppRpc>({
   maxRequestTime: 30_000,
   handlers: {
@@ -104,10 +106,10 @@ queue = new DownloadQueueCoordinator(
   steam,
   database,
   (state) => {
-    rpc.send.downloadStateChanged(state)
+    if (rpcReady) rpc.send.downloadStateChanged(state)
   },
   (state) => {
-    rpc.send.operationStateChanged(state)
+    if (rpcReady) rpc.send.operationStateChanged(state)
   },
 )
 
@@ -183,3 +185,4 @@ new BrowserWindow({
   url: await getMainViewUrl(),
   rpc,
 })
+rpcReady = true
