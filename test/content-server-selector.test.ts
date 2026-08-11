@@ -1,10 +1,10 @@
 import { expect, test } from 'bun:test'
-import { CDNClientPool } from '../src/backend/depot/cdn-client-pool.ts'
+import { ContentServerSelector } from '../src/backend/depot/transfer/content-server-selector.ts'
 
 test('selects the lowest-load server and rotates broken connections', () => {
   const slow = { Host: 'slow', weightedload: 50, NumEntriesInClientList: 1 }
   const fast = { Host: 'fast', weightedload: 10, NumEntriesInClientList: 1 }
-  const pool = new CDNClientPool([slow, fast])
+  const pool = new ContentServerSelector([slow, fast])
 
   expect(pool.getConnection()).toBe(fast)
   pool.returnBrokenConnection(fast)
@@ -15,7 +15,7 @@ test('selects the lowest-load server and rotates broken connections', () => {
 test('rotates servers when concurrent callers check out connections', () => {
   const first = { Host: 'first', weightedload: 10, NumEntriesInClientList: 1 }
   const second = { Host: 'second', weightedload: 20, NumEntriesInClientList: 1 }
-  const pool = new CDNClientPool([first, second])
+  const pool = new ContentServerSelector([first, second])
 
   expect([
     pool.getConnection(),
@@ -35,7 +35,7 @@ test('does not materialize server entry weights or expand retry counts', () => {
     weightedload: 20,
     NumEntriesInClientList: 1,
   }
-  const pool = new CDNClientPool([weighted, fallback])
+  const pool = new ContentServerSelector([weighted, fallback])
 
   expect(pool.attemptsPerChunk).toBe(2)
   expect([pool.getConnection(), pool.getConnection()]).toEqual([

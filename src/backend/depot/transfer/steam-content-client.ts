@@ -1,15 +1,15 @@
 import http from 'node:http'
 import https from 'node:https'
-import { abortable } from './abortable.ts'
-import type { ChunkClient, ContentServer } from './content-client.ts'
+import { abortable } from '../../shared/abortable.ts'
+import type { ChunkClient, ContentServer } from './chunk-client.ts'
 import {
   HttpStatusError,
   buildChunkUrl,
   contentServerVhost,
   downloadChunkData,
-} from './chunk-download.ts'
+} from './chunk-http.ts'
 import { DecompressPool } from './decompress-pool.ts'
-import type { SteamContentUser } from '../steam/types.ts'
+import type { SteamContentUser } from '../../steam/types.ts'
 
 export class SteamContentClient implements ChunkClient {
   #decompressPool: DecompressPool | undefined

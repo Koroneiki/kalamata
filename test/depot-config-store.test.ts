@@ -9,10 +9,8 @@ import {
 } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import {
-  acquireOutputLock,
-  DepotConfigStore,
-} from '../src/backend/depot/depot-config-store.ts'
+import { acquireOutputLock } from '../src/backend/depot/install/output-lock.ts'
+import { DepotConfigStore } from '../src/backend/depot/legacy/depot-config-store.ts'
 
 let directory: string | undefined
 
@@ -104,6 +102,7 @@ test('rejects symlinked transaction state and lock paths', async () => {
     const path = join(configDirectory, name)
     await symlink(outside, path)
     await expect(acquireOutputLock(directory)).rejects.toThrow('symbolic link')
+    await expect(DepotConfigStore.load(directory)).rejects.toThrow('symbolic link')
     await rm(path)
   }
 })

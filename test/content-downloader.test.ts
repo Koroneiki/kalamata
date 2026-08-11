@@ -2,13 +2,13 @@ import { afterEach, expect, mock, test } from 'bun:test'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { downloadDepotContent } from '../src/backend/depot/content-downloader.ts'
-import { DepotConfigStore } from '../src/backend/depot/depot-config-store.ts'
-import type { ChunkClient } from '../src/backend/depot/download-core.ts'
+import { downloadDepotContent } from '../src/backend/depot/legacy/content-downloader.ts'
+import { DepotConfigStore } from '../src/backend/depot/legacy/depot-config-store.ts'
+import type { ChunkClient } from '../src/backend/depot/legacy/download-core.ts'
 import type {
   DepotManifest,
   DownloadDepotOptions,
-} from '../src/backend/depot/types.ts'
+} from '../src/backend/depot/manifests/types.ts'
 
 let directory: string | undefined
 

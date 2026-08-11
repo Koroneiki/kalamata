@@ -1,10 +1,10 @@
 import { mkdir, rm, rmdir } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
-import { CDNClientPool } from './cdn-client-pool.ts'
-import type { ChunkClient, ContentServer } from './content-client.ts'
-import { CONFIG_DIRECTORY, STAGING_DIRECTORY } from './depot-paths.ts'
-import type { FileFilter } from './file-list.ts'
+import { ContentServerSelector } from '../transfer/content-server-selector.ts'
+import type { ChunkClient, ContentServer } from '../transfer/chunk-client.ts'
+import { CONFIG_DIRECTORY, STAGING_DIRECTORY } from '../install/internal-paths.ts'
+import type { FileFilter } from '../manifests/file-list.ts'
 import {
   adlerForChunk,
   assertNoSymlinkTraversal,
@@ -20,23 +20,23 @@ import {
   verifyFileSha1,
   writeChunk,
   type ChunkMatch,
-} from './files.ts'
+} from '../install/filesystem.ts'
 import {
   DIRECTORY,
   manifestPathKey,
   withImpliedDirectories,
-} from './manifest-utils.ts'
+} from '../manifests/manifest-utils.ts'
 import type {
   DepotManifest,
   DownloadEvent,
   DownloadResult,
   ManifestChunk,
   ManifestFile,
-} from './types.ts'
+} from '../manifests/types.ts'
 
 const DOWNLOAD_CONCURRENCY = 8
 
-export type { ChunkClient, ContentServer } from './content-client.ts'
+export type { ChunkClient, ContentServer } from '../transfer/chunk-client.ts'
 
 interface ChunkJob {
   path: string
@@ -212,7 +212,7 @@ async function downloadManifestCore(
   installedBytes = reusedBytes
   if (jobs.length > 0) {
     const { servers } = await client.getContentServers(options.appId)
-    const pool = new CDNClientPool(servers)
+    const pool = new ContentServerSelector(servers)
     await runWorkers(
       client,
       jobs,
@@ -315,7 +315,7 @@ async function runWorkers(
   client: ChunkClient,
   jobs: ChunkJob[],
   remainingByFile: Map<string, number>,
-  pool: CDNClientPool,
+  pool: ContentServerSelector,
   options: CoreOptions,
   onDownloaded: (networkBytes: number, logicalBytes: number) => void,
 ): Promise<void> {
@@ -401,7 +401,7 @@ function groupChunkJobs(jobs: ChunkJob[]): ChunkJob[][] {
 async function downloadWithRetry(
   client: ChunkClient,
   chunk: ManifestChunk,
-  pool: CDNClientPool,
+  pool: ContentServerSelector,
   options: CoreOptions,
   signal: AbortSignal,
 ): Promise<{ chunk: Buffer; networkBytes: number }> {

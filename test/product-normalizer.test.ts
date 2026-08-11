@@ -7,13 +7,13 @@ import {
   extractPublicDepots,
   normalizeAppDetails,
   normalizeAppSummary,
-} from '../src/backend/steam/product-normalizer.ts'
+} from '../src/backend/apps/product-normalizer.ts'
 import type {
   ProductInfo,
   ProductInfoResult,
 } from '../src/backend/steam/types.ts'
 import { KalamataDatabase } from '../src/db/database.ts'
-import { FoundationService } from '../src/backend/foundation-service.ts'
+import { AppService } from '../src/backend/apps/app-service.ts'
 
 const DEPOT_ID = 2379781
 const MANIFEST_ID = '3512319404653808464'
@@ -151,7 +151,7 @@ test('derives ready, invalid, outdated, and installed readiness independently', 
 test('persists only depots belonging to the app', async () => {
   const db = await setup()
   db.addLibraryEntry(10)
-  const service = new FoundationService(
+  const service = new AppService(
     {
       getProductInfo: async () => makeProduct(),
       getProductInfoWithDlc: async () => products(makeProduct()),

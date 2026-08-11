@@ -2,13 +2,13 @@ import { createReadStream } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { chmod, lstat, mkdir, open, rename, rm, stat } from 'node:fs/promises'
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
-import { CONFIG_DIRECTORY } from './depot-paths.ts'
+import { CONFIG_DIRECTORY } from './internal-paths.ts'
 import {
   DIRECTORY,
   manifestPathKey,
   normalizeManifestSeparators,
-} from './manifest-utils.ts'
-import type { ManifestChunk, ManifestFile } from './types.ts'
+} from '../manifests/manifest-utils.ts'
+import type { ManifestChunk, ManifestFile } from '../manifests/types.ts'
 
 const EXECUTABLE = 32
 

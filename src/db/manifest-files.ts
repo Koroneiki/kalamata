@@ -5,8 +5,8 @@ import {
   parseManifestEnvelope,
   validateManifest,
   validateManifestEnvelope,
-} from '../backend/depot/local-inputs.ts'
-import type { DepotManifest } from '../backend/depot/types.ts'
+} from '../backend/depot/manifests/manifest-codec.ts'
+import type { DepotManifest } from '../backend/depot/manifests/types.ts'
 import type { KalamataDatabase, ManifestRow } from './database.ts'
 import { validateId, validateManifestId } from './validation.ts'
 

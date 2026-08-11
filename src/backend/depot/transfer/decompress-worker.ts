@@ -1,4 +1,4 @@
-import { processChunkData } from './chunk-download.ts'
+import { processChunkData } from './chunk-codec.ts'
 import {
   exactArrayBuffer,
   serializeError,

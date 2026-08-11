@@ -1,12 +1,12 @@
-import type { AppDetails, AppSummary } from '../types/rpc.ts'
-import type { KalamataDatabase } from '../db/database.ts'
-import type { SteamService } from './index.ts'
+import type { AppDetails, AppSummary } from '../../types/rpc.ts'
+import type { KalamataDatabase } from '../../db/database.ts'
+import type { SteamService } from '../index.ts'
 import {
   normalizeAppDetails,
   normalizeAppSummary,
-} from './steam/product-normalizer.ts'
+} from './product-normalizer.ts'
 
-export class FoundationService {
+export class AppService {
   constructor(
     readonly steam: Pick<
       SteamService,

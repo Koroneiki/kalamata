@@ -1,13 +1,14 @@
-import { acquireOutputLock, DepotConfigStore } from './depot-config-store.ts'
+import { acquireOutputLock } from '../install/output-lock.ts'
+import { DepotConfigStore } from './depot-config-store.ts'
 import { downloadManifest } from './download-core.ts'
-import type { ChunkClient } from './content-client.ts'
-import type { FileFilter } from './file-list.ts'
-import { validateManifest } from './local-inputs.ts'
+import type { ChunkClient } from '../transfer/chunk-client.ts'
+import type { FileFilter } from '../manifests/file-list.ts'
+import { validateManifest } from '../manifests/manifest-codec.ts'
 import type {
   DepotManifest,
   DownloadDepotOptions,
   DownloadResult,
-} from './types.ts'
+} from '../manifests/types.ts'
 
 interface ContentDownloadInputs {
   manifest: DepotManifest

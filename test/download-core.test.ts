@@ -7,12 +7,12 @@ import {
   downloadManifest,
   type ChunkClient,
   type ContentServer,
-} from '../src/backend/depot/download-core.ts'
+} from '../src/backend/depot/legacy/download-core.ts'
 import type {
   DepotManifest,
   ManifestChunk,
   ManifestFile,
-} from '../src/backend/depot/types.ts'
+} from '../src/backend/depot/manifests/types.ts'
 
 let directory: string | undefined
 

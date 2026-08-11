@@ -4,8 +4,8 @@ import { join } from 'node:path'
 import {
   parseManifest,
   validateManifest,
-} from '../src/backend/depot/local-inputs.ts'
-import type { DepotManifest } from '../src/backend/depot/types.ts'
+} from '../src/backend/depot/manifests/manifest-codec.ts'
+import type { DepotManifest } from '../src/backend/depot/manifests/types.ts'
 
 test('parses and validates the checked-in Balatro manifest without network access', async () => {
   const key = Buffer.from(

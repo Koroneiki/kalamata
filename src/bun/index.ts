@@ -6,15 +6,15 @@ import Electrobun, {
 } from 'electrobun/bun'
 
 import { createSteamService } from '../backend/index.ts'
-import { FoundationService } from '../backend/foundation-service.ts'
+import { AppService } from '../backend/apps/app-service.ts'
+import { DownloadQueueCoordinator } from '../backend/operations/download-queue.ts'
 import {
   recoverApplicationTransaction,
-} from '../backend/depot/application-transaction.ts'
+} from '../backend/depot/install/transaction/recovery.ts'
 import { openKalamataDatabase } from '../db/index.ts'
 import { syncManifestFiles } from '../db/manifest-files.ts'
 import { canonicalizeInstallDirectory } from '../db/validation.ts'
 import type { AppRpc } from '../types/rpc.ts'
-import { DownloadQueueCoordinator } from './download-queue.ts'
 
 const DEV_SERVER_URL = 'http://localhost:5173'
 
@@ -34,17 +34,17 @@ async function getMainViewUrl(): Promise<string> {
 const database = await openKalamataDatabase(Utils.paths.userData)
 await syncManifestFiles(database)
 const steam = createSteamService()
-const foundation = new FoundationService(steam, database)
+const appService = new AppService(steam, database)
 let queue: DownloadQueueCoordinator
 const rpc = BrowserView.defineRPC<AppRpc>({
   maxRequestTime: 30_000,
   handlers: {
     requests: {
       async getAppSummary({ appId }) {
-        return foundation.getAppSummary(appId)
+        return appService.getAppSummary(appId)
       },
       async getAppDetails({ appId }) {
-        return foundation.getAppDetails(appId)
+        return appService.getAppDetails(appId)
       },
       getLibrary() {
         return database.getLibrary()
@@ -59,7 +59,7 @@ const rpc = BrowserView.defineRPC<AppRpc>({
         database.removeLibraryEntry(appId)
       },
       setSelectedDepots({ appId, depotIds }) {
-        return foundation.setSelectedDepots(appId, depotIds)
+        return appService.setSelectedDepots(appId, depotIds)
       },
       async selectInstallDirectory({ startingPath }) {
         const selected = await Utils.openFileDialog({

@@ -1,0 +1,23 @@
+import { lstat } from 'node:fs/promises'
+import { join } from 'node:path'
+import { CONFIG_DIRECTORY, STAGING_DIRECTORY } from './internal-paths.ts'
+
+export async function assertSafeInternalStatePaths(
+  outputDirectory: string,
+): Promise<void> {
+  const directory = join(outputDirectory, CONFIG_DIRECTORY)
+  for (const path of [
+    directory,
+    join(directory, STAGING_DIRECTORY),
+    join(directory, 'transactions'),
+    join(directory, 'repair-fallback'),
+    join(directory, 'download.lock'),
+  ]) {
+    try {
+      if ((await lstat(path)).isSymbolicLink())
+        throw new Error(`Internal state path must not be a symbolic link: ${path}`)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
+  }
+}

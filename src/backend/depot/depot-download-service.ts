@@ -1,23 +1,29 @@
 import { readFile } from 'node:fs/promises'
 import http from 'node:http'
 import https from 'node:https'
-import { abortable } from './abortable.ts'
+import { abortable } from '../shared/abortable.ts'
 import {
   ApplicationTransactionError,
-  recoverAndRunApplicationTransaction,
   type ApplicationDepotRecord,
   type ApplicationTransactionEvent,
   type ApplicationTransactionResult,
   type DesiredApplicationDepot,
   type InstalledApplicationDepot,
-} from './application-transaction.ts'
-import { downloadDepotContent } from './content-downloader.ts'
-import { readFileFilter } from './file-list.ts'
-import { parseManifest, validateManifest } from './local-inputs.ts'
-import { SteamContentClient } from './steam-content-client.ts'
-import type { ChunkClient, ContentServer } from './content-client.ts'
+} from './install/transaction/types.ts'
+import { recoverAndRunApplicationTransaction } from './install/transaction/transaction.ts'
+import { downloadDepotContent } from './legacy/content-downloader.ts'
+import { readFileFilter } from './manifests/file-list.ts'
+import {
+  parseManifest,
+  validateManifest,
+} from './manifests/manifest-codec.ts'
+import { SteamContentClient } from './transfer/steam-content-client.ts'
+import type { ChunkClient, ContentServer } from './transfer/chunk-client.ts'
 import type { SteamSession } from '../steam/steam-session.ts'
-import type { DownloadDepotOptions, DownloadResult } from './types.ts'
+import type {
+  DownloadDepotOptions,
+  DownloadResult,
+} from './manifests/types.ts'
 
 export interface ApplicationDepotInput {
   depotId: number

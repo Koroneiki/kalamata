@@ -1,5 +1,5 @@
 const result = await Bun.build({
-  entrypoints: ['src/backend/depot/decompress-worker.ts'],
+  entrypoints: ['src/backend/depot/transfer/decompress-worker.ts'],
   outdir: 'dist/decompress-worker',
   target: 'bun',
 })

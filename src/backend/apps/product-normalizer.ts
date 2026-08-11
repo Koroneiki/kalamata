@@ -8,7 +8,7 @@ import type {
 import type { KalamataDatabase } from '../../db/database.ts'
 import { validateManagedManifest } from '../../db/manifest-files.ts'
 import { depotKeyFromHex } from '../../db/validation.ts'
-import type { ProductInfo, ProductInfoResult } from './types.ts'
+import type { ProductInfo, ProductInfoResult } from '../steam/types.ts'
 
 export interface PublicDepot {
   depotId: number

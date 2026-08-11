@@ -1,30 +1,25 @@
+import type {
+  ReconcileApplicationOptions,
+} from '../depot/depot-download-service.ts'
+import type {
+  ApplicationDepotRecord,
+  ApplicationTransactionEvent,
+  ApplicationTransactionResult,
+} from '../depot/install/transaction/types.ts'
 import {
-  ApplicationTransactionError,
   archiveUnresolvedApplicationTransaction,
   clearRepairFallback,
   discardPrecommitApplicationTransaction,
   getResumableApplicationTransaction,
   hasCommitReadyApplicationTransaction,
-  type ApplicationDepotRecord,
-  type ApplicationTransactionEvent,
-  type ApplicationTransactionResult,
-} from '../backend/depot/application-transaction.ts'
-import { abortable } from '../backend/depot/abortable.ts'
-import type {
-  ApplicationDepotInput,
-  ReconcileApplicationOptions,
-} from '../backend/depot/depot-download-service.ts'
-import { extractPublicDepots } from '../backend/steam/product-normalizer.ts'
-import type { ProductInfoResult } from '../backend/steam/types.ts'
-import type { KalamataDatabase } from '../db/database.ts'
-import { validateManagedManifest } from '../db/manifest-files.ts'
-import { depotKeyFromHex, validateId } from '../db/validation.ts'
+} from '../depot/install/transaction/recovery.ts'
+import type { ProductInfoResult } from '../steam/types.ts'
+import type { KalamataDatabase } from '../../db/database.ts'
+import { validateId } from '../../db/validation.ts'
 import type {
   ActiveOperationState,
   CancelOperationResult,
   DownloadQueueState,
-  OperationErrorKind,
-  OperationKind,
   OperationState,
   PauseOperationResult,
   QueueDepotUpdateRequest,
@@ -32,22 +27,26 @@ import type {
   ResumeOperationResult,
   RunningDownloadQueue,
   StartDownloadRequest,
-} from '../types/rpc.ts'
+} from '../../types/rpc.ts'
+import {
+  planApplication,
+  type ApplicationPlanRequest,
+} from './application-planner.ts'
+import {
+  isOperationCancellation,
+  isOperationShutdown,
+  isRecoverableOperationError,
+  repairRequiredState,
+  serializeOperationError,
+  toDownloadState,
+  validateDepotIds,
+} from './operation-state.ts'
 
 interface QueueSteamService {
   getProductInfoWithDlc(appId: number): Promise<ProductInfoResult>
   reconcileApplication(
     options: ReconcileApplicationOptions,
   ): Promise<ApplicationTransactionResult>
-}
-
-interface OperationRequest {
-  kind: OperationKind
-  appId: number
-  installPath: string
-  requestedDepotIds?: number[]
-  desiredDepotIds?: number[]
-  fixedDesired?: ApplicationDepotRecord[]
 }
 
 export class DownloadQueueCoordinator {
@@ -61,7 +60,7 @@ export class DownloadQueueCoordinator {
   #resolveAcceptance: (() => void) | undefined
   #operationId = 0
   #progressQueued = false
-  #currentRequest: OperationRequest | undefined
+  #currentRequest: ApplicationPlanRequest | undefined
   #pausing = false
   #cancelRequested = false
   readonly #repairRequirements = new Map<number, string>()
@@ -265,7 +264,7 @@ export class DownloadQueueCoordinator {
         entry.appId,
       ).catch(() => null)
       if (!resumable) continue
-      const request: OperationRequest = {
+      const request: ApplicationPlanRequest = {
         kind: resumable.kind,
         appId: resumable.appId,
         installPath: resumable.installPath,
@@ -315,7 +314,7 @@ export class DownloadQueueCoordinator {
   }
 
   private begin(
-    request: OperationRequest,
+    request: ApplicationPlanRequest,
     acceptanceClaimed = false,
   ): ActiveOperationState {
     if (this.#shuttingDown) throw new Error('Application is shutting down')
@@ -390,149 +389,24 @@ export class DownloadQueueCoordinator {
   }
 
   private async run(
-    request: OperationRequest,
+    request: ApplicationPlanRequest,
     signal: AbortSignal,
   ): Promise<void> {
     try {
-      const installedRows = this.database.getInstalls(request.appId)
-      // Desired selection drives reconciliation; legacy starts are additive.
-      const desiredIds =
-        request.kind === 'download'
-          ? new Set([
-              ...installedRows.map(({ depotId }) => depotId),
-              ...(request.requestedDepotIds ?? []),
-            ])
-          : new Set(request.desiredDepotIds ?? [])
-      if (request.fixedDesired)
-        for (const { depotId } of request.fixedDesired) desiredIds.add(depotId)
-      const pureRemoval =
-        request.kind === 'reconcile' &&
-        desiredIds.size < installedRows.length &&
-        [...desiredIds].every((depotId) =>
-          installedRows.some((row) => row.depotId === depotId),
+      const { installedDepots, desiredDepots, desiredDepotIds } =
+        await planApplication(
+          request,
+          this.steam,
+          this.database,
+          signal,
+          (depotIds) => {
+            if (this.#state.status === 'active')
+              this.#state = { ...this.#state, desiredDepotIds: depotIds }
+          },
         )
-      const needsOwnershipMetadata = installedRows.some(
-        (row) => desiredIds.has(row.depotId) && row.ownerAppId === null,
-      )
-      const canPlanLocally =
-        request.fixedDesired !== undefined ||
-        ((request.kind === 'repair' || pureRemoval) &&
-          !needsOwnershipMetadata)
-      const publicDepots =
-        canPlanLocally
-          ? []
-          : extractPublicDepots(
-              await abortable(
-                this.steam
-                  .getProductInfoWithDlc(request.appId)
-                  .catch((error) => {
-                    throw new ApplicationTransactionError(
-                      'steam',
-                      'Steam product metadata is unavailable',
-                      { cause: error },
-                    )
-                  }),
-                signal,
-              ),
-            )
-      signal.throwIfAborted()
-      const metadata = new Map(
-        publicDepots.map((depot) => [depot.depotId, depot]),
-      )
-      const metadataOrder = publicDepots.map(({ depotId }) => depotId)
-      const requested = new Set(request.requestedDepotIds ?? [])
-      const installedDepots = await Promise.all(
-        installedRows.map((row) =>
-          this.planDepot(
-            row.depotId,
-            row.installedManifestId,
-            metadata,
-            signal,
-            row.ownerAppId ?? metadata.get(row.depotId)?.ownerAppId ?? request.appId,
-          ),
-        ),
-      )
-      const unavailableDesired = [...desiredIds].filter(
-        (depotId) =>
-          !installedRows.some((row) => row.depotId === depotId) &&
-          !metadata.has(depotId),
-      )
-      if (unavailableDesired.length > 0)
-        throw new ApplicationTransactionError(
-          'unavailable-resource',
-          `Depots are unavailable for this application: ${unavailableDesired.join(', ')}`,
-        )
-      if (
-        needsOwnershipMetadata &&
-        installedRows.some(
-          (row) => desiredIds.has(row.depotId) && !metadata.has(row.depotId),
-        )
-      )
-        throw new ApplicationTransactionError(
-          'unavailable-resource',
-          'Legacy depot ownership could not be resolved from Steam metadata',
-        )
-      const desiredOrder =
-        request.fixedDesired
-          ? request.fixedDesired.map(({ depotId }) => depotId)
-          : request.kind === 'repair' || pureRemoval
-          ? installedRows.map(({ depotId }) => depotId)
-              .filter((depotId) => desiredIds.has(depotId))
-          : [
-              ...metadataOrder.filter((depotId) => desiredIds.has(depotId)),
-              // Keep unavailable installed depots after published depots without
-              // disturbing their persisted relative mount order.
-              ...installedRows
-                .map(({ depotId }) => depotId)
-                .filter(
-                  (depotId) =>
-                    desiredIds.has(depotId) && !metadata.has(depotId),
-                ),
-            ]
-      if (this.#state.status === 'active')
-        this.#state = { ...this.#state, desiredDepotIds: desiredOrder }
-      const desiredDepots = await Promise.all(
-        desiredOrder
-          .map((depotId) => {
-            const installed = installedRows.find(
-              (row) => row.depotId === depotId,
-            )
-            const publicManifestId = metadata.get(depotId)?.manifestId
-            const fixedManifestId = request.fixedDesired?.find(
-              (record) => record.depotId === depotId,
-            )?.manifestId
-            const useInstalled =
-              pureRemoval ||
-              request.kind === 'repair' ||
-              (request.kind === 'download' &&
-                installed !== undefined &&
-                !requested.has(depotId))
-            const manifestId =
-              fixedManifestId ??
-              (useInstalled ? installed?.installedManifestId : publicManifestId)
-            if (!manifestId)
-              throw new ApplicationTransactionError(
-                'unavailable-resource',
-                `Depot ${depotId} has no available target manifest`,
-              )
-            return this.planDepot(
-              depotId,
-              manifestId,
-              metadata,
-              signal,
-              request.fixedDesired?.find(
-                (record) => record.depotId === depotId,
-              )?.ownerAppId ??
-                installed?.ownerAppId ??
-                metadata.get(depotId)?.ownerAppId ??
-                request.appId,
-            )
-          }),
-      )
-      signal.throwIfAborted()
       // Selection is user intent and persists before transactional file changes.
       if (request.kind === 'reconcile')
-        this.database.replaceSelectedDepotIds(request.appId, desiredOrder)
+        this.database.replaceSelectedDepotIds(request.appId, desiredDepotIds)
       const result = await this.steam.reconcileApplication({
         kind: request.kind,
         appId: request.appId,
@@ -559,10 +433,10 @@ export class DownloadQueueCoordinator {
       this.#currentRequest = undefined
       this.#state = completedState
     } catch (error) {
-      const serialized = serializeError(error)
-      const shuttingDown = isShutdown(error, signal)
+      const serialized = serializeOperationError(error)
+      const shuttingDown = isOperationShutdown(error, signal)
       const recoverable =
-        (isRecoverable(serialized.kind) || shuttingDown) &&
+        (isRecoverableOperationError(serialized.kind) || shuttingDown) &&
         (await getResumableApplicationTransaction(
           request.installPath,
           request.appId,
@@ -574,7 +448,7 @@ export class DownloadQueueCoordinator {
       const cancelled =
         !shuttingDown &&
         (this.#cancelRequested ||
-          (!paused && (signal.aborted || isCancellation(error))))
+          (!paused && (signal.aborted || isOperationCancellation(error))))
       if (cancelled && !commitReady) {
         await discardPrecommitApplicationTransaction(request.installPath)
         this.#currentRequest = undefined
@@ -586,48 +460,48 @@ export class DownloadQueueCoordinator {
             status: 'paused',
           }
         : cancelled
-        ? {
-            status: 'cancelled',
-            kind: request.kind,
-            appId: request.appId,
-            installPath: request.installPath,
-            desiredDepotIds:
-              this.#state.status === 'active'
-                ? this.#state.desiredDepotIds
-                : [],
-            error: {
-              kind: 'cancellation',
-              message: 'The operation was cancelled before commit.',
-            },
-          }
-        : commitReady
           ? {
-              status: 'repair-required',
+              status: 'cancelled',
+              kind: request.kind,
               appId: request.appId,
               installPath: request.installPath,
+              desiredDepotIds:
+                this.#state.status === 'active'
+                  ? this.#state.desiredDepotIds
+                  : [],
               error: {
-                kind: 'recovery',
-                message:
-                  'The interrupted commit cannot be proven correct. Repair is required.',
+                kind: 'cancellation',
+                message: 'The operation was cancelled before commit.',
               },
             }
-        : recoverable
-          ? {
-              ...(this.#state as ActiveOperationState),
-              status: 'resumable',
-              error: serialized,
-            }
-          : {
-            status: 'failed',
-            kind: request.kind,
-            appId: request.appId,
-            installPath: request.installPath,
-            desiredDepotIds:
-              this.#state.status === 'active'
-                ? this.#state.desiredDepotIds
-                : [],
-            error: serialized,
-          }
+          : commitReady
+            ? {
+                status: 'repair-required',
+                appId: request.appId,
+                installPath: request.installPath,
+                error: {
+                  kind: 'recovery',
+                  message:
+                    'The interrupted commit cannot be proven correct. Repair is required.',
+                },
+              }
+            : recoverable
+              ? {
+                  ...(this.#state as ActiveOperationState),
+                  status: 'resumable',
+                  error: serialized,
+                }
+              : {
+                  status: 'failed',
+                  kind: request.kind,
+                  appId: request.appId,
+                  installPath: request.installPath,
+                  desiredDepotIds:
+                    this.#state.status === 'active'
+                      ? this.#state.desiredDepotIds
+                      : [],
+                  error: serialized,
+                }
       if (commitReady)
         this.#repairRequirements.set(request.appId, request.installPath)
       if (!cancelled && !paused && !recoverable && !commitReady) {
@@ -646,7 +520,7 @@ export class DownloadQueueCoordinator {
   }
 
   private async runSafely(
-    request: OperationRequest,
+    request: ApplicationPlanRequest,
     signal: AbortSignal,
   ): Promise<void> {
     try {
@@ -673,58 +547,8 @@ export class DownloadQueueCoordinator {
     this.emitState()
   }
 
-  private async planDepot(
-    depotId: number,
-    manifestId: string,
-    metadata: Map<number, ReturnType<typeof extractPublicDepots>[number]>,
-    signal: AbortSignal,
-    fallbackOwnerAppId: number,
-  ): Promise<ApplicationDepotInput> {
-    signal.throwIfAborted()
-    const depot = metadata.get(depotId)
-    if (depot && depot.group !== 'Base Game' && depot.group !== 'DLC')
-      throw new ApplicationTransactionError(
-        'planning',
-        `Depot ${depotId} is not eligible for this application`,
-      )
-    const row = this.database
-      .getManifestRows(depotId)
-      .find((candidate) => candidate.manifestId === manifestId)
-    const keyText = this.database.getDepotKey(depotId)
-    if (!row || keyText === null)
-      throw new ApplicationTransactionError(
-        'unavailable-resource',
-        `Depot ${depotId} requires a manually supplied manifest and key`,
-      )
-    let depotKey: Buffer
-    let manifestPath: string
-    try {
-      depotKey = depotKeyFromHex(keyText)
-      manifestPath = await validateManagedManifest(
-        this.database.dataRoot,
-        depotId,
-        manifestId,
-        row.relativePath,
-        depotKey,
-      )
-    } catch (error) {
-      throw new ApplicationTransactionError(
-        'unavailable-resource',
-        `Depot ${depotId} manifest or key is invalid`,
-        { cause: error },
-      )
-    }
-    return {
-      depotId,
-      ownerAppId: depot?.ownerAppId ?? fallbackOwnerAppId,
-      manifestId,
-      manifestPath,
-      depotKey,
-    }
-  }
-
   private async reconcileDatabase(
-    request: OperationRequest,
+    request: ApplicationPlanRequest,
     desired: ApplicationDepotRecord[],
   ): Promise<void> {
     this.database.reconcileInstalledDepots(
@@ -777,142 +601,5 @@ export class DownloadQueueCoordinator {
     const operation = structuredClone(this.#state)
     this.emitOperation(operation)
     this.emitDownload(toDownloadState(operation))
-  }
-}
-
-function validateDepotIds(depotIds: number[], allowEmpty: boolean): void {
-  if (!allowEmpty && depotIds.length === 0)
-    throw new Error('At least one depot must be selected')
-  if (new Set(depotIds).size !== depotIds.length)
-    throw new Error('Depot IDs must not contain duplicates')
-  for (const depotId of depotIds) validateId(depotId, 'depotId')
-}
-
-function serializeError(error: unknown): {
-  kind: OperationErrorKind
-  message: string
-} {
-  const kind =
-    error instanceof ApplicationTransactionError ? error.kind : 'planning'
-  const messages: Record<OperationErrorKind, string> = {
-    planning: 'The installation plan is invalid.',
-    'unavailable-resource': 'A required manifest or depot key is unavailable.',
-    'insufficient-space':
-      'There is not enough space to stage the installation.',
-    steam: 'Steam could not be reached or did not authorize the request.',
-    'unavailable-content': 'Required depot content is unavailable.',
-    'transfer-exhausted': 'All eligible content servers failed.',
-    integrity: 'Downloaded or staged content failed integrity verification.',
-    filesystem: 'The installation filesystem operation failed.',
-    cancellation: 'The operation was cancelled.',
-    recovery: 'The interrupted installation could not be recovered safely.',
-    persistence: 'Installation metadata could not be reconciled.',
-  }
-  return { kind, message: messages[kind] }
-}
-
-function isCancellation(error: unknown): boolean {
-  return (
-    (error instanceof ApplicationTransactionError &&
-      error.kind === 'cancellation') ||
-    (error instanceof Error && error.name === 'AbortError')
-  )
-}
-
-function isShutdown(error: unknown, signal: AbortSignal): boolean {
-  return (
-    signal.aborted &&
-    signal.reason instanceof Error &&
-    signal.reason.name === 'ShutdownError' &&
-    (error instanceof ApplicationTransactionError
-      ? error.kind === 'cancellation'
-      : error === signal.reason)
-  )
-}
-
-function isRecoverable(kind: OperationErrorKind): boolean {
-  return [
-    'unavailable-resource',
-    'insufficient-space',
-    'steam',
-    'unavailable-content',
-    'transfer-exhausted',
-    'integrity',
-    'filesystem',
-  ].includes(kind)
-}
-
-function repairRequiredState(
-  appId: number,
-  installPath: string,
-): OperationState {
-  return {
-    status: 'repair-required',
-    appId,
-    installPath,
-    error: {
-      kind: 'recovery',
-      message:
-        'The interrupted commit cannot be proven correct. Repair is required.',
-    },
-  }
-}
-
-function toDownloadState(state: OperationState): DownloadQueueState {
-  if (state.status === 'idle') return state
-  if (
-    state.status === 'active' ||
-    state.status === 'paused' ||
-    state.status === 'resumable'
-  ) {
-    return {
-      status: 'running',
-      appId: state.appId,
-      installPath: state.installPath,
-      depotIds: [...state.desiredDepotIds],
-      completedDepotIds: [],
-      currentDepotId: state.desiredDepotIds[0] ?? 0,
-      position: state.desiredDepotIds.length ? 1 : 0,
-      total: state.desiredDepotIds.length,
-      downloadedBytes: state.installedBytesCompleted,
-      totalBytes: state.installedBytesTotal,
-      operation: state.status === 'active' ? state.phase : state.status,
-    }
-  }
-  if (state.status === 'completed') {
-    return {
-      status: 'completed',
-      appId: state.appId,
-      installPath: state.installPath,
-      depotIds: [...state.desiredDepotIds],
-      completedDepotIds: [...state.desiredDepotIds],
-      downloadedBytes: state.installedBytes,
-      reusedBytes: state.reusedLocalBytes,
-    }
-  }
-  if (state.status === 'repair-required') {
-    return {
-      status: 'failed',
-      appId: state.appId,
-      installPath: state.installPath,
-      depotIds: [],
-      completedDepotIds: [],
-      failedDepotId: 0,
-      failureKind: 'persistence',
-      error: state.error.message,
-    }
-  }
-  return {
-    status: 'failed',
-    appId: state.appId,
-    installPath: state.installPath,
-    depotIds: [...state.desiredDepotIds],
-    completedDepotIds: [],
-    failedDepotId: state.desiredDepotIds[0] ?? 0,
-    failureKind:
-      state.status === 'failed' && state.error.kind === 'persistence'
-        ? 'persistence'
-        : 'download',
-    error: state.error.message,
   }
 }

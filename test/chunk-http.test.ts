@@ -3,7 +3,7 @@ import { createServer, type RequestListener, type Server } from 'node:http'
 import {
   HttpStatusError,
   downloadChunkData,
-} from '../src/backend/depot/chunk-download.ts'
+} from '../src/backend/depot/transfer/chunk-http.ts'
 
 const servers: Server[] = []
 

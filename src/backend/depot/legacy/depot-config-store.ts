@@ -1,10 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { lstat, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { Database } from 'bun:sqlite'
-import { CONFIG_DIRECTORY, STAGING_DIRECTORY } from './depot-paths.ts'
-import { parseManifest } from './local-inputs.ts'
-import type { DepotManifest } from './types.ts'
+import { CONFIG_DIRECTORY, STAGING_DIRECTORY } from '../install/internal-paths.ts'
+import { assertSafeInternalStatePaths } from '../install/internal-state.ts'
+import { parseManifest } from '../manifests/manifest-codec.ts'
+import type { DepotManifest } from '../manifests/types.ts'
 
 interface DepotConfigData {
   version: 1
@@ -25,7 +25,7 @@ export class DepotConfigStore {
   }
 
   static async load(outputDirectory: string): Promise<DepotConfigStore> {
-    await assertSafeConfigDirectory(outputDirectory)
+    await assertSafeInternalStatePaths(outputDirectory)
     const filename = join(
       outputDirectory,
       CONFIG_DIRECTORY,
@@ -156,35 +156,6 @@ export class DepotConfigStore {
   }
 }
 
-export async function acquireOutputLock(
-  outputDirectory: string,
-): Promise<() => Promise<void>> {
-  await assertSafeConfigDirectory(outputDirectory)
-  const directory = join(outputDirectory, CONFIG_DIRECTORY)
-  const ownerPath = join(directory, 'download.lock')
-  await mkdir(directory, { recursive: true })
-  let database: Database | undefined
-  try {
-    database = new Database(ownerPath, { create: true })
-    database.exec('PRAGMA busy_timeout = 0; BEGIN EXCLUSIVE;')
-  } catch (error) {
-    database?.close(false)
-    throw new Error(`Another download is already using ${outputDirectory}`, {
-      cause: error,
-    })
-  }
-  let released = false
-  return async () => {
-    if (released) return
-    released = true
-    try {
-      database.exec('COMMIT')
-    } finally {
-      database.close(false)
-    }
-  }
-}
-
 async function writeAtomically(
   filename: string,
   contents: string,
@@ -225,27 +196,4 @@ function isDepotConfigData(value: unknown): value is DepotConfigData {
       (manifestId === null ||
         (typeof manifestId === 'string' && /^\d+$/u.test(manifestId))),
   )
-}
-
-async function assertSafeConfigDirectory(
-  outputDirectory: string,
-): Promise<void> {
-  const directory = join(outputDirectory, CONFIG_DIRECTORY)
-  for (const path of [
-    directory,
-    join(directory, STAGING_DIRECTORY),
-    join(directory, 'transactions'),
-    join(directory, 'repair-fallback'),
-    join(directory, 'download.lock'),
-  ]) {
-    try {
-      if ((await lstat(path)).isSymbolicLink()) {
-        throw new Error(
-          `Internal state path must not be a symbolic link: ${path}`,
-        )
-      }
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-    }
-  }
 }
