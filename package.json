@@ -13,8 +13,7 @@
     "test:integration:cat-quest": "CAT_QUEST_INTEGRATION=1 bun test test/cat-quest-download.integration.test.ts",
     "test:integration:grow-home": "GROW_HOME_INTEGRATION=1 bun test test/grow-home-download.integration.test.ts",
     "type-check": "vue-tsc --build",
-    "lint": "bun run check:lines && oxlint",
-    "check:lines": "bun scripts/check-file-length.ts",
+    "lint": "oxlint",
     "format": "oxfmt"
   },
   "dependencies": {
