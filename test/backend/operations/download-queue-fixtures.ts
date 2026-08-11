@@ -1,3 +1,4 @@
+import { test } from 'bun:test'
 import {
   copyFile,
   mkdir,
@@ -35,6 +36,18 @@ export const DEPOTS = [
     key: '33130777c4dc3a1691afe38e0202242580e2135bfb239dcd83e50cd18d384687',
   },
 ] as const
+const fixtureDirectory = join(import.meta.dir, '..', '..', 'fixtures')
+const hasManifestFixtures = (
+  await Promise.all(
+    DEPOTS.map(({ depotId, manifestId }) =>
+      Bun.file(
+        join(fixtureDirectory, `${depotId}_${manifestId}.manifest`),
+      ).exists(),
+    ),
+  )
+).every(Boolean)
+
+export const queueTest = test.skipIf(!hasManifestFixtures)
 
 export interface DownloadQueueFixture {
   database: KalamataDatabase
@@ -55,13 +68,7 @@ export async function setupDownloadQueue(): Promise<DownloadQueueFixture> {
   for (const depot of DEPOTS) {
     const relativePath = database.addManifest(depot.depotId, depot.manifestId)
     await copyFile(
-      join(
-        import.meta.dir,
-        '..',
-        '..',
-        'fixtures',
-        `${depot.depotId}_${depot.manifestId}.manifest`,
-      ),
+      join(fixtureDirectory, `${depot.depotId}_${depot.manifestId}.manifest`),
       join(root, relativePath),
     )
     database.setDepotKey(depot.depotId, depot.key)

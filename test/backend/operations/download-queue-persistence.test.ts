@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from 'bun:test'
+import { afterEach, expect } from 'bun:test'
 import { DownloadQueueCoordinator } from '../../../src/backend/operations/download-queue.ts'
 import {
   APP_ID,
@@ -7,6 +7,7 @@ import {
   deferred,
   install,
   products,
+  queueTest as test,
   setupDownloadQueue,
   successfulReconciliation,
   waitForTerminal,

@@ -1,4 +1,4 @@
-import { afterEach, expect, mock, test } from 'bun:test'
+import { afterEach, expect, mock } from 'bun:test'
 import { realpath } from 'node:fs/promises'
 import type { ProductInfoResult } from '../../../src/backend/steam/types.ts'
 import { getResumableApplicationTransaction } from '../../../src/backend/depot/install/transaction/recovery.ts'
@@ -10,6 +10,7 @@ import {
   deferred,
   install,
   products,
+  queueTest as test,
   setupDownloadQueue,
   successfulReconciliation,
   waitForTerminal,

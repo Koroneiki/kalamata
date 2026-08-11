@@ -7,6 +7,7 @@ import {
   APP_ID,
   DEPOTS,
   products,
+  queueTest,
   setupDownloadQueue,
 } from './download-queue-fixtures.ts'
 
@@ -70,41 +71,48 @@ test('does not stage files whose winning manifest is unchanged', () => {
   expect(preview.networkPayloadUpperBoundBytes).toBe('0')
 })
 
-test('coordinator preview does not reserve a path or persist selection', async () => {
-  const fixture = await setupDownloadQueue()
-  try {
-    const queue = new DownloadQueueCoordinator(
-      {
-        getProductInfoWithDlc: async () => products(),
-        reconcileApplication: async () => {
-          throw new Error('execution must not start during preview')
+queueTest(
+  'coordinator preview does not reserve a path or persist selection',
+  async () => {
+    const fixture = await setupDownloadQueue()
+    try {
+      const queue = new DownloadQueueCoordinator(
+        {
+          getProductInfoWithDlc: async () => products(),
+          reconcileApplication: async () => {
+            throw new Error('execution must not start during preview')
+          },
+          previewApplicationOperation: async (_appId, plan) => ({
+            depots: plan.desiredDepots.map(({ depotId }) => ({
+              depotId,
+              action: 'install' as const,
+            })),
+            counts: {
+              install: plan.desiredDepots.length,
+              remove: 0,
+              update: 0,
+            },
+            logicalSizeDeltaBytes: '0',
+            networkPayloadUpperBoundBytes: '0',
+            stagingLogicalUpperBoundBytes: '0',
+          }),
         },
-        previewApplicationOperation: async (_appId, plan) => ({
-          depots: plan.desiredDepots.map(({ depotId }) => ({
-            depotId,
-            action: 'install' as const,
-          })),
-          counts: { install: plan.desiredDepots.length, remove: 0, update: 0 },
-          logicalSizeDeltaBytes: '0',
-          networkPayloadUpperBoundBytes: '0',
-          stagingLogicalUpperBoundBytes: '0',
-        }),
-      },
-      fixture.database,
-    )
+        fixture.database,
+      )
 
-    const preview = await queue.previewApplicationOperation({
-      appId: APP_ID,
-      desiredDepotIds: [DEPOTS[0].depotId],
-    })
+      const preview = await queue.previewApplicationOperation({
+        appId: APP_ID,
+        desiredDepotIds: [DEPOTS[0].depotId],
+      })
 
-    expect(preview.depots).toEqual([
-      { depotId: DEPOTS[0].depotId, action: 'install' },
-    ])
-    expect(fixture.database.getLibraryEntry(APP_ID)?.installPath).toBeNull()
-    expect(fixture.database.getSelectedDepotIds(APP_ID)).toEqual([])
-    expect(queue.getOperationState()).toEqual({ status: 'idle' })
-  } finally {
-    await fixture.cleanup()
-  }
-})
+      expect(preview.depots).toEqual([
+        { depotId: DEPOTS[0].depotId, action: 'install' },
+      ])
+      expect(fixture.database.getLibraryEntry(APP_ID)?.installPath).toBeNull()
+      expect(fixture.database.getSelectedDepotIds(APP_ID)).toEqual([])
+      expect(queue.getOperationState()).toEqual({ status: 'idle' })
+    } finally {
+      await fixture.cleanup()
+    }
+  },
+)

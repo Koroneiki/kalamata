@@ -1,4 +1,4 @@
-import { afterEach, expect, mock, test } from 'bun:test'
+import { afterEach, expect, mock } from 'bun:test'
 import { realpath, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { ApplicationTransactionError } from '../../../src/backend/depot/install/transaction/types.ts'
@@ -11,6 +11,7 @@ import {
   type DownloadQueueFixture,
   install,
   products,
+  queueTest as test,
   setupDownloadQueue,
   successfulReconciliation,
   waitForTerminal,
