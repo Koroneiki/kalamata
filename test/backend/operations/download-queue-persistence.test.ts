@@ -1,5 +1,4 @@
 import { afterEach, expect, test } from 'bun:test'
-import { DepotDownloadService } from '../../../src/backend/depot/depot-download-service.ts'
 import { DownloadQueueCoordinator } from '../../../src/backend/operations/download-queue.ts'
 import {
   APP_ID,
@@ -100,17 +99,4 @@ test('application transaction progress maps exact decimal counters', async () =>
 
   finish.resolve()
   await waitForTerminal(queue)
-})
-
-test('downloader rejects a non-32-byte inline key before reading inputs', async () => {
-  const service = new DepotDownloadService({} as never)
-  await expect(
-    service.download({
-      appId: APP_ID,
-      depotId: DEPOTS[0].depotId,
-      manifestPath: 'missing',
-      depotKey: Buffer.alloc(31),
-      outputDirectory: 'missing',
-    }),
-  ).rejects.toThrow('32-byte Buffer')
 })

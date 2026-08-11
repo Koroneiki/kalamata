@@ -9,6 +9,7 @@ artifacts/
 /download-*.ts
 fixtures-key-temp.txt
 test/*.integration.test.ts
+test/helpers/*.integration.ts
 test/fixtures/
 /plan/
 /.opencode/

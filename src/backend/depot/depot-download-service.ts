@@ -11,8 +11,6 @@ import {
   type InstalledApplicationDepot,
 } from './install/transaction/types.ts'
 import { recoverAndRunApplicationTransaction } from './install/transaction/transaction.ts'
-import { downloadDepotContent } from './legacy/content-downloader.ts'
-import { readFileFilter } from './manifests/file-list.ts'
 import {
   parseManifest,
   validateManifest,
@@ -20,10 +18,6 @@ import {
 import { SteamContentClient } from './transfer/steam-content-client.ts'
 import type { ChunkClient, ContentServer } from './transfer/chunk-client.ts'
 import type { SteamSession } from '../steam/steam-session.ts'
-import type {
-  DownloadDepotOptions,
-  DownloadResult,
-} from './manifests/types.ts'
 
 export interface ApplicationDepotInput {
   depotId: number
@@ -46,54 +40,6 @@ export interface ReconcileApplicationOptions {
 
 export class DepotDownloadService {
   constructor(private readonly session: SteamSession) {}
-
-  async download(options: DownloadDepotOptions): Promise<DownloadResult> {
-    validateOptions(options)
-    throwIfAborted(options.signal)
-    const [manifestContents, fileFilter] = await Promise.all([
-      readFile(options.manifestPath),
-      readFileFilter(options.fileListPath),
-    ])
-    throwIfAborted(options.signal)
-    const key = Buffer.from(options.depotKey)
-    const manifest = parseManifest(manifestContents, key)
-    validateManifest(manifest, options.depotId)
-    throwIfAborted(options.signal)
-
-    const controller = new AbortController()
-    const onAbort = () =>
-      controller.abort(
-        options.signal?.reason ??
-          new DOMException('Download aborted', 'AbortError'),
-      )
-    if (options.signal?.aborted) onAbort()
-    else options.signal?.addEventListener('abort', onAbort, { once: true })
-    const removeDisconnectListener = this.session.onDisconnect((error) =>
-      controller.abort(error),
-    )
-    try {
-      const client = new SteamContentClient(await this.session.getClient(), key)
-      try {
-        throwIfAborted(controller.signal)
-        return await downloadDepotContent(
-          client,
-          options,
-          {
-            manifest,
-            manifestContents,
-            depotKey: key,
-            fileFilter,
-          },
-          controller.signal,
-        )
-      } finally {
-        client.dispose()
-      }
-    } finally {
-      removeDisconnectListener()
-      options.signal?.removeEventListener('abort', onAbort)
-    }
-  }
 
   async reconcileApplication(
     options: ReconcileApplicationOptions,
@@ -251,23 +197,6 @@ async function loadApplicationDepot(
     cache.set(key, loaded)
   }
   return loaded
-}
-
-function validateOptions(options: DownloadDepotOptions): void {
-  for (const [name, value] of [
-    ['appId', options.appId],
-    ['depotId', options.depotId],
-  ] as const) {
-    if (!Number.isInteger(value) || value <= 0 || value > 0xffffffff) {
-      throw new Error(`${name} must be a positive 32-bit integer`)
-    }
-  }
-  if (!options.manifestPath || !options.outputDirectory) {
-    throw new Error('manifestPath and outputDirectory are required')
-  }
-  if (!Buffer.isBuffer(options.depotKey) || options.depotKey.length !== 32) {
-    throw new Error('depotKey must be a 32-byte Buffer')
-  }
 }
 
 function validateApplicationOptions(

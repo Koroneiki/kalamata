@@ -23,28 +23,3 @@ export interface DepotManifest {
   cb_disk_compressed: string
   files: ManifestFile[]
 }
-
-export type DownloadEvent =
-  | { type: 'file-validating'; path: string }
-  | { type: 'file-complete'; path: string }
-  | { type: 'file-deleted'; path: string }
-  | { type: 'progress'; downloaded: string; total: string }
-  | { type: 'retry'; chunk: string; attempt: number }
-
-export interface DownloadDepotOptions {
-  appId: number
-  depotId: number
-  manifestPath: string
-  depotKey: Buffer
-  outputDirectory: string
-  fileListPath?: string
-  verifyAll?: boolean
-  signal?: AbortSignal
-  onEvent?: (event: DownloadEvent) => void
-}
-
-export interface DownloadResult {
-  manifestId: string
-  downloadedBytes: string
-  reusedBytes: string
-}
