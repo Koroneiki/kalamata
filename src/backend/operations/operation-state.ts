@@ -27,7 +27,7 @@ export function serializeOperationError(error: unknown): {
     planning: 'The installation plan is invalid.',
     'unavailable-resource': 'A required manifest or depot key is unavailable.',
     'insufficient-space':
-      'There is not enough space to stage the installation.',
+      'There is not enough temporary disk space for the installation.',
     steam: 'Steam could not be reached or did not authorize the request.',
     'unavailable-content': 'Required depot content is unavailable.',
     'transfer-exhausted': 'All eligible content servers failed.',
@@ -35,7 +35,7 @@ export function serializeOperationError(error: unknown): {
     filesystem: 'The installation filesystem operation failed.',
     cancellation: 'The operation was cancelled.',
     recovery: 'The interrupted installation could not be recovered safely.',
-    persistence: 'Installation metadata could not be reconciled.',
+    persistence: 'Installation metadata could not be finalized.',
   }
   return { kind, message: messages[kind] }
 }
@@ -87,7 +87,7 @@ export function repairRequiredState(
     error: {
       kind: 'recovery',
       message:
-        'The interrupted commit cannot be proven correct. Repair is required.',
+        'The interrupted installation cannot be verified. Repair is required.',
     },
   }
 }

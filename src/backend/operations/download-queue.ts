@@ -482,7 +482,7 @@ export class DownloadQueueCoordinator {
                 error: {
                   kind: 'recovery',
                   message:
-                    'The interrupted commit cannot be proven correct. Repair is required.',
+                    'The interrupted installation cannot be verified. Repair is required.',
                 },
               }
             : recoverable
