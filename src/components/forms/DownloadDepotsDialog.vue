@@ -60,9 +60,12 @@ const selectedDepots = computed(() =>
     selectedIds.value.has(depot.depotId),
   ),
 )
-const depotSummary = computed(() =>
-  summarizeDepots(selectableDepots.value, selectedIds.value),
-)
+const depotSummary = computed(() => ({
+  ...summarizeDepots(selectableDepots.value, selectedIds.value),
+  missing: selectedDepots.value.some(
+    (depot) => depot.manifestStatus !== 'ready' || depot.keyStatus !== 'ready',
+  ),
+}))
 const depotGroups = computed(() =>
   installableDepotGroups.flatMap((name) => {
     const allDepots = depotsInGroup(props.app.depots, name).filter(
@@ -76,7 +79,13 @@ const depotGroups = computed(() =>
       {
         name,
         depots,
-        summary: summarizeDepots(allDepots, selectedIds.value),
+        summary: {
+          ...summarizeDepots(allDepots, selectedIds.value),
+          missing: depots.some(
+            (depot) =>
+              depot.manifestStatus !== 'ready' || depot.keyStatus !== 'ready',
+          ),
+        },
       },
     ]
   }),

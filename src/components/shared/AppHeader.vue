@@ -6,6 +6,7 @@ import { SidebarTrigger } from '@/components/ui/sidebar'
 
 const route = useRoute()
 const pageLabel = computed(() => {
+  if (route.name === 'downloads') return 'Downloads'
   if (route.name === 'app-details') return 'App details'
   return 'Library'
 })

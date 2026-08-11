@@ -33,6 +33,7 @@ async function search() {
   await router.push({ name: 'app-details', params: { appId: value } })
   emit('navigated')
   open.value = false
+  appId.value = ''
 }
 
 watch(open, (isOpen) => {
