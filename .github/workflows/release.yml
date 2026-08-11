@@ -115,7 +115,9 @@ jobs:
           GH_REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
         run: >-
-          gh release create "$GITHUB_REF_NAME" artifacts/*
+          gh release create "$GITHUB_REF_NAME"
+          artifacts/*.dmg
+          artifacts/*.zip
           --verify-tag
           --generate-notes
           --title "Kalamata $GITHUB_REF_NAME"
