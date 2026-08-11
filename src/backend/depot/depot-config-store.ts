@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { lstat, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { Database } from 'bun:sqlite'
 import { CONFIG_DIRECTORY, STAGING_DIRECTORY } from './depot-paths.ts'
 import { parseManifest } from './local-inputs.ts'
 import type { DepotManifest } from './types.ts'
@@ -83,6 +84,31 @@ export class DepotConfigStore {
     this.#data.installedManifestIds = nextData.installedManifestIds
   }
 
+  async replaceInstalledManifestIds(
+    manifests: ReadonlyMap<number, string>,
+  ): Promise<void> {
+    const installedManifestIds = Object.fromEntries(
+      [...manifests]
+        .sort(([left], [right]) => left - right)
+        .map(([depotId, manifestId]) => [String(depotId), manifestId]),
+    )
+    if (
+      JSON.stringify(this.#data.installedManifestIds) ===
+      JSON.stringify(installedManifestIds)
+    )
+      return
+    const nextData: DepotConfigData = {
+      version: 1,
+      installedManifestIds,
+    }
+    await mkdir(this.directory, { recursive: true })
+    await writeAtomically(
+      this.#filename,
+      `${JSON.stringify(nextData, null, 2)}\n`,
+    )
+    this.#data.installedManifestIds = installedManifestIds
+  }
+
   async loadManifest(
     depotId: number,
     manifestId: string,
@@ -135,34 +161,26 @@ export async function acquireOutputLock(
 ): Promise<() => Promise<void>> {
   await assertSafeConfigDirectory(outputDirectory)
   const directory = join(outputDirectory, CONFIG_DIRECTORY)
-  const lockDirectory = join(directory, 'download.lock')
-  const ownerPath = join(lockDirectory, 'owner.json')
-  const owner = { id: randomUUID(), pid: process.pid }
+  const ownerPath = join(directory, 'download.lock')
   await mkdir(directory, { recursive: true })
-
+  let database: Database | undefined
   try {
-    await mkdir(lockDirectory)
+    database = new Database(ownerPath, { create: true })
+    database.exec('PRAGMA busy_timeout = 0; BEGIN EXCLUSIVE;')
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
-      throw new Error(`Another download is already using ${outputDirectory}`)
-    }
-    throw error
+    database?.close(false)
+    throw new Error(`Another download is already using ${outputDirectory}`, {
+      cause: error,
+    })
   }
-  try {
-    await writeFile(ownerPath, JSON.stringify(owner))
-  } catch (error) {
-    await rm(lockDirectory, { recursive: true, force: true })
-    throw error
-  }
+  let released = false
   return async () => {
+    if (released) return
+    released = true
     try {
-      const current = JSON.parse(await readFile(ownerPath, 'utf8')) as {
-        id?: unknown
-      }
-      if (current.id === owner.id)
-        await rm(lockDirectory, { recursive: true, force: true })
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      database.exec('COMMIT')
+    } finally {
+      database.close(false)
     }
   }
 }
@@ -213,7 +231,13 @@ async function assertSafeConfigDirectory(
   outputDirectory: string,
 ): Promise<void> {
   const directory = join(outputDirectory, CONFIG_DIRECTORY)
-  for (const path of [directory, join(directory, STAGING_DIRECTORY)]) {
+  for (const path of [
+    directory,
+    join(directory, STAGING_DIRECTORY),
+    join(directory, 'transactions'),
+    join(directory, 'repair-fallback'),
+    join(directory, 'download.lock'),
+  ]) {
     try {
       if ((await lstat(path)).isSymbolicLink()) {
         throw new Error(

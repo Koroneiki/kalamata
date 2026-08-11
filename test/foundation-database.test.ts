@@ -102,7 +102,11 @@ describe('foundation database', () => {
       )
       .run(10, root!, 1000)
     db.addManifest(20, '123')
-    db.recordInstalledDepot(10, root!, 20, '123', 2000)
+    db.sqlite
+      .query(
+        'INSERT INTO library_depot_installs (app_id, depot_id, installed_manifest_id, updated_at) VALUES (?, ?, ?, ?)',
+      )
+      .run(10, 20, '123', 2000)
     db.close()
     database = undefined
 
@@ -113,7 +117,12 @@ describe('foundation database', () => {
     database = db
 
     expect(db.getInstalls(10)).toEqual([
-      { depotId: 20, installedManifestId: '123' },
+      {
+        depotId: 20,
+        installedManifestId: '123',
+        mountIndex: 0,
+        ownerAppId: null,
+      },
     ])
     expect(db.sqlite.query('PRAGMA foreign_key_check').all()).toEqual([])
   })
@@ -149,7 +158,12 @@ describe('foundation database', () => {
       },
     ])
     expect(db.getInstalls(10)).toEqual([
-      { depotId: 20, installedManifestId: '123' },
+      {
+        depotId: 20,
+        installedManifestId: '123',
+        mountIndex: 0,
+        ownerAppId: 10,
+      },
     ])
   })
 

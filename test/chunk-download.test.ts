@@ -21,7 +21,7 @@ afterEach(async () => {
 
 test('returns structured HTTP status errors', async () => {
   const url = await listen((_request, response) => {
-    response.writeHead(403)
+    response.writeHead(403, { 'Retry-After': '7' })
     response.end()
   })
 
@@ -30,6 +30,20 @@ test('returns structured HTTP status errors', async () => {
   )
   expect(error).toBeInstanceOf(HttpStatusError)
   expect((error as HttpStatusError).statusCode).toBe(403)
+  expect((error as HttpStatusError).retryAfterMs).toBe(7_000)
+})
+
+test('caps Retry-After at the request timeout before rotating servers', async () => {
+  const url = await listen((_request, response) => {
+    response.writeHead(503, { 'Retry-After': '999999999999' })
+    response.end()
+  })
+
+  const error = await downloadChunkData(url, 'cdn.example.test').catch(
+    (reason) => reason,
+  )
+  expect(error).toBeInstanceOf(HttpStatusError)
+  expect((error as HttpStatusError).retryAfterMs).toBe(100_000)
 })
 
 test('honors an already-aborted signal', async () => {

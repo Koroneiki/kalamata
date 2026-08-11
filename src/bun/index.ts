@@ -1,7 +1,15 @@
-import { BrowserView, BrowserWindow, Updater, Utils } from 'electrobun/bun'
+import Electrobun, {
+  BrowserView,
+  BrowserWindow,
+  Updater,
+  Utils,
+} from 'electrobun/bun'
 
 import { createSteamService } from '../backend/index.ts'
 import { FoundationService } from '../backend/foundation-service.ts'
+import {
+  recoverApplicationTransaction,
+} from '../backend/depot/application-transaction.ts'
 import { openKalamataDatabase } from '../db/index.ts'
 import { syncManifestFiles } from '../db/manifest-files.ts'
 import { canonicalizeInstallDirectory } from '../db/validation.ts'
@@ -70,13 +78,105 @@ const rpc = BrowserView.defineRPC<AppRpc>({
       startDownload(request) {
         return queue.start(request)
       },
+      queueDepotUpdate(request) {
+        return queue.queueDepotUpdate(request)
+      },
+      repairApplication(request) {
+        return queue.repairApplication(request)
+      },
+      cancelOperation() {
+        return queue.cancel()
+      },
+      pauseOperation() {
+        return queue.pause()
+      },
+      resumeOperation() {
+        return queue.resume()
+      },
+      getOperationState() {
+        return queue.getOperationState()
+      },
     },
   },
 })
 
-queue = new DownloadQueueCoordinator(steam, database, (state) => {
-  rpc.send.downloadStateChanged(state)
-})
+queue = new DownloadQueueCoordinator(
+  steam,
+  database,
+  (state) => {
+    rpc.send.downloadStateChanged(state)
+  },
+  (state) => {
+    rpc.send.operationStateChanged(state)
+  },
+)
+
+let shutdownStarted = false
+let allowQuit = false
+let startup = Promise.resolve()
+Electrobun.events.on(
+  'before-quit',
+  (event: { response: { allow: boolean } | undefined }) => {
+    if (allowQuit) {
+      event.response = { allow: true }
+      return
+    }
+    event.response = { allow: false }
+    if (shutdownStarted) return
+    shutdownStarted = true
+    void (async () => {
+      try {
+        await startup.catch(() => {})
+        await queue.shutdown()
+      } finally {
+        steam.dispose()
+        try {
+          database.close()
+        } finally {
+          allowQuit = true
+          Utils.quit()
+        }
+      }
+    })().catch(() => {})
+  },
+)
+
+startup = (async () => {
+  // Recover commits before restoring one staging operation; surface any repair
+  // requirements only after resumable work has claimed the singleton queue.
+  const recoveryFailures: Array<{ appId: number; installPath: string }> = []
+  for (const entry of database.getLibrary()) {
+    if (!entry.installPath) continue
+    try {
+      await recoverApplicationTransaction(entry.installPath, {
+        appId: entry.appId,
+        reconcile: async (desired) =>
+          database.reconcileInstalledDepots(
+            entry.appId,
+            entry.installPath!,
+            desired.map(({ depotId, manifestId, mountIndex, ownerAppId }) => ({
+              depotId,
+              manifestId,
+              mountIndex,
+              ownerAppId,
+            })),
+          ),
+      })
+    } catch {
+      recoveryFailures.push({
+        appId: entry.appId,
+        installPath: entry.installPath,
+      })
+    }
+  }
+  await queue.restoreInterrupted()
+  for (const recoveryFailure of recoveryFailures)
+    queue.markRepairRequired(
+      recoveryFailure.appId,
+      recoveryFailure.installPath,
+    )
+})()
+await startup
 
 new BrowserWindow({
   title: 'Kalamata',

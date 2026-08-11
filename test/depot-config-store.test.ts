@@ -1,5 +1,12 @@
 import { afterEach, expect, test } from 'bun:test'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
@@ -27,7 +34,7 @@ test('persists readable manifest state including the incomplete marker', async (
   expect(
     JSON.parse(
       await readFile(
-        join(directory, '.DepotDownloader/depot.config.json'),
+        join(directory, '.Kalamata/depot.config.json'),
         'utf8',
       ),
     ),
@@ -51,7 +58,7 @@ test('prevents concurrent downloads in one output directory', async () => {
 
 test('rejects malformed manifest ID maps', async () => {
   directory = await mkdtemp(join(tmpdir(), 'depot-config-'))
-  const configDirectory = join(directory, '.DepotDownloader')
+  const configDirectory = join(directory, '.Kalamata')
   await mkdir(configDirectory)
   await writeFile(
     join(configDirectory, 'depot.config.json'),
@@ -66,20 +73,37 @@ test('rejects malformed manifest ID maps', async () => {
   )
 })
 
-test('does not automatically remove a stale lock', async () => {
+test('reuses an unlocked lock database without admitting two owners', async () => {
   directory = await mkdtemp(join(tmpdir(), 'depot-config-'))
-  const lockDirectory = join(directory, '.DepotDownloader', 'download.lock')
-  await mkdir(lockDirectory, { recursive: true })
-  await writeFile(
-    join(lockDirectory, 'owner.json'),
-    JSON.stringify({ id: 'stale', pid: 2_147_483_647 }),
-  )
+  const initialRelease = await acquireOutputLock(directory)
+  await initialRelease()
 
   const attempts = await Promise.allSettled([
     acquireOutputLock(directory),
     acquireOutputLock(directory),
   ])
 
-  expect(attempts.every((result) => result.status === 'rejected')).toBe(true)
-  expect(await Bun.file(join(lockDirectory, 'owner.json')).exists()).toBe(true)
+  expect(
+    attempts.filter((result) => result.status === 'fulfilled'),
+  ).toHaveLength(1)
+  expect(
+    attempts.filter((result) => result.status === 'rejected'),
+  ).toHaveLength(1)
+  const acquired = attempts.find((result) => result.status === 'fulfilled')
+  if (acquired?.status === 'fulfilled') await acquired.value()
+})
+
+test('rejects symlinked transaction state and lock paths', async () => {
+  directory = await mkdtemp(join(tmpdir(), 'depot-config-'))
+  const configDirectory = join(directory, '.Kalamata')
+  const outside = join(directory, 'outside')
+  await mkdir(configDirectory)
+  await mkdir(outside)
+
+  for (const name of ['transactions', 'repair-fallback', 'download.lock']) {
+    const path = join(configDirectory, name)
+    await symlink(outside, path)
+    await expect(acquireOutputLock(directory)).rejects.toThrow('symbolic link')
+    await rm(path)
+  }
 })

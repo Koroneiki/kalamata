@@ -217,6 +217,7 @@ export async function existingFileSize(
 export async function adlerForChunk(
   path: string,
   chunk: ManifestChunk,
+  signal?: AbortSignal,
 ): Promise<number> {
   const length = Number(chunk.cb_original)
   const buffer = Buffer.allocUnsafe(Math.min(length, 64 * 1024))
@@ -226,6 +227,7 @@ export async function adlerForChunk(
   let b = 0
   try {
     while (bytesRead < length) {
+      signal?.throwIfAborted()
       const wanted = Math.min(buffer.length, length - bytesRead)
       const result = await handle.read(
         buffer,
@@ -391,10 +393,11 @@ export async function setExecutable(
 export async function verifyFileSha1(
   path: string,
   expectedSha1: string,
+  signal?: AbortSignal,
 ): Promise<void> {
   const hash = createHash('sha1')
   await new Promise<void>((resolvePromise, reject) => {
-    const stream = createReadStream(path)
+    const stream = createReadStream(path, { signal })
     stream.on('data', (data) => hash.update(data))
     stream.on('error', reject)
     stream.on('end', resolvePromise)

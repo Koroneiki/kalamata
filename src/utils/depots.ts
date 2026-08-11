@@ -27,9 +27,7 @@ export function depotsInGroup(
   depots: AppDepot[],
   group: InstallableDepotGroup,
 ): EligibleAppDepot[] {
-  return installableDepots(depots)
-    .filter((depot) => depot.group === group)
-    .sort((left, right) => left.depotId - right.depotId)
+  return installableDepots(depots).filter((depot) => depot.group === group)
 }
 
 export function depotBadges(depot: AppDepot): DepotBadgeItem[] {

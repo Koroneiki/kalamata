@@ -77,11 +77,22 @@ export const libraryDepotInstalls = sqliteTable(
       .references(() => library.appId, { onDelete: 'cascade' }),
     depotId: integer('depot_id').notNull(),
     installedManifestId: text('installed_manifest_id').notNull(),
+    mountIndex: integer('mount_index').notNull(),
+    ownerAppId: integer('owner_app_id'),
     updatedAt: integer('updated_at').notNull(),
   },
   (table) => [
     primaryKey({ columns: [table.appId, table.depotId] }),
     check('library_depot_installs_depot_id_valid', validId(table.depotId)),
+    check(
+      'library_depot_installs_owner_app_id_valid',
+      sql`${table.ownerAppId} IS NULL OR (${validId(table.ownerAppId)})`,
+    ),
+    check('library_depot_installs_mount_index_valid', sql`${table.mountIndex} >= 0`),
+    unique('library_depot_installs_mount_index_unique').on(
+      table.appId,
+      table.mountIndex,
+    ),
     check(
       'library_depot_installs_manifest_id_valid',
       sql`${table.installedManifestId} <> '' AND ${table.installedManifestId} NOT GLOB '*[^0-9]*'`,

@@ -36,7 +36,7 @@ test('rejects manifest path traversal', () => {
 
 test('rejects normalized internal-state aliases', () => {
   expect(() =>
-    resolveOutputPath('/safe/output', 'ordinary/../.DepotDownloader/config'),
+    resolveOutputPath('/safe/output', 'ordinary/../.Kalamata/config'),
   ).toThrow('conflicts with internal state')
 })
 

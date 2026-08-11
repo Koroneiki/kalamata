@@ -9,6 +9,7 @@ test('selects the lowest-load server and rotates broken connections', () => {
   expect(pool.getConnection()).toBe(fast)
   pool.returnBrokenConnection(fast)
   expect(pool.getConnection()).toBe(slow)
+  expect(pool.getConnection()).toBe(fast)
 })
 
 test('rotates servers when concurrent callers check out connections', () => {
@@ -36,10 +37,9 @@ test('does not materialize server entry weights or expand retry counts', () => {
   }
   const pool = new CDNClientPool([weighted, fallback])
 
-  expect(pool.attemptsPerChunk).toBe(5)
-  expect([
-    pool.getConnection(),
-    pool.getConnection(),
-    pool.getConnection(),
-  ]).toEqual([weighted, fallback, weighted])
+  expect(pool.attemptsPerChunk).toBe(2)
+  expect([pool.getConnection(), pool.getConnection()]).toEqual([
+    weighted,
+    fallback,
+  ])
 })

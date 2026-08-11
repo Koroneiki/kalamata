@@ -13,17 +13,19 @@ export class CDNClientPool {
   }
 
   get attemptsPerChunk(): number {
-    return 5
+    return this.#servers.length
   }
 
-  getConnection(): ContentServer {
+  getConnection(excluded: ReadonlySet<ContentServer> = new Set()): ContentServer {
     // Advance on checkout so concurrent workers do not all receive the same initial server.
-    const server = this.#servers[this.#nextServer % this.#servers.length]!
-    this.#nextServer++
-    return server
+    for (let checked = 0; checked < this.#servers.length; checked++) {
+      const server = this.#servers[this.#nextServer % this.#servers.length]!
+      this.#nextServer++
+      if (!excluded.has(server)) return server
+    }
+    throw new Error('No untried Steam content servers remain')
   }
 
-  // Rotation already happened at checkout; these remain lifecycle hooks for download-core.
   returnConnection(_server: ContentServer): void {}
 
   returnBrokenConnection(_server: ContentServer): void {}

@@ -11,5 +11,5 @@ export interface ChunkClient {
     server: ContentServer,
     signal?: AbortSignal,
     expectedSize?: number,
-  ): Promise<{ chunk: Buffer }>
+  ): Promise<{ chunk: Buffer; networkBytes?: number }>
 }

@@ -36,6 +36,12 @@ export class FoundationService {
     if (depotIds.some((depotId) => !eligibleDepotIds.has(depotId))) {
       throw new Error('Depot is not available for this app')
     }
-    return this.database.replaceSelectedDepotIds(appId, depotIds)
+    const selected = new Set(depotIds)
+    return this.database.replaceSelectedDepotIds(
+      appId,
+      details.depots
+        .map(({ depotId }) => depotId)
+        .filter((depotId) => selected.has(depotId)),
+    )
   }
 }

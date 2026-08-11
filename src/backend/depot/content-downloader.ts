@@ -39,12 +39,8 @@ async function downloadDepotContentLocked(
 ): Promise<DownloadResult> {
   throwIfAborted(signal)
   const store = await DepotConfigStore.load(options.outputDirectory)
-  // Capture the previous ID before invalidating it so this run may still reuse its verified chunks.
   const previousManifestId = store.getInstalledManifestId(options.depotId)
 
-  // An interrupted run must not cause a later invocation to trust partial files.
-  throwIfAborted(signal)
-  await store.setInstalledManifestId(options.depotId, null)
   const loadedPreviousManifest = previousManifestId
     ? await store.loadManifest(
         options.depotId,
@@ -69,6 +65,9 @@ async function downloadDepotContentLocked(
     inputs.manifest.gid_manifest,
     inputs.manifestContents,
   )
+  // The legacy helper mutates live files directly, so its prior identity is no
+  // longer authoritative once execution begins.
+  await store.setInstalledManifestId(options.depotId, null)
 
   const result = await downloadManifest(client, inputs.manifest, {
     appId: options.appId,
@@ -83,12 +82,12 @@ async function downloadDepotContentLocked(
   })
 
   throwIfAborted(signal)
-  // A file list installs only a projection of the manifest. Recording it as a
-  // complete install would let a later, broader run trust files never written here.
-  await store.setInstalledManifestId(
-    options.depotId,
-    options.fileListPath ? null : inputs.manifest.gid_manifest,
-  )
+  // A file list is not a complete install and cannot replace the stable identity.
+  if (!options.fileListPath)
+    await store.setInstalledManifestId(
+      options.depotId,
+      inputs.manifest.gid_manifest,
+    )
   return result
 }
 

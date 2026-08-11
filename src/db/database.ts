@@ -21,6 +21,8 @@ export interface ManifestRow {
 export interface InstallRow {
   depotId: number
   installedManifestId: string
+  mountIndex: number
+  ownerAppId: number | null
 }
 
 export class KalamataDatabase {
@@ -135,7 +137,7 @@ export class KalamataDatabase {
   getInstalls(appId: number): InstallRow[] {
     return this.sqlite
       .query<InstallRow, [number]>(
-        'SELECT depot_id AS depotId, installed_manifest_id AS installedManifestId FROM library_depot_installs WHERE app_id = ?',
+        'SELECT depot_id AS depotId, installed_manifest_id AS installedManifestId, mount_index AS mountIndex, owner_app_id AS ownerAppId FROM library_depot_installs WHERE app_id = ? ORDER BY mount_index',
       )
       .all(appId)
   }
@@ -162,6 +164,25 @@ export class KalamataDatabase {
       }
     }
     return requested.path
+  }
+
+  reserveInstallPath(appId: number, installPath: string): void {
+    validateId(appId, 'appId')
+    const result = this.sqlite
+      .query(
+        'UPDATE library SET install_path = COALESCE(install_path, ?) WHERE app_id = ?',
+      )
+      .run(installPath, appId)
+    if (result.changes !== 1) throw new Error('App is not in library')
+  }
+
+  clearUnusedInstallPath(appId: number): void {
+    validateId(appId, 'appId')
+    this.sqlite
+      .query(
+        'UPDATE library SET install_path = NULL WHERE app_id = ? AND NOT EXISTS (SELECT 1 FROM library_depot_installs WHERE app_id = ?)',
+      )
+      .run(appId, appId)
   }
 
   addManifest(depotId: number, manifestId: string, now = Date.now()): string {
@@ -211,9 +232,75 @@ export class KalamataDatabase {
         .run(installPath, appId)
       this.sqlite
         .query(
-          'INSERT INTO library_depot_installs (app_id, depot_id, installed_manifest_id, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(app_id, depot_id) DO UPDATE SET installed_manifest_id = excluded.installed_manifest_id, updated_at = excluded.updated_at',
+          'INSERT INTO library_depot_installs (app_id, depot_id, installed_manifest_id, mount_index, owner_app_id, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(app_id, depot_id) DO UPDATE SET installed_manifest_id = excluded.installed_manifest_id, owner_app_id = excluded.owner_app_id, updated_at = excluded.updated_at',
         )
-        .run(appId, depotId, manifestId, now)
+        .run(
+          appId,
+          depotId,
+          manifestId,
+          this.sqlite
+            .query<{ mountIndex: number }, [number, number, number]>(
+              'SELECT COALESCE((SELECT mount_index FROM library_depot_installs WHERE app_id = ? AND depot_id = ?), (SELECT COALESCE(MAX(mount_index), -1) + 1 FROM library_depot_installs WHERE app_id = ?)) AS mountIndex',
+            )
+            .get(appId, depotId, appId)!.mountIndex,
+          appId,
+          now,
+        )
+    })()
+  }
+
+  reconcileInstalledDepots(
+    appId: number,
+    installPath: string,
+    depots: ReadonlyArray<{
+      depotId: number
+      manifestId: string
+      mountIndex: number
+      ownerAppId?: number
+    }>,
+    now = Date.now(),
+  ): void {
+    validateId(appId, 'appId')
+    const unique = new Set(depots.map(({ depotId }) => depotId))
+    if (unique.size !== depots.length)
+      throw new Error('Installed depots must not contain duplicates')
+      for (const { depotId, manifestId, mountIndex, ownerAppId } of depots) {
+        validateId(depotId, 'depotId')
+        validateManifestId(manifestId)
+        if (!Number.isSafeInteger(mountIndex) || mountIndex < 0)
+          throw new Error('mountIndex must be a non-negative integer')
+        if (ownerAppId !== undefined) validateId(ownerAppId, 'ownerAppId')
+    }
+    this.sqlite.transaction(() => {
+      if (!this.getLibraryEntry(appId)) throw new Error('App is not in library')
+      for (const { depotId, manifestId } of depots) {
+        const manifest = this.sqlite
+          .query<{ found: number }, [number, string]>(
+            'SELECT 1 AS found FROM manifest_files WHERE depot_id = ? AND manifest_id = ?',
+          )
+          .get(depotId, manifestId)
+        if (!manifest) throw new Error('Manifest file is not registered')
+      }
+      this.sqlite
+        .query(
+          'UPDATE library SET install_path = COALESCE(install_path, ?) WHERE app_id = ?',
+        )
+        .run(installPath, appId)
+      this.sqlite
+        .query('DELETE FROM library_depot_installs WHERE app_id = ?')
+        .run(appId)
+      const insert = this.sqlite.query(
+        'INSERT INTO library_depot_installs (app_id, depot_id, installed_manifest_id, mount_index, owner_app_id, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+      )
+      for (const { depotId, manifestId, mountIndex, ownerAppId } of depots)
+        insert.run(
+          appId,
+          depotId,
+          manifestId,
+          mountIndex,
+          ownerAppId ?? appId,
+          now,
+        )
     })()
   }
 }

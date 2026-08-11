@@ -1,4 +1,6 @@
 import { DepotDownloadService } from './depot/depot-download-service.ts'
+import type { ReconcileApplicationOptions } from './depot/depot-download-service.ts'
+import type { ApplicationTransactionResult } from './depot/application-transaction.ts'
 import type { DownloadDepotOptions, DownloadResult } from './depot/types.ts'
 import { ProductInfoService } from './steam/product-info-service.ts'
 import { SteamSession } from './steam/steam-session.ts'
@@ -28,6 +30,12 @@ export class SteamService {
 
   downloadDepot(options: DownloadDepotOptions): Promise<DownloadResult> {
     return this.#downloads.download(options)
+  }
+
+  reconcileApplication(
+    options: ReconcileApplicationOptions,
+  ): Promise<ApplicationTransactionResult> {
+    return this.#downloads.reconcileApplication(options)
   }
 
   getProductInfo(appId: number): Promise<ProductInfo> {

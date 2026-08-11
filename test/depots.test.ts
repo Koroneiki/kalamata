@@ -23,6 +23,7 @@ function depot(
     installStatus: 'not-installed',
     selectable: true,
     ...overrides,
+    mountIndex: overrides.mountIndex ?? depotId,
   }
 }
 
@@ -75,6 +76,7 @@ test('omits ready resources while preserving precise problem and install badges'
 test('redistributables expose restrictions without resource badges', () => {
   const redistributable: AppDepot = {
     depotId: 228981,
+    mountIndex: 0,
     ownerAppId: 10,
     ownerAppName: null,
     group: 'Steamworks Common Redistributables',

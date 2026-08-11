@@ -15,7 +15,10 @@ export interface ChunkDownloadAgents {
 }
 
 export class HttpStatusError extends Error {
-  constructor(readonly statusCode: number) {
+  constructor(
+    readonly statusCode: number,
+    readonly retryAfterMs: number | null = null,
+  ) {
     super(`HTTP ${statusCode}`)
     this.name = 'HttpStatusError'
   }
@@ -182,7 +185,12 @@ export function downloadChunkData(
         response = res
         if (res.statusCode !== 200) {
           res.resume()
-          fail(new HttpStatusError(res.statusCode ?? 0))
+          fail(
+            new HttpStatusError(
+              res.statusCode ?? 0,
+              parseRetryAfter(res.headers['retry-after']),
+            ),
+          )
           return
         }
         const contentLength = Number(res.headers['content-length'])
@@ -229,6 +237,17 @@ export function downloadChunkData(
     signal?.addEventListener('abort', onAbort, { once: true })
     req.end()
   })
+}
+
+function parseRetryAfter(value: string | string[] | undefined): number | null {
+  const text = Array.isArray(value) ? value[0] : value
+  if (!text) return null
+  if (/^\d+$/u.test(text))
+    return Math.min(Number(text) * 1000, REQUEST_TIMEOUT_MS)
+  const date = Date.parse(text)
+  return Number.isNaN(date)
+    ? null
+    : Math.min(Math.max(0, date - Date.now()), REQUEST_TIMEOUT_MS)
 }
 
 export function buildChunkUrl(

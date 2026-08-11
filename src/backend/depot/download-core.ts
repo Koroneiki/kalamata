@@ -2,7 +2,7 @@ import { mkdir, rm, rmdir } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { CDNClientPool } from './cdn-client-pool.ts'
-import type { ChunkClient } from './content-client.ts'
+import type { ChunkClient, ContentServer } from './content-client.ts'
 import { CONFIG_DIRECTORY, STAGING_DIRECTORY } from './depot-paths.ts'
 import type { FileFilter } from './file-list.ts'
 import {
@@ -134,6 +134,7 @@ async function downloadManifestCore(
   const resolvedPaths = new Set<string>()
   let reusedBytes = 0n
   let downloadedBytes = 0n
+  let installedBytes = 0n
   const total = currentFiles
     .filter((file) => !(file.flags & DIRECTORY))
     .reduce((sum, file) => sum + BigInt(file.size), 0n)
@@ -208,17 +209,26 @@ async function downloadManifestCore(
     downloaded: reusedBytes.toString(),
     total: total.toString(),
   })
+  installedBytes = reusedBytes
   if (jobs.length > 0) {
     const { servers } = await client.getContentServers(options.appId)
     const pool = new CDNClientPool(servers)
-    await runWorkers(client, jobs, remainingByFile, pool, options, (bytes) => {
-      downloadedBytes += BigInt(bytes)
-      options.onEvent?.({
-        type: 'progress',
-        downloaded: (reusedBytes + downloadedBytes).toString(),
-        total: total.toString(),
-      })
-    })
+    await runWorkers(
+      client,
+      jobs,
+      remainingByFile,
+      pool,
+      options,
+      (networkBytes, logicalBytes) => {
+        downloadedBytes += BigInt(networkBytes)
+        installedBytes += BigInt(logicalBytes)
+        options.onEvent?.({
+          type: 'progress',
+          downloaded: installedBytes.toString(),
+          total: total.toString(),
+        })
+      },
+    )
   }
 
   if (options.verifyAll) {
@@ -228,6 +238,7 @@ async function downloadManifestCore(
       await verifyFileSha1(
         resolveOutputPath(options.outputDirectory, file.filename),
         file.sha_content,
+        options.signal,
       )
     }
   }
@@ -272,7 +283,10 @@ async function planChunkReuse(
     (left, right) => Number(left.source.offset) - Number(right.source.offset),
   )) {
     throwIfAborted(signal)
-    if ((await adlerForChunk(path, match.source)) === match.source.crc >>> 0)
+    if (
+      (await adlerForChunk(path, match.source, signal)) ===
+      match.source.crc >>> 0
+    )
       valid.push(match)
     else needed.push(match.destination)
   }
@@ -290,7 +304,7 @@ async function planCurrentFileReuse(
     (left, right) => Number(left.offset) - Number(right.offset),
   )) {
     throwIfAborted(signal)
-    if ((await adlerForChunk(path, chunk)) === chunk.crc >>> 0)
+    if ((await adlerForChunk(path, chunk, signal)) === chunk.crc >>> 0)
       valid.push({ source: chunk, destination: chunk })
     else needed.push(chunk)
   }
@@ -303,7 +317,7 @@ async function runWorkers(
   remainingByFile: Map<string, number>,
   pool: CDNClientPool,
   options: CoreOptions,
-  onDownloaded: (bytes: number) => void,
+  onDownloaded: (networkBytes: number, logicalBytes: number) => void,
 ): Promise<void> {
   const controller = new AbortController()
   const onAbort = () =>
@@ -322,7 +336,7 @@ async function runWorkers(
         throwIfAborted(controller.signal)
         const group = groupedJobs[nextJob++]
         if (!group) return
-        const data = await downloadWithRetry(
+        const downloaded = await downloadWithRetry(
           client,
           group[0]!.chunk,
           pool,
@@ -331,14 +345,17 @@ async function runWorkers(
         )
         throwIfAborted(controller.signal)
         for (const job of group) {
-          await writeChunk(job.path, job.chunk, data)
-          onDownloaded(data.length)
+          await writeChunk(job.path, job.chunk, downloaded.chunk)
 
           const remaining = (remainingByFile.get(job.path) ?? 1) - 1
           remainingByFile.set(job.path, remaining)
           if (remaining === 0)
             options.onEvent?.({ type: 'file-complete', path: job.path })
         }
+        onDownloaded(
+          downloaded.networkBytes,
+          group.reduce((sum, job) => sum + job.chunk.cb_original, 0),
+        )
       }
     } catch (error) {
       if (!controller.signal.aborted) controller.abort(error)
@@ -387,32 +404,41 @@ async function downloadWithRetry(
   pool: CDNClientPool,
   options: CoreOptions,
   signal: AbortSignal,
-): Promise<Buffer> {
+): Promise<{ chunk: Buffer; networkBytes: number }> {
   let lastError: unknown
-  for (let attempt = 0; attempt < pool.attemptsPerChunk; attempt++) {
+  const attemptsPerChunk = pool.attemptsPerChunk
+  const attempted = new Set<ContentServer>()
+  for (let attempt = 0; attempt < attemptsPerChunk; attempt++) {
     throwIfAborted(signal)
-    const server = pool.getConnection()
+    const server = pool.getConnection(attempted)
+    attempted.add(server)
     try {
-      const data = (
-        await client.downloadChunk(
-          options.appId,
-          options.depotId,
-          chunk.sha,
-          server,
-          signal,
-          Number(chunk.cb_original),
-        )
-      ).chunk
+      const downloaded = await client.downloadChunk(
+        options.appId,
+        options.depotId,
+        chunk.sha,
+        server,
+        signal,
+        Number(chunk.cb_original),
+      )
       pool.returnConnection(server)
-      return data
+      return {
+        chunk: downloaded.chunk,
+        networkBytes: networkByteCount(
+          downloaded.networkBytes,
+          downloaded.chunk.length,
+        ),
+      }
     } catch (error) {
+      if (signal.aborted) throw signal.reason ?? error
       lastError = error
       pool.returnBrokenConnection(server)
-      options.onEvent?.({
-        type: 'retry',
-        chunk: chunk.sha,
-        attempt: attempt + 1,
-      })
+      if (attempt + 1 < attemptsPerChunk)
+        options.onEvent?.({
+          type: 'retry',
+          chunk: chunk.sha,
+          attempt: attempt + 1,
+        })
     }
   }
   throw new Error(`Failed to download chunk ${chunk.sha}`, { cause: lastError })
@@ -491,6 +517,13 @@ function fileSize(file: ManifestFile): number {
   if (!Number.isSafeInteger(size) || size < 0)
     throw new Error(`Invalid size for ${file.filename}`)
   return size
+}
+
+function networkByteCount(value: number | undefined, fallback: number): number {
+  const bytes = value ?? fallback
+  if (!Number.isSafeInteger(bytes) || bytes < 0)
+    throw new Error('Content server returned an invalid network byte count')
+  return bytes
 }
 
 function throwIfAborted(signal?: AbortSignal): void {

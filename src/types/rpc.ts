@@ -16,6 +16,7 @@ export type DepotGroup =
 
 interface AppDepotBase {
   depotId: number
+  mountIndex: number
   ownerAppId: number
   ownerAppName: string | null
   group: DepotGroup
@@ -64,6 +65,118 @@ export interface StartDownloadRequest {
   installPath: string
   depotIds: number[]
 }
+
+export interface QueueDepotUpdateRequest {
+  appId: number
+  desiredDepotIds: number[]
+}
+
+export interface RepairApplicationRequest {
+  appId: number
+}
+
+export type OperationKind = 'download' | 'reconcile' | 'repair'
+
+export type OperationPhase =
+  | 'planning'
+  | 'staging'
+  | 'downloading'
+  | 'verifying'
+  | 'committing'
+  | 'reconciling'
+
+export type OperationErrorKind =
+  | 'planning'
+  | 'unavailable-resource'
+  | 'insufficient-space'
+  | 'steam'
+  | 'unavailable-content'
+  | 'transfer-exhausted'
+  | 'integrity'
+  | 'filesystem'
+  | 'cancellation'
+  | 'recovery'
+  | 'persistence'
+
+export interface ActiveOperationState {
+  status: 'active'
+  kind: OperationKind
+  phase: OperationPhase
+  appId: number
+  installPath: string
+  desiredDepotIds: number[]
+  installedBytesCompleted: string
+  installedBytesTotal: string
+  reusedLocalBytes: string
+  networkBytes: string
+}
+
+export interface PausedOperationState
+  extends Omit<ActiveOperationState, 'status'> {
+  status: 'paused'
+}
+
+export interface ResumableOperationState
+  extends Omit<ActiveOperationState, 'status'> {
+  status: 'resumable'
+  error: { kind: OperationErrorKind; message: string }
+}
+
+export type OperationState =
+  | { status: 'idle' }
+  | ActiveOperationState
+  | PausedOperationState
+  | ResumableOperationState
+  | {
+      status: 'completed'
+      kind: OperationKind
+      appId: number
+      installPath: string
+      desiredDepotIds: number[]
+      installedBytes: string
+      reusedLocalBytes: string
+      networkBytes: string
+    }
+  | {
+      status: 'cancelled'
+      kind: OperationKind
+      appId: number
+      installPath: string
+      desiredDepotIds: number[]
+      error: { kind: 'cancellation'; message: string }
+    }
+  | {
+      status: 'failed'
+      kind: OperationKind
+      appId: number
+      installPath: string
+      desiredDepotIds: number[]
+      error: { kind: OperationErrorKind; message: string }
+    }
+  | {
+      status: 'repair-required'
+      appId: number
+      installPath: string
+      error: { kind: 'recovery'; message: string }
+    }
+
+export type CancelOperationResult =
+  | { accepted: true }
+  | {
+      accepted: false
+      reason: 'no-active-operation' | 'commit-in-progress'
+    }
+
+export type PauseOperationResult =
+  | { accepted: true }
+  | {
+      accepted: false
+      reason: 'no-active-operation' | 'invalid-phase'
+    }
+
+export type ResumeOperationResult =
+  | { accepted: true }
+  | { accepted: false; reason: 'no-resumable-operation' }
 
 export interface RunningDownloadQueue {
   status: 'running'
@@ -145,6 +258,30 @@ export type AppRpc = {
         params: StartDownloadRequest
         response: RunningDownloadQueue
       }
+      queueDepotUpdate: {
+        params: QueueDepotUpdateRequest
+        response: ActiveOperationState
+      }
+      repairApplication: {
+        params: RepairApplicationRequest
+        response: ActiveOperationState
+      }
+      cancelOperation: {
+        params: Record<string, never>
+        response: CancelOperationResult
+      }
+      pauseOperation: {
+        params: Record<string, never>
+        response: PauseOperationResult
+      }
+      resumeOperation: {
+        params: Record<string, never>
+        response: ResumeOperationResult
+      }
+      getOperationState: {
+        params: Record<string, never>
+        response: OperationState
+      }
     }
     messages: Record<never, never>
   }
@@ -152,6 +289,7 @@ export type AppRpc = {
     requests: Record<never, never>
     messages: {
       downloadStateChanged: DownloadQueueState
+      operationStateChanged: OperationState
     }
   }
 }

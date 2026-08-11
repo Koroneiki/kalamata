@@ -184,16 +184,19 @@ test('collects base then direct DLC depots with first-owner precedence', () => {
       ownerAppId: 10,
       group: 'Base Game',
       manifestId: '2',
+      mountIndex: 0,
     }),
     expect.objectContaining({
       depotId: 200,
       ownerAppId: 10,
       group: 'Base Game',
+      mountIndex: 1,
     }),
     expect.objectContaining({
       depotId: 300,
       ownerAppId: 20,
       group: 'DLC',
+      mountIndex: 2,
     }),
   ])
 })
@@ -208,13 +211,13 @@ test('classifies DLC from dlcappid or a containing DLC product', () => {
 
   expect(extractPublicDepots(products(base, [dlc]))).toEqual([
     expect.objectContaining({
-      depotId: 300,
+      depotId: 353590,
       ownerAppId: 353590,
       ownerAppName: 'App 353590',
       group: 'DLC',
     }),
     expect.objectContaining({
-      depotId: 353590,
+      depotId: 300,
       ownerAppId: 353590,
       ownerAppName: 'App 353590',
       group: 'DLC',
@@ -261,9 +264,9 @@ test('applies Steamworks then Unused then owner classification precedence', () =
   ).toEqual([
     [400, 'Unused'],
     [401, 'Base Game'],
+    [228981, 'Steamworks Common Redistributables'],
     [500, 'Unused'],
     [501, 'DLC'],
-    [228981, 'Steamworks Common Redistributables'],
   ])
 })
 

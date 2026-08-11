@@ -20,6 +20,7 @@ export interface PublicDepot {
   manifestId: string | null
   sizeBytes: string | null
   downloadBytes: string | null
+  mountIndex: number
 }
 
 export function normalizeAppSummary(product: ProductInfo): AppSummary {
@@ -70,15 +71,17 @@ export function extractPublicDepots(
   )
   for (const product of [products.baseProduct, ...products.dlcProducts]) {
     const depots = asRecord(asRecord(product.appinfo).depots)
-    for (const [rawDepotId, rawDepot] of Object.entries(depots)) {
-      if (!/^[1-9]\d*$/u.test(rawDepotId)) continue
-      const depotId = Number(rawDepotId)
-      if (
-        !Number.isInteger(depotId) ||
-        depotId > 0xffffffff ||
-        seen.has(depotId)
-      )
-        continue
+    const entries = Object.entries(depots)
+      .flatMap(([rawDepotId, rawDepot]) => {
+        if (!/^[1-9]\d*$/u.test(rawDepotId)) return []
+        const depotId = Number(rawDepotId)
+        return Number.isInteger(depotId) && depotId <= 0xffffffff
+          ? [{ depotId, rawDepot }]
+          : []
+      })
+      .sort((left, right) => left.depotId - right.depotId)
+    for (const { depotId, rawDepot } of entries) {
+      if (seen.has(depotId)) continue
       seen.add(depotId)
       const depot = asRecord(rawDepot)
       const config = asRecord(depot.config)
@@ -105,10 +108,11 @@ export function extractPublicDepots(
         manifestId: decimalString(publicManifest.gid),
         sizeBytes: decimalString(publicManifest.size),
         downloadBytes: decimalString(publicManifest.download),
+        mountIndex: result.length,
       })
     }
   }
-  return result.sort((left, right) => left.depotId - right.depotId)
+  return result
 }
 
 export async function normalizeAppDetails(

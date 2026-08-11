@@ -282,7 +282,7 @@ describe('downloadManifest', () => {
     )
 
     expect(client.downloadChunk).toHaveBeenCalledTimes(1)
-    expect(result.downloadedBytes).toBe('8')
+    expect(result.downloadedBytes).toBe('4')
     expect(await readFile(join(directory, 'first.bin'), 'utf8')).toBe('same')
     expect(await readFile(join(directory, 'second.bin'), 'utf8')).toBe('same')
   })

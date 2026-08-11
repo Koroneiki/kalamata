@@ -29,12 +29,12 @@ test('caches the local manifest and records completion after a successful run', 
   })
 
   expect(
-    await readFile(join(directory, '.DepotDownloader/20_123.manifest')),
+    await readFile(join(directory, '.Kalamata/20_123.manifest')),
   ).toEqual(contents)
   expect(
     JSON.parse(
       await readFile(
-        join(directory, '.DepotDownloader/depot.config.json'),
+        join(directory, '.Kalamata/depot.config.json'),
         'utf8',
       ),
     ),
@@ -44,8 +44,10 @@ test('caches the local manifest and records completion after a successful run', 
   })
 })
 
-test('leaves an incomplete marker when downloading fails', async () => {
+test('invalidates the stable manifest identity before live mutation', async () => {
   directory = await mkdtemp(join(tmpdir(), 'depot-content-'))
+  const store = await DepotConfigStore.load(directory)
+  await store.setInstalledManifestId(20, '999')
   const manifest = emptyManifest()
   manifest.files = [
     {
@@ -81,7 +83,7 @@ test('leaves an incomplete marker when downloading fails', async () => {
   expect(
     JSON.parse(
       await readFile(
-        join(directory, '.DepotDownloader/depot.config.json'),
+        join(directory, '.Kalamata/depot.config.json'),
         'utf8',
       ),
     ),
@@ -90,7 +92,7 @@ test('leaves an incomplete marker when downloading fails', async () => {
     installedManifestIds: { '20': null },
   })
   expect(
-    await readFile(join(directory, '.DepotDownloader/20_123.manifest')),
+    await readFile(join(directory, '.Kalamata/20_123.manifest')),
   ).toEqual(Buffer.from('manifest'))
 })
 
@@ -110,7 +112,7 @@ test('ignores an invalid cached previous manifest', async () => {
   expect(
     JSON.parse(
       await readFile(
-        join(directory, '.DepotDownloader/depot.config.json'),
+        join(directory, '.Kalamata/depot.config.json'),
         'utf8',
       ),
     ),
@@ -119,6 +121,8 @@ test('ignores an invalid cached previous manifest', async () => {
 
 test('does not record a filtered download as a complete manifest', async () => {
   directory = await mkdtemp(join(tmpdir(), 'depot-content-'))
+  const store = await DepotConfigStore.load(directory)
+  await store.setInstalledManifestId(20, '999')
   const filteredOptions = {
     ...options(directory),
     fileListPath: 'selection.txt',
@@ -133,7 +137,7 @@ test('does not record a filtered download as a complete manifest', async () => {
 
   const config = JSON.parse(
     await readFile(
-      join(directory, '.DepotDownloader/depot.config.json'),
+      join(directory, '.Kalamata/depot.config.json'),
       'utf8',
     ),
   )

@@ -1,5 +1,6 @@
 import http from 'node:http'
 import https from 'node:https'
+import { abortable } from './abortable.ts'
 import type { ChunkClient, ContentServer } from './content-client.ts'
 import {
   HttpStatusError,
@@ -12,16 +13,21 @@ import type { SteamContentUser } from '../steam/types.ts'
 
 export class SteamContentClient implements ChunkClient {
   #decompressPool: DecompressPool | undefined
-  // Keep connection reuse local to this download instead of mutating the host process's global agents.
-  readonly #httpAgent = new http.Agent({ keepAlive: true })
-  readonly #httpsAgent = new https.Agent({ keepAlive: true })
+  readonly #httpAgent: http.Agent
+  readonly #httpsAgent: https.Agent
+  readonly #ownsAgents: boolean
   readonly #cachedTokens = new Map<string, Promise<string>>()
   readonly #tokenRequiredHosts = new Set<string>()
 
   constructor(
     private readonly user: SteamContentUser,
     private readonly depotKey: Buffer,
-  ) {}
+    agents?: { http: http.Agent; https: https.Agent },
+  ) {
+    this.#httpAgent = agents?.http ?? new http.Agent({ keepAlive: true })
+    this.#httpsAgent = agents?.https ?? new https.Agent({ keepAlive: true })
+    this.#ownsAgents = agents === undefined
+  }
 
   getContentServers(appId: number): Promise<{ servers: ContentServer[] }> {
     return this.user.getContentServers(appId)
@@ -34,12 +40,12 @@ export class SteamContentClient implements ChunkClient {
     server: ContentServer,
     signal?: AbortSignal,
     expectedSize?: number,
-  ): Promise<{ chunk: Buffer }> {
+  ): Promise<{ chunk: Buffer; networkBytes: number }> {
     const hostname = contentServerVhost(server)
     const tokenCacheKey = `${depotId}_${hostname}`
     let token =
       server.usetokenauth === 1 || this.#tokenRequiredHosts.has(tokenCacheKey)
-        ? await this.#getToken(appId, depotId, hostname)
+        ? await abortable(this.#getToken(appId, depotId, hostname), signal)
         : ''
 
     let location = buildChunkUrl(server, depotId, chunkSha1, token)
@@ -56,7 +62,10 @@ export class SteamContentClient implements ChunkClient {
       if (!(error instanceof HttpStatusError) || error.statusCode !== 403)
         throw error
       this.#tokenRequiredHosts.add(tokenCacheKey)
-      token = await this.#getToken(appId, depotId, hostname, token)
+      token = await abortable(
+        this.#getToken(appId, depotId, hostname, token),
+        signal,
+      )
       location = buildChunkUrl(server, depotId, chunkSha1, token)
       encrypted = await downloadChunkData(
         location.url,
@@ -66,6 +75,7 @@ export class SteamContentClient implements ChunkClient {
       )
     }
     this.#decompressPool ??= new DecompressPool(this.depotKey)
+    const networkBytes = encrypted.length
     return {
       chunk: await this.#decompressPool.process(
         encrypted,
@@ -73,13 +83,16 @@ export class SteamContentClient implements ChunkClient {
         expectedSize,
         signal,
       ),
+      networkBytes,
     }
   }
 
   dispose(): void {
     this.#decompressPool?.dispose()
-    this.#httpAgent.destroy()
-    this.#httpsAgent.destroy()
+    if (this.#ownsAgents) {
+      this.#httpAgent.destroy()
+      this.#httpsAgent.destroy()
+    }
   }
 
   async #getToken(
