@@ -1,10 +1,11 @@
 import type { ElectrobunConfig } from 'electrobun'
+import packageJson from './package.json' with { type: 'json' }
 
 export default {
   app: {
     name: 'Kalamata',
     identifier: 'dev.kalamata.app',
-    version: '0.1.0',
+    version: packageJson.version,
   },
   build: {
     bun: {

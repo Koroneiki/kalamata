@@ -7,23 +7,30 @@ import {
 } from '../src/backend/depot/manifests/manifest-codec.ts'
 import type { DepotManifest } from '../src/backend/depot/manifests/types.ts'
 
-test('parses and validates the checked-in Balatro manifest without network access', async () => {
-  const key = Buffer.from(
-    '16261e41d3e864018778d4a1d81658521a67d9ffb8543ea7e3e21f0685721af1',
-    'hex',
-  )
-  const contents = await readFile(
-    join(import.meta.dir, 'fixtures', '2379781_3512319404653808464.manifest'),
-  )
-  const manifest = parseManifest(contents, key)
+const fixturePath = join(
+  import.meta.dir,
+  'fixtures',
+  '2379781_3512319404653808464.manifest',
+)
 
-  expect(() => validateManifest(manifest, 2379781)).not.toThrow()
-  expect(manifest.files).toHaveLength(14)
-  expect(
-    manifest.files.reduce((sum, file) => sum + file.chunks.length, 0),
-  ).toBe(75)
-  expect(manifest.cb_disk_original).toBe('66662933')
-})
+test.skipIf(!(await Bun.file(fixturePath).exists()))(
+  'parses and validates the local Balatro manifest without network access',
+  async () => {
+    const key = Buffer.from(
+      '16261e41d3e864018778d4a1d81658521a67d9ffb8543ea7e3e21f0685721af1',
+      'hex',
+    )
+    const contents = await readFile(fixturePath)
+    const manifest = parseManifest(contents, key)
+
+    expect(() => validateManifest(manifest, 2379781)).not.toThrow()
+    expect(manifest.files).toHaveLength(14)
+    expect(
+      manifest.files.reduce((sum, file) => sum + file.chunks.length, 0),
+    ).toBe(75)
+    expect(manifest.cb_disk_original).toBe('66662933')
+  },
+)
 
 test('rejects chunk gaps and manifest symlinks', () => {
   const manifest = basicManifest()

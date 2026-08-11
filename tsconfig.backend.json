@@ -12,6 +12,7 @@
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.backend.tsbuildinfo",
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "resolveJsonModule": true,
     "lib": ["ES2024", "WebWorker"],
     "allowImportingTsExtensions": true,
     "types": ["bun"]

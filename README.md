@@ -17,10 +17,37 @@ bun run dev
 
 ```sh
 bun test
+bun run format:check
 bun run type-check
 bun run lint
 bun run build
 ```
+
+Tests that require local Steam manifest fixtures are skipped when those ignored
+fixtures are unavailable. The network-backed integration tests and their
+fixtures are intentionally not committed or run in CI.
+
+## Releases
+
+GitHub Actions creates macOS ARM64 and Windows x64 packages when a version tag
+is pushed. Update the version in `package.json`, commit it, and push a matching
+tag:
+
+```sh
+git tag v0.2.0
+git push origin main
+git push origin v0.2.0
+```
+
+The release workflow verifies the tag, runs the project checks, builds on each
+native platform, and attaches the contents of `artifacts/` to a GitHub Release.
+It can also be run manually from the GitHub Actions page to test packaging. A
+manual run uploads temporary workflow artifacts but does not create a tag or a
+GitHub Release.
+
+The packages are currently unsigned, so macOS Gatekeeper and Windows SmartScreen
+may warn before installation. Because the repository is private, users must be
+authenticated with GitHub to download release assets.
 
 ## Local Data And Manual Seeding
 

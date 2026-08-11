@@ -18,6 +18,11 @@ import { AppService } from '../src/backend/apps/app-service.ts'
 const DEPOT_ID = 2379781
 const MANIFEST_ID = '3512319404653808464'
 const KEY = '16261e41d3e864018778d4a1d81658521a67d9ffb8543ea7e3e21f0685721af1'
+const MANIFEST_FIXTURE_PATH = join(
+  import.meta.dir,
+  'fixtures',
+  `${DEPOT_ID}_${MANIFEST_ID}.manifest`,
+)
 let root: string | undefined
 let database: KalamataDatabase | undefined
 
@@ -93,60 +98,64 @@ test('handles malformed app metadata and ignores non-depot keys', async () => {
   expect(details.depots[0]).toMatchObject({ depotId: 20, manifestId: null })
 })
 
-test('derives ready, invalid, outdated, and installed readiness independently', async () => {
-  const db = await setup()
-  const relativePath = db.addManifest(DEPOT_ID, MANIFEST_ID)
-  await copyFile(
-    join(import.meta.dir, 'fixtures', `${DEPOT_ID}_${MANIFEST_ID}.manifest`),
-    join(root!, relativePath),
-  )
+test.skipIf(!(await Bun.file(MANIFEST_FIXTURE_PATH).exists()))(
+  'derives ready, invalid, outdated, and installed readiness independently',
+  async () => {
+    const db = await setup()
+    const relativePath = db.addManifest(DEPOT_ID, MANIFEST_ID)
+    await copyFile(MANIFEST_FIXTURE_PATH, join(root!, relativePath))
 
-  let depot = (await normalizeAppDetails(products(makeProduct()), db))
-    .depots[0]!
-  expect(depot).toMatchObject({
-    manifestStatus: 'ready',
-    keyStatus: 'missing',
-    selectable: false,
-  })
+    let depot = (await normalizeAppDetails(products(makeProduct()), db))
+      .depots[0]!
+    expect(depot).toMatchObject({
+      manifestStatus: 'ready',
+      keyStatus: 'missing',
+      selectable: false,
+    })
 
-  db.setDepotKey(DEPOT_ID, KEY)
-  db.addLibraryEntry(10)
-  db.replaceSelectedDepotIds(10, [DEPOT_ID])
-  const selectedDetails = await normalizeAppDetails(products(makeProduct()), db)
-  expect(selectedDetails).toMatchObject({
-    inLibrary: true,
-    installPath: null,
-    selectedDepotIds: [DEPOT_ID],
-  })
-  depot = selectedDetails.depots[0]!
-  expect(depot).toMatchObject({
-    manifestStatus: 'ready',
-    keyStatus: 'ready',
-    installStatus: 'not-installed',
-    selectable: true,
-  })
+    db.setDepotKey(DEPOT_ID, KEY)
+    db.addLibraryEntry(10)
+    db.replaceSelectedDepotIds(10, [DEPOT_ID])
+    const selectedDetails = await normalizeAppDetails(
+      products(makeProduct()),
+      db,
+    )
+    expect(selectedDetails).toMatchObject({
+      inLibrary: true,
+      installPath: null,
+      selectedDepotIds: [DEPOT_ID],
+    })
+    depot = selectedDetails.depots[0]!
+    expect(depot).toMatchObject({
+      manifestStatus: 'ready',
+      keyStatus: 'ready',
+      installStatus: 'not-installed',
+      selectable: true,
+    })
 
-  db.recordInstalledDepot(10, root!, DEPOT_ID, MANIFEST_ID)
-  depot = (await normalizeAppDetails(products(makeProduct()), db)).depots[0]!
-  expect(depot).toMatchObject({ installStatus: 'current', selectable: false })
+    db.recordInstalledDepot(10, root!, DEPOT_ID, MANIFEST_ID)
+    depot = (await normalizeAppDetails(products(makeProduct()), db)).depots[0]!
+    expect(depot).toMatchObject({ installStatus: 'current', selectable: false })
 
-  db.sqlite.query('UPDATE depot_keys SET decryption_key = ?').run('bad')
-  depot = (await normalizeAppDetails(products(makeProduct()), db)).depots[0]!
-  expect(depot.keyStatus).toBe('invalid')
+    db.sqlite.query('UPDATE depot_keys SET decryption_key = ?').run('bad')
+    depot = (await normalizeAppDetails(products(makeProduct()), db)).depots[0]!
+    expect(depot.keyStatus).toBe('invalid')
 
-  db.sqlite
-    .query('UPDATE manifest_files SET relative_path = ?')
-    .run('manifest-files/1_2.manifest')
-  depot = (await normalizeAppDetails(products(makeProduct()), db)).depots[0]!
-  expect(depot.manifestStatus).toBe('invalid')
+    db.sqlite
+      .query('UPDATE manifest_files SET relative_path = ?')
+      .run('manifest-files/1_2.manifest')
+    depot = (await normalizeAppDetails(products(makeProduct()), db)).depots[0]!
+    expect(depot.manifestStatus).toBe('invalid')
 
-  const outdatedProduct = makeProduct('9999999999999999999')
-  depot = (await normalizeAppDetails(products(outdatedProduct), db)).depots[0]!
-  expect(depot).toMatchObject({
-    manifestStatus: 'outdated',
-    installStatus: 'outdated',
-  })
-})
+    const outdatedProduct = makeProduct('9999999999999999999')
+    depot = (await normalizeAppDetails(products(outdatedProduct), db))
+      .depots[0]!
+    expect(depot).toMatchObject({
+      manifestStatus: 'outdated',
+      installStatus: 'outdated',
+    })
+  },
+)
 
 test('persists only depots belonging to the app', async () => {
   const db = await setup()

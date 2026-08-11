@@ -7,6 +7,7 @@
     "start": "vite build && electrobun dev",
     "dev": "concurrently \"bun run hmr\" \"bun run start\"",
     "hmr": "vite --port 5173",
+    "build:assets": "vite build && bun scripts/build-decompress-worker.ts",
     "build": "vite build && electrobun build --env=stable",
     "test": "bun test",
     "test:integration": "STEAM_INTEGRATION=1 bun test test/balatro-download.integration.test.ts",
@@ -14,7 +15,8 @@
     "test:integration:grow-home": "GROW_HOME_INTEGRATION=1 bun test test/grow-home-download.integration.test.ts",
     "type-check": "vue-tsc --build",
     "lint": "oxlint",
-    "format": "oxfmt"
+    "format": "oxfmt",
+    "format:check": "oxfmt --check"
   },
   "dependencies": {
     "@lucide/vue": "^1.31.0",
