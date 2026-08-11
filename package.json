@@ -38,7 +38,7 @@
     "@tailwindcss/vite": "^4.3.3",
     "@tsconfig/node22": "^22.0.5",
     "@types/bun": "latest",
-    "@types/node": "^26.1.1",
+    "@types/node": "^26.2.0",
     "@types/steam-user": "5.1.1",
     "@types/three": "0.165.0",
     "@vitejs/plugin-vue": "6.0.8",
@@ -46,12 +46,12 @@
     "concurrently": "10.0.3",
     "drizzle-kit": "^0.31.10",
     "oxfmt": "^0.60.0",
-    "oxlint": "^1.75.0",
+    "oxlint": "^1.78.0",
     "oxlint-tsgolint": "^7.0.2001",
     "tailwindcss": "^4.3.3",
     "typescript": "5.9.3",
     "vite": "8.1.5",
-    "vite-plugin-vue-devtools": "^8.1.5",
+    "vite-plugin-vue-devtools": "^8.2.1",
     "vue-tsc": "3.3.7"
   }
 }
