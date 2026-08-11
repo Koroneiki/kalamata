@@ -43,7 +43,11 @@ export async function validateObstructions(
         'planning',
         `Target path is a symbolic link: ${entry.file.filename}`,
       )
-    if (!source.has(entry.key) && info.isDirectory() && !isDirectory(entry.file))
+    if (
+      !source.has(entry.key) &&
+      info.isDirectory() &&
+      !isDirectory(entry.file)
+    )
       await assertDirectoryIsManaged(
         outputDirectory,
         entry.file.filename,

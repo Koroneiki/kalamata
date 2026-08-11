@@ -4,7 +4,11 @@ import { join, resolve } from 'node:path'
 import { CONFIG_DIRECTORY } from '../internal-paths.ts'
 import { acquireOutputLock } from '../output-lock.ts'
 import { resolveOutputPath, verifyFileSha1 } from '../filesystem.ts'
-import { planCommitActions, rollForward, validateObstructions } from './commit.ts'
+import {
+  planCommitActions,
+  rollForward,
+  validateObstructions,
+} from './commit.ts'
 import {
   TRANSACTION_VERSION,
   callPersistence,
@@ -230,27 +234,25 @@ async function runUnlocked(
   const stagingRoot = join(transactionRoot, 'staging')
   const backupRoot = join(transactionRoot, 'backup')
   const journalPath = join(transactionRoot, 'journal.json')
-  let journal: TransactionJournal =
-    resumed ??
-    {
-      version: TRANSACTION_VERSION,
-      id,
-      generation: randomUUID(),
-      appId: options.appId,
-      kind: options.kind,
-      installPath: resolve(options.outputDirectory),
-      phase: 'staging',
-      paused: false,
-      source: sourceRecords,
-      desired,
-      stagedFiles,
-      completedChunks: {},
-      logicalInstalledTotal: progress.logicalInstalledTotal.toString(),
-      retainedBytes: progress.logicalInstalledCompleted.toString(),
-      oldMoves: [],
-      installs: [],
-      obsoleteDirectories: [],
-    }
+  let journal: TransactionJournal = resumed ?? {
+    version: TRANSACTION_VERSION,
+    id,
+    generation: randomUUID(),
+    appId: options.appId,
+    kind: options.kind,
+    installPath: resolve(options.outputDirectory),
+    phase: 'staging',
+    paused: false,
+    source: sourceRecords,
+    desired,
+    stagedFiles,
+    completedChunks: {},
+    logicalInstalledTotal: progress.logicalInstalledTotal.toString(),
+    retainedBytes: progress.logicalInstalledCompleted.toString(),
+    oldMoves: [],
+    installs: [],
+    obsoleteDirectories: [],
+  }
   const journalContext: JournalContext = {
     journal,
     path: journalPath,

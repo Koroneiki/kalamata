@@ -16,7 +16,9 @@ export class ContentServerSelector {
     return this.#servers.length
   }
 
-  getConnection(excluded: ReadonlySet<ContentServer> = new Set()): ContentServer {
+  getConnection(
+    excluded: ReadonlySet<ContentServer> = new Set(),
+  ): ContentServer {
     // Advance on checkout so concurrent workers do not all receive the same initial server.
     for (let checked = 0; checked < this.#servers.length; checked++) {
       const server = this.#servers[this.#nextServer % this.#servers.length]!

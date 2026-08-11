@@ -126,7 +126,10 @@ test('repair-required protection does not block a different application', async 
 
 test('surfaces queued recovery failures one at a time', async () => {
   const fixture = await setup()
-  fixture.database.reserveInstallPath(APP_ID, await realpath(fixture.installPath))
+  fixture.database.reserveInstallPath(
+    APP_ID,
+    await realpath(fixture.installPath),
+  )
   const otherInstallPath = join(fixture.root, 'other-install')
   await mkdir(otherInstallPath)
   fixture.database.addLibraryEntry(DLC_APP_ID)

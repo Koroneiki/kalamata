@@ -60,7 +60,9 @@ type ControlResult =
   | PauseOperationResult
   | ResumeOperationResult
 
-function isProgressOperation(state: OperationState): state is ProgressOperation {
+function isProgressOperation(
+  state: OperationState,
+): state is ProgressOperation {
   return ['active', 'paused', 'resumable'].includes(state.status)
 }
 
@@ -93,7 +95,8 @@ const uninstallCompleted = computed(
     operation.state.appId === props.state.appId,
 )
 const uninstallRemoved = computed(
-  () => uninstallCompleted.value || progressState.value?.phase === 'reconciling',
+  () =>
+    uninstallCompleted.value || progressState.value?.phase === 'reconciling',
 )
 const progress = computed(() =>
   progressState.value

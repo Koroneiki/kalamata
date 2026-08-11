@@ -1,4 +1,11 @@
-import { copyFile, mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
+import {
+  copyFile,
+  mkdir,
+  mkdtemp,
+  realpath,
+  rm,
+  writeFile,
+} from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type SteamUser from 'steam-user'

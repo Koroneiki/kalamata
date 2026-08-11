@@ -7,8 +7,8 @@ export function abortable<T>(
   return new Promise<T>((resolvePromise, reject) => {
     const abort = () => reject(signal.reason)
     signal.addEventListener('abort', abort, { once: true })
-    promise.then(resolvePromise, reject).finally(() =>
-      signal.removeEventListener('abort', abort),
-    )
+    promise
+      .then(resolvePromise, reject)
+      .finally(() => signal.removeEventListener('abort', abort))
   })
 }

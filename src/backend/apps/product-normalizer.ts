@@ -252,9 +252,7 @@ export async function normalizeAppDetails(
     })
   }
   const availableSelectionIds = new Set(
-    depots
-      .filter((depot) => depot.eligible)
-      .map(({ depotId }) => depotId),
+    depots.filter((depot) => depot.eligible).map(({ depotId }) => depotId),
   )
   return {
     ...normalizeAppSummary(product),

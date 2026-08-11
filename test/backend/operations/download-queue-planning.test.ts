@@ -130,9 +130,9 @@ test('queueDepotUpdate rejects unavailable new depots without removing installs'
     status: 'failed',
     error: { kind: 'unavailable-resource' },
   })
-  expect(fixture.database.getInstalls(APP_ID).map(({ depotId }) => depotId)).toEqual([
-    DEPOTS[0].depotId,
-  ])
+  expect(
+    fixture.database.getInstalls(APP_ID).map(({ depotId }) => depotId),
+  ).toEqual([DEPOTS[0].depotId])
   expect(fixture.database.getSelectedDepotIds(APP_ID)).toEqual([
     DEPOTS[0].depotId,
   ])

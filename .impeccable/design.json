@@ -8,60 +8,158 @@
         "role": "neutral",
         "displayName": "Parchment",
         "canonical": "oklch(0.985 0.006 95)",
-        "tonalRamp": ["oklch(0.15 0.006 95)", "oklch(0.27 0.006 95)", "oklch(0.39 0.006 95)", "oklch(0.51 0.006 95)", "oklch(0.63 0.006 95)", "oklch(0.75 0.006 95)", "oklch(0.87 0.006 95)", "oklch(0.985 0.006 95)"]
+        "tonalRamp": [
+          "oklch(0.15 0.006 95)",
+          "oklch(0.27 0.006 95)",
+          "oklch(0.39 0.006 95)",
+          "oklch(0.51 0.006 95)",
+          "oklch(0.63 0.006 95)",
+          "oklch(0.75 0.006 95)",
+          "oklch(0.87 0.006 95)",
+          "oklch(0.985 0.006 95)"
+        ]
       },
       "ink": {
         "role": "neutral",
         "displayName": "Ink",
         "canonical": "oklch(0.205 0.018 90)",
-        "tonalRamp": ["oklch(0.15 0.018 90)", "oklch(0.27 0.018 90)", "oklch(0.39 0.018 90)", "oklch(0.51 0.018 90)", "oklch(0.63 0.018 90)", "oklch(0.75 0.018 90)", "oklch(0.87 0.018 90)", "oklch(0.95 0.018 90)"]
+        "tonalRamp": [
+          "oklch(0.15 0.018 90)",
+          "oklch(0.27 0.018 90)",
+          "oklch(0.39 0.018 90)",
+          "oklch(0.51 0.018 90)",
+          "oklch(0.63 0.018 90)",
+          "oklch(0.75 0.018 90)",
+          "oklch(0.87 0.018 90)",
+          "oklch(0.95 0.018 90)"
+        ]
       },
       "field-olive": {
         "role": "primary",
         "displayName": "Field Olive",
         "canonical": "oklch(0.43 0.105 120)",
-        "tonalRamp": ["oklch(0.15 0.105 120)", "oklch(0.27 0.105 120)", "oklch(0.39 0.105 120)", "oklch(0.51 0.105 120)", "oklch(0.63 0.105 120)", "oklch(0.75 0.105 120)", "oklch(0.87 0.08 120)", "oklch(0.95 0.04 120)"]
+        "tonalRamp": [
+          "oklch(0.15 0.105 120)",
+          "oklch(0.27 0.105 120)",
+          "oklch(0.39 0.105 120)",
+          "oklch(0.51 0.105 120)",
+          "oklch(0.63 0.105 120)",
+          "oklch(0.75 0.105 120)",
+          "oklch(0.87 0.08 120)",
+          "oklch(0.95 0.04 120)"
+        ]
       },
       "dry-grass": {
         "role": "secondary",
         "displayName": "Dry Grass",
         "canonical": "oklch(0.94 0.02 100)",
-        "tonalRamp": ["oklch(0.15 0.02 100)", "oklch(0.27 0.02 100)", "oklch(0.39 0.02 100)", "oklch(0.51 0.02 100)", "oklch(0.63 0.02 100)", "oklch(0.75 0.02 100)", "oklch(0.87 0.02 100)", "oklch(0.95 0.02 100)"]
+        "tonalRamp": [
+          "oklch(0.15 0.02 100)",
+          "oklch(0.27 0.02 100)",
+          "oklch(0.39 0.02 100)",
+          "oklch(0.51 0.02 100)",
+          "oklch(0.63 0.02 100)",
+          "oklch(0.75 0.02 100)",
+          "oklch(0.87 0.02 100)",
+          "oklch(0.95 0.02 100)"
+        ]
       },
       "weathered-paper": {
         "role": "neutral",
         "displayName": "Weathered Paper",
         "canonical": "oklch(0.95 0.014 95)",
-        "tonalRamp": ["oklch(0.15 0.014 95)", "oklch(0.27 0.014 95)", "oklch(0.39 0.014 95)", "oklch(0.51 0.014 95)", "oklch(0.63 0.014 95)", "oklch(0.75 0.014 95)", "oklch(0.87 0.014 95)", "oklch(0.95 0.014 95)"]
+        "tonalRamp": [
+          "oklch(0.15 0.014 95)",
+          "oklch(0.27 0.014 95)",
+          "oklch(0.39 0.014 95)",
+          "oklch(0.51 0.014 95)",
+          "oklch(0.63 0.014 95)",
+          "oklch(0.75 0.014 95)",
+          "oklch(0.87 0.014 95)",
+          "oklch(0.95 0.014 95)"
+        ]
       },
       "faded-ink": {
         "role": "neutral",
         "displayName": "Faded Ink",
         "canonical": "oklch(0.52 0.025 90)",
-        "tonalRamp": ["oklch(0.15 0.025 90)", "oklch(0.27 0.025 90)", "oklch(0.39 0.025 90)", "oklch(0.51 0.025 90)", "oklch(0.63 0.025 90)", "oklch(0.75 0.025 90)", "oklch(0.87 0.02 90)", "oklch(0.95 0.01 90)"]
+        "tonalRamp": [
+          "oklch(0.15 0.025 90)",
+          "oklch(0.27 0.025 90)",
+          "oklch(0.39 0.025 90)",
+          "oklch(0.51 0.025 90)",
+          "oklch(0.63 0.025 90)",
+          "oklch(0.75 0.025 90)",
+          "oklch(0.87 0.02 90)",
+          "oklch(0.95 0.01 90)"
+        ]
       },
       "signal-red": {
         "role": "primary",
         "displayName": "Signal Red",
         "canonical": "oklch(0.58 0.22 27)",
-        "tonalRamp": ["oklch(0.15 0.12 27)", "oklch(0.27 0.18 27)", "oklch(0.39 0.22 27)", "oklch(0.51 0.22 27)", "oklch(0.63 0.2 27)", "oklch(0.75 0.15 27)", "oklch(0.87 0.09 27)", "oklch(0.95 0.04 27)"]
+        "tonalRamp": [
+          "oklch(0.15 0.12 27)",
+          "oklch(0.27 0.18 27)",
+          "oklch(0.39 0.22 27)",
+          "oklch(0.51 0.22 27)",
+          "oklch(0.63 0.2 27)",
+          "oklch(0.75 0.15 27)",
+          "oklch(0.87 0.09 27)",
+          "oklch(0.95 0.04 27)"
+        ]
       }
     },
     "typographyMeta": {
-      "headline": { "displayName": "App Headline", "purpose": "App identity on the details surface." },
-      "title": { "displayName": "Section Title", "purpose": "Collections and operational groups." },
-      "body": { "displayName": "Interface Body", "purpose": "Instructions, errors, and general copy." },
-      "label": { "displayName": "Supporting Label", "purpose": "Compact secondary status and metadata." },
-      "metadata": { "displayName": "Technical Metadata", "purpose": "Paths, manifests, and identifiers." }
+      "headline": {
+        "displayName": "App Headline",
+        "purpose": "App identity on the details surface."
+      },
+      "title": {
+        "displayName": "Section Title",
+        "purpose": "Collections and operational groups."
+      },
+      "body": {
+        "displayName": "Interface Body",
+        "purpose": "Instructions, errors, and general copy."
+      },
+      "label": {
+        "displayName": "Supporting Label",
+        "purpose": "Compact secondary status and metadata."
+      },
+      "metadata": {
+        "displayName": "Technical Metadata",
+        "purpose": "Paths, manifests, and identifiers."
+      }
     },
     "shadows": [
-      { "name": "control-edge", "value": "0 1px 2px rgb(0 0 0 / 0.05)", "purpose": "A subtle physical edge for fields, checkboxes, and outline controls." },
-      { "name": "transient-lift", "value": "0 4px 6px -1px rgb(0 0 0 / 0.1)", "purpose": "Tooltips and temporary overlays." },
-      { "name": "modal-lift", "value": "0 10px 15px -3px rgb(0 0 0 / 0.1)", "purpose": "Dialogs only." }
+      {
+        "name": "control-edge",
+        "value": "0 1px 2px rgb(0 0 0 / 0.05)",
+        "purpose": "A subtle physical edge for fields, checkboxes, and outline controls."
+      },
+      {
+        "name": "transient-lift",
+        "value": "0 4px 6px -1px rgb(0 0 0 / 0.1)",
+        "purpose": "Tooltips and temporary overlays."
+      },
+      {
+        "name": "modal-lift",
+        "value": "0 10px 15px -3px rgb(0 0 0 / 0.1)",
+        "purpose": "Dialogs only."
+      }
     ],
     "motion": [
-      { "name": "state-standard", "value": "200ms ease", "purpose": "Hover, focus, disclosure, and modal state transitions." },
-      { "name": "running-spinner", "value": "1s linear infinite", "purpose": "The active download loader only." }
+      {
+        "name": "state-standard",
+        "value": "200ms ease",
+        "purpose": "Hover, focus, disclosure, and modal state transitions."
+      },
+      {
+        "name": "running-spinner",
+        "value": "1s linear infinite",
+        "purpose": "The active download loader only."
+      }
     ],
     "breakpoints": [
       { "name": "sm", "value": "640px" },
@@ -120,10 +218,26 @@
       "Product identity expressed through truthful Steam metadata and readiness states, not decoration."
     ],
     "rules": [
-      { "name": "The Sparse Olive Rule", "body": "Field Olive marks what is actionable, focused, progressing, or successful; it is not a general-purpose decoration.", "section": "colors" },
-      { "name": "The Status Is More Than Color Rule", "body": "Every success, warning, unavailable, and failure state also carries explicit text or iconography.", "section": "colors" },
-      { "name": "The Operational Legibility Rule", "body": "Muted 0.75rem text is supporting evidence only; critical readiness, error recovery, and next-step guidance stays at body size and sufficient contrast.", "section": "typography" },
-      { "name": "The Flat-by-Default Rule", "body": "Persistent content surfaces do not use shadows; elevation signals temporary content or interaction priority.", "section": "elevation" }
+      {
+        "name": "The Sparse Olive Rule",
+        "body": "Field Olive marks what is actionable, focused, progressing, or successful; it is not a general-purpose decoration.",
+        "section": "colors"
+      },
+      {
+        "name": "The Status Is More Than Color Rule",
+        "body": "Every success, warning, unavailable, and failure state also carries explicit text or iconography.",
+        "section": "colors"
+      },
+      {
+        "name": "The Operational Legibility Rule",
+        "body": "Muted 0.75rem text is supporting evidence only; critical readiness, error recovery, and next-step guidance stays at body size and sufficient contrast.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat-by-Default Rule",
+        "body": "Persistent content surfaces do not use shadows; elevation signals temporary content or interaction priority.",
+        "section": "elevation"
+      }
     ],
     "dos": [
       "Do preserve warm parchment surfaces and reserve Field Olive for action, focus, progress, and success.",

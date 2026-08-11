@@ -26,7 +26,10 @@ export class AppService {
     )
   }
 
-  async setSelectedDepots(appId: number, depotIds: number[]): Promise<number[]> {
+  async setSelectedDepots(
+    appId: number,
+    depotIds: number[],
+  ): Promise<number[]> {
     const details = await this.getAppDetails(appId)
     const eligibleDepotIds = new Set(
       details.depots

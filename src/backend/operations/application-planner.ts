@@ -1,7 +1,5 @@
 import { extractPublicDepots } from '../apps/product-normalizer.ts'
-import type {
-  ApplicationDepotInput,
-} from '../depot/depot-download-service.ts'
+import type { ApplicationDepotInput } from '../depot/depot-download-service.ts'
 import type { ApplicationDepotRecord } from '../depot/install/transaction/types.ts'
 import { ApplicationTransactionError } from '../depot/install/transaction/types.ts'
 import { abortable } from '../shared/abortable.ts'
@@ -75,9 +73,7 @@ export async function planApplication(
         ),
       )
   signal.throwIfAborted()
-  const metadata = new Map(
-    publicDepots.map((depot) => [depot.depotId, depot]),
-  )
+  const metadata = new Map(publicDepots.map((depot) => [depot.depotId, depot]))
   const metadataOrder = publicDepots.map(({ depotId }) => depotId)
   const requested = new Set(request.requestedDepotIds ?? [])
   const installedDepots = await Promise.all(
@@ -87,7 +83,9 @@ export async function planApplication(
         row.installedManifestId,
         metadata,
         signal,
-        row.ownerAppId ?? metadata.get(row.depotId)?.ownerAppId ?? request.appId,
+        row.ownerAppId ??
+          metadata.get(row.depotId)?.ownerAppId ??
+          request.appId,
         database,
       ),
     ),

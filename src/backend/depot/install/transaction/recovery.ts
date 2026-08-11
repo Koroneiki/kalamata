@@ -3,10 +3,7 @@ import { join } from 'node:path'
 import { CONFIG_DIRECTORY } from '../internal-paths.ts'
 import { acquireOutputLock } from '../output-lock.ts'
 import { rollForward } from './commit.ts'
-import {
-  assertJournalIdentity,
-  readJournal,
-} from './journal.ts'
+import { assertJournalIdentity, readJournal } from './journal.ts'
 import { pathExists } from './projection.ts'
 import {
   ApplicationTransactionError,
@@ -203,11 +200,7 @@ async function archiveUnresolvedApplicationTransactionUnlocked(
   } catch {
     // Repair falls back to the installed version while preserving evidence.
   }
-  const archiveRoot = join(
-    outputDirectory,
-    CONFIG_DIRECTORY,
-    'repair-fallback',
-  )
+  const archiveRoot = join(outputDirectory, CONFIG_DIRECTORY, 'repair-fallback')
   await mkdir(archiveRoot, { recursive: true })
   await rename(transactionRoot, join(archiveRoot, entry.name))
   return desired

@@ -24,12 +24,7 @@ import {
 } from '../../../../../src/backend/depot/install/transaction/recovery.ts'
 import { acquireOutputLock } from '../../../../../src/backend/depot/install/output-lock.ts'
 import { HttpStatusError } from '../../../../../src/backend/depot/transfer/chunk-http.ts'
-import {
-  depot,
-  enospcClient,
-  fakeClient,
-  run,
-} from './transaction-fixtures.ts'
+import { depot, enospcClient, fakeClient, run } from './transaction-fixtures.ts'
 
 let directory: string | undefined
 
@@ -325,8 +320,8 @@ describe('application filesystem transactions', () => {
 
     expect(desired.client.downloadChunk).toHaveBeenCalledTimes(1)
     expect(
-      (desired.client.downloadChunk as ReturnType<typeof mock>).mock.calls[0]![3]
-        .Host,
+      (desired.client.downloadChunk as ReturnType<typeof mock>).mock
+        .calls[0]![3].Host,
     ).toBe('available')
   })
 
@@ -527,9 +522,9 @@ describe('application filesystem transactions', () => {
       }),
     ).rejects.toMatchObject({ kind: 'recovery' })
     expect(await text('game.bin')).toBe('live')
-    expect(
-      await text('.Kalamata/transactions/bad/backup/game.bin'),
-    ).toBe('backup')
+    expect(await text('.Kalamata/transactions/bad/backup/game.bin')).toBe(
+      'backup',
+    )
   })
 
   test('recovery removes completed transaction leftovers', async () => {

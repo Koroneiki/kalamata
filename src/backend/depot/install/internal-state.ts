@@ -14,7 +14,9 @@ export async function assertSafeInternalStatePaths(
   ]) {
     try {
       if ((await lstat(path)).isSymbolicLink())
-        throw new Error(`Internal state path must not be a symbolic link: ${path}`)
+        throw new Error(
+          `Internal state path must not be a symbolic link: ${path}`,
+        )
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
     }

@@ -70,8 +70,7 @@ export async function prepareStagedFiles(
     const completed = journal.journal.completedChunks[key]
     if (completed) {
       const logicalBytes = group.reduce(
-        (sum, destination) =>
-          sum + BigInt(destination.chunk.cb_original),
+        (sum, destination) => sum + BigInt(destination.chunk.cb_original),
         0n,
       )
       progress.logicalInstalledCompleted += logicalBytes

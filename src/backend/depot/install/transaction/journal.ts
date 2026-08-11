@@ -233,11 +233,7 @@ export async function loadResumableJournal(
   options: RunApplicationTransactionOptions,
   expected: Pick<TransactionJournal, 'source' | 'desired' | 'stagedFiles'>,
 ): Promise<TransactionJournal | undefined> {
-  const root = join(
-    options.outputDirectory,
-    CONFIG_DIRECTORY,
-    'transactions',
-  )
+  const root = join(options.outputDirectory, CONFIG_DIRECTORY, 'transactions')
   let entries
   try {
     entries = await readdir(root, { withFileTypes: true })
