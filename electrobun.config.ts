@@ -27,5 +27,6 @@ export default {
   },
   scripts: {
     preBuild: './scripts/build-decompress-worker.ts',
+    postWrap: './scripts/sign-macos-wrapper.ts',
   },
 } satisfies ElectrobunConfig

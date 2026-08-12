@@ -45,9 +45,21 @@ It can also be run manually from the GitHub Actions page to test packaging. A
 manual run uploads temporary workflow artifacts but does not create a tag or a
 GitHub Release.
 
-The packages are currently unsigned, so macOS Gatekeeper and Windows SmartScreen
-may warn before installation. Because the repository is private, users must be
-authenticated with GitHub to download release assets.
+The macOS package is ad-hoc signed but does not have an Apple Developer ID or
+notarization, and the Windows package is unsigned. Gatekeeper and SmartScreen
+may therefore warn before installation. Trusted macOS testers can allow
+Kalamata without disabling Gatekeeper globally:
+
+1. Open the downloaded DMG and drag Kalamata into **Applications**.
+2. Try to open Kalamata once and dismiss the unidentified-developer warning.
+3. Open **System Settings > Privacy & Security**.
+4. Scroll to the Security section and click **Open Anyway** for Kalamata.
+5. Confirm by clicking **Open**.
+
+The macOS bundle has a local ad-hoc signature to preserve its integrity, but it
+is not signed with an Apple Developer ID or notarized. Only bypass the warning
+when the package came directly from the project's private GitHub release. Users
+must be authenticated with GitHub to download release assets.
 
 ## Local Data And Manual Seeding
 
