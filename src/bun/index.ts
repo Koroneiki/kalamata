@@ -8,7 +8,11 @@ import Electrobun, {
 import { createSteamService } from '../backend/index.ts'
 import { AppService } from '../backend/apps/app-service.ts'
 import { DownloadQueueCoordinator } from '../backend/operations/download-queue.ts'
-import { recoverApplicationTransaction } from '../backend/depot/install/transaction/recovery.ts'
+import {
+  getResumableApplicationTransaction,
+  hasRepairFallback,
+  recoverApplicationTransaction,
+} from '../backend/depot/install/transaction/recovery.ts'
 import { openKalamataDatabase } from '../db/index.ts'
 import { canonicalizeInstallDirectory } from '../db/validation.ts'
 import type { AppRpc, AppSettings, DepotPlatform } from '../types/rpc.ts'
@@ -182,7 +186,20 @@ startup = (async () => {
             })),
           ),
       })
-      database.clearUnusedInstallPath(entry.appId)
+      const resumable = await getResumableApplicationTransaction(
+        entry.installPath,
+        entry.appId,
+      )
+      const repairFallback = await hasRepairFallback(entry.installPath)
+      if (repairFallback) {
+        recoveryFailures.push({
+          appId: entry.appId,
+          installPath: entry.installPath,
+        })
+      }
+      // Pending staging and repair evidence keep first-install paths reserved.
+      if (!resumable && !repairFallback)
+        database.clearUnusedInstallPath(entry.appId)
     } catch {
       recoveryFailures.push({
         appId: entry.appId,

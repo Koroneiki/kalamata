@@ -105,6 +105,41 @@ test('planning reuses manifest resources without reusing occurrence ownership', 
   ])
 })
 
+test('planning restores a fixed new depot from its local manifest and key', async () => {
+  const fixture = await setup()
+  const getProductInfoWithDlc = mock(async () => products())
+
+  const plan = await planApplication(
+    {
+      kind: 'download',
+      appId: APP_ID,
+      installPath: fixture.installPath,
+      requestedDepotIds: [DEPOTS[0].depotId],
+      fixedDesired: [
+        {
+          depotId: DEPOTS[0].depotId,
+          manifestId: DEPOTS[0].manifestId,
+          mountIndex: 0,
+          ownerAppId: APP_ID,
+        },
+      ],
+    },
+    { getProductInfoWithDlc },
+    fixture.database,
+    new AbortController().signal,
+    () => {},
+  )
+
+  expect(getProductInfoWithDlc).not.toHaveBeenCalled()
+  expect(plan.desiredDepots).toEqual([
+    expect.objectContaining({
+      depotId: DEPOTS[0].depotId,
+      manifestId: DEPOTS[0].manifestId,
+      ownerAppId: APP_ID,
+    }),
+  ])
+})
+
 test('queueDepotUpdate persists selections and reconciles the returned metadata order', async () => {
   const fixture = await setup()
   await install(fixture, DEPOTS[0])

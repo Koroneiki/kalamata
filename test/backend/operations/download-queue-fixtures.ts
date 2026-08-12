@@ -118,6 +118,7 @@ export async function successfulReconciliation(
 
 export async function writeQueueStagingJournal(
   options: ReconcileApplicationOptions,
+  paused = false,
 ): Promise<void> {
   const id = 'queue-resume'
   const transaction = join(
@@ -137,7 +138,7 @@ export async function writeQueueStagingJournal(
       kind: options.kind,
       installPath: options.outputDirectory,
       phase: 'staging',
-      paused: false,
+      paused,
       source: options.installedDepots.map(
         ({ depotId, manifestId, ownerAppId }, mountIndex) => ({
           depotId,

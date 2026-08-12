@@ -58,6 +58,7 @@ export class DownloadQueueCoordinator {
   #shuttingDown = false
   #acceptingAppId: number | null = null
   #acceptanceDone: Promise<void> | undefined
+  #controlPromise: Promise<unknown> | undefined
   #resolveAcceptance: (() => void) | undefined
   #operationId = 0
   #progressQueued = false
@@ -223,26 +224,35 @@ export class DownloadQueueCoordinator {
       const state = this.#state
       const request = this.#currentRequest
       this.#currentRequest = undefined
+      const cancellation = (async (): Promise<CancelOperationResult> => {
+        try {
+          await discardPrecommitApplicationTransaction(state.installPath)
+        } catch (error) {
+          this.#currentRequest = request
+          throw error
+        }
+        this.#state = {
+          status: 'cancelled',
+          kind: state.kind,
+          appId: state.appId,
+          installPath: state.installPath,
+          desiredDepotIds: [...state.desiredDepotIds],
+          error: {
+            kind: 'cancellation',
+            message: 'The operation was cancelled before commit.',
+          },
+        }
+        this.database.clearUnusedInstallPath(state.appId)
+        this.emitState()
+        return { accepted: true }
+      })()
+      this.#controlPromise = cancellation
       try {
-        await discardPrecommitApplicationTransaction(state.installPath)
-      } catch (error) {
-        this.#currentRequest = request
-        throw error
+        return await cancellation
+      } finally {
+        if (this.#controlPromise === cancellation)
+          this.#controlPromise = undefined
       }
-      this.#state = {
-        status: 'cancelled',
-        kind: state.kind,
-        appId: state.appId,
-        installPath: state.installPath,
-        desiredDepotIds: [...state.desiredDepotIds],
-        error: {
-          kind: 'cancellation',
-          message: 'The operation was cancelled before commit.',
-        },
-      }
-      this.database.clearUnusedInstallPath(state.appId)
-      this.emitState()
-      return { accepted: true }
     }
     if (this.#state.status !== 'active' || !this.#controller)
       return { accepted: false, reason: 'no-active-operation' }
@@ -261,9 +271,7 @@ export class DownloadQueueCoordinator {
       return { accepted: false, reason: 'no-active-operation' }
     if (
       this.#commitStarted ||
-      !['planning', 'staging', 'downloading', 'verifying'].includes(
-        this.#state.phase,
-      )
+      !['staging', 'downloading', 'verifying'].includes(this.#state.phase)
     )
       return { accepted: false, reason: 'invalid-phase' }
     const runPromise = this.#runPromise
@@ -273,6 +281,8 @@ export class DownloadQueueCoordinator {
     this.#controller.abort(reason)
     // Confirmation may open only after writes checkpoint and state becomes paused.
     await runPromise
+    if (this.getOperationState().status !== 'paused')
+      throw new Error('Operation could not be paused durably')
     return { accepted: true }
   }
 
@@ -341,6 +351,7 @@ export class DownloadQueueCoordinator {
     }
     await this.#acceptanceDone
     await this.#runPromise
+    await this.#controlPromise
   }
 
   private begin(
@@ -469,20 +480,23 @@ export class DownloadQueueCoordinator {
     } catch (error) {
       const serialized = serializeOperationError(error)
       const shuttingDown = isOperationShutdown(error, signal)
+      const resumable = await getResumableApplicationTransaction(
+        request.installPath,
+        request.appId,
+      ).catch(() => null)
       const recoverable =
         (isRecoverableOperationError(serialized.kind) || shuttingDown) &&
-        (await getResumableApplicationTransaction(
-          request.installPath,
-          request.appId,
-        ).catch(() => null)) !== null
+        resumable !== null
       const commitReady = await hasCommitReadyApplicationTransaction(
         request.installPath,
       ).catch(() => true)
-      const paused = this.#pausing && !this.#cancelRequested
+      const pauseRequested = this.#pausing && !this.#cancelRequested
+      const paused = pauseRequested && resumable?.paused === true
       const cancelled =
         !shuttingDown &&
         (this.#cancelRequested ||
-          (!paused && (signal.aborted || isOperationCancellation(error))))
+          (!pauseRequested &&
+            (signal.aborted || isOperationCancellation(error))))
       if (cancelled && !commitReady) {
         await discardPrecommitApplicationTransaction(request.installPath)
         this.#currentRequest = undefined

@@ -241,8 +241,10 @@ export async function loadResumableJournal(
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
     throw error
   }
+  // OS metadata files beside the journals are not transaction candidates.
+  entries = entries.filter((entry) => entry.isDirectory())
   if (entries.length === 0) return undefined
-  if (entries.length !== 1 || !entries[0]!.isDirectory())
+  if (entries.length !== 1)
     throw new ApplicationTransactionError(
       'recovery',
       'Application has ambiguous pending transaction state',

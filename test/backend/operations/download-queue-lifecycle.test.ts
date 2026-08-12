@@ -110,7 +110,7 @@ test('cancellation aborts precommit work and yields cancelled typed state', asyn
   expect(reconcileApplication).not.toHaveBeenCalled()
 })
 
-test('planning can pause before cancellation confirmation', async () => {
+test('planning rejects pause but remains cancellable', async () => {
   const fixture = await setup()
   const planningStarted = deferred<void>()
   const productInfo = deferred<ProductInfoResult>()
@@ -132,12 +132,17 @@ test('planning can pause before cancellation confirmation', async () => {
   })
   await planningStarted.promise
 
-  expect(await queue.pause()).toEqual({ accepted: true })
+  expect(await queue.pause()).toEqual({
+    accepted: false,
+    reason: 'invalid-phase',
+  })
   expect(queue.getOperationState()).toMatchObject({
-    status: 'paused',
+    status: 'active',
     phase: 'planning',
   })
   expect(await queue.cancel()).toEqual({ accepted: true })
+  productInfo.resolve(products())
+  await waitForTerminal(queue)
   expect(queue.getOperationState()).toMatchObject({ status: 'cancelled' })
 })
 
@@ -231,12 +236,17 @@ test('pause keeps the queue occupied and resume continues the operation', async 
       reconcileApplication: async (options) => {
         calls++
         if (calls === 1) {
+          await writeQueueStagingJournal(options)
           options.onEvent?.({ type: 'phase', phase: 'staging' })
           staging.resolve()
           await new Promise((_, reject) =>
             options.signal!.addEventListener(
               'abort',
-              () => reject(options.signal!.reason),
+              () => {
+                void writeQueueStagingJournal(options, true).then(() =>
+                  reject(options.signal!.reason),
+                )
+              },
               { once: true },
             ),
           )
@@ -269,12 +279,17 @@ test('cancel overrides a pending pause and discards resumable work', async () =>
     {
       getProductInfoWithDlc: async () => products(),
       reconcileApplication: async (options) => {
+        await writeQueueStagingJournal(options)
         options.onEvent?.({ type: 'phase', phase: 'staging' })
         staging.resolve()
         await new Promise((_, reject) =>
           options.signal!.addEventListener(
             'abort',
-            () => reject(options.signal!.reason),
+            () => {
+              void writeQueueStagingJournal(options, true).then(() =>
+                reject(options.signal!.reason),
+              )
+            },
             { once: true },
           ),
         )
@@ -307,12 +322,17 @@ test('resume is rejected while paused cancellation is pending', async () => {
     {
       getProductInfoWithDlc: async () => products(),
       reconcileApplication: async (options) => {
+        await writeQueueStagingJournal(options)
         options.onEvent?.({ type: 'phase', phase: 'staging' })
         staging.resolve()
         await new Promise((_, reject) =>
           options.signal!.addEventListener(
             'abort',
-            () => reject(options.signal!.reason),
+            () => {
+              void writeQueueStagingJournal(options, true).then(() =>
+                reject(options.signal!.reason),
+              )
+            },
             { once: true },
           ),
         )
@@ -399,4 +419,33 @@ test('shutdown aborts and awaits precommit work and prevents new work', async ()
       depotIds: [DEPOTS[0].depotId],
     }),
   ).rejects.toThrow('shutting down')
+})
+
+test('shutdown awaits cancellation of paused work', async () => {
+  const fixture = await setup()
+  const queue = new DownloadQueueCoordinator(
+    {
+      getProductInfoWithDlc: async () => products(),
+      reconcileApplication: successfulReconciliation,
+    },
+    fixture.database,
+  )
+  await writeQueueStagingJournal(
+    {
+      kind: 'download',
+      appId: APP_ID,
+      outputDirectory: fixture.installPath,
+      installedDepots: [],
+      desiredDepots: [],
+      reconcile: async () => {},
+    },
+    true,
+  )
+  fixture.database.reserveInstallPath(APP_ID, fixture.installPath)
+  await queue.restoreInterrupted()
+
+  const cancellation = queue.cancel()
+  await queue.shutdown()
+  await expect(cancellation).resolves.toEqual({ accepted: true })
+  expect(fixture.database.getLibraryEntry(APP_ID)?.installPath).toBeNull()
 })

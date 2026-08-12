@@ -20,6 +20,7 @@ import {
   clearRepairFallback,
   discardPrecommitApplicationTransaction,
   getResumableApplicationTransaction,
+  hasRepairFallback,
   recoverApplicationTransaction,
 } from '../../../../../src/backend/depot/install/transaction/recovery.ts'
 import { acquireOutputLock } from '../../../../../src/backend/depot/install/output-lock.ts'
@@ -219,6 +220,7 @@ describe('application filesystem transactions', () => {
     directory = await tempDirectory()
     const desired = depot(10, '1', { 'game.bin': 'good' })
     await writeStagingJournal(desired, 'good')
+    await writeFile(join(directory, '.Kalamata/transactions/.DS_Store'), '')
 
     await run(directory, [], [desired])
 
@@ -505,6 +507,48 @@ describe('application filesystem transactions', () => {
     expect(
       await getResumableApplicationTransaction(directory, 100),
     ).toMatchObject({ appId: 100, paused: true })
+  })
+
+  test('rejects multiple pending transactions without mutating them', async () => {
+    directory = await tempDirectory()
+    const desired = depot(10, '1', { 'game.bin': 'good' })
+    await writeStagingJournal(desired, 'good')
+    await mkdir(join(directory, '.Kalamata/transactions/other'))
+
+    await expect(
+      recoverApplicationTransaction(directory, {
+        appId: 100,
+        reconcile: async () => {},
+      }),
+    ).rejects.toMatchObject({ kind: 'recovery' })
+    await expect(
+      getResumableApplicationTransaction(directory, 100),
+    ).rejects.toMatchObject({ kind: 'recovery' })
+    expect(await transactionEntries()).toEqual(['other', 'resume-test'])
+  })
+
+  test('detects archived repair evidence', async () => {
+    directory = await tempDirectory()
+    expect(await hasRepairFallback(directory)).toBe(false)
+    await mkdir(join(directory, '.Kalamata/repair-fallback/pending'), {
+      recursive: true,
+    })
+    await writeFile(join(directory, '.Kalamata/repair-fallback/.DS_Store'), '')
+
+    expect(await hasRepairFallback(directory)).toBe(true)
+  })
+
+  test('archives ambiguous journals and repairs from installed metadata', async () => {
+    directory = await tempDirectory()
+    const desired = depot(10, '1', { 'game.bin': 'good' })
+    await writeStagingJournal(desired, 'good')
+    await mkdir(join(directory, '.Kalamata/transactions/other'))
+
+    expect(await archiveUnresolvedApplicationTransaction(directory)).toBeNull()
+    expect(await transactionEntries()).toEqual([])
+    expect(await readdir(join(directory, '.Kalamata/repair-fallback'))).toEqual(
+      ['other', 'resume-test'],
+    )
   })
 
   test('malformed recovery journal leaves live files and backups untouched', async () => {

@@ -56,10 +56,15 @@ export async function recoverUnlocked(
       'Could not inspect application transactions',
     )
   }
+  entries = entries.filter((entry) => entry.isDirectory())
+  if (entries.length > 1)
+    throw new ApplicationTransactionError(
+      'recovery',
+      'Application has ambiguous pending transaction state',
+    )
   for (const entry of entries.sort((left, right) =>
     left.name.localeCompare(right.name),
   )) {
-    if (!entry.isDirectory()) continue
     const transactionRoot = join(root, entry.name)
     const journalPath = join(transactionRoot, 'journal.json')
     let journal: TransactionJournal
@@ -109,7 +114,12 @@ export async function getResumableApplicationTransaction(
     throw error
   }
   entries = entries.filter((entry) => entry.isDirectory())
-  if (entries.length !== 1) return null
+  if (entries.length === 0) return null
+  if (entries.length > 1)
+    throw new ApplicationTransactionError(
+      'recovery',
+      'Application has ambiguous pending transaction state',
+    )
   const journal = await readJournal(
     join(root, entries[0]!.name, 'journal.json'),
   )
@@ -191,18 +201,21 @@ async function archiveUnresolvedApplicationTransactionUnlocked(
       return readRepairFallbackDesired(outputDirectory)
     throw error
   }
-  const entry = entries.find((candidate) => candidate.isDirectory())
-  if (!entry) return readRepairFallbackDesired(outputDirectory)
-  const transactionRoot = join(root, entry.name)
+  const pending = entries.filter((candidate) => candidate.isDirectory())
+  if (pending.length === 0) return readRepairFallbackDesired(outputDirectory)
   let desired: ApplicationDepotRecord[] | null = null
-  try {
-    desired = (await readJournal(join(transactionRoot, 'journal.json'))).desired
-  } catch {
-    // Repair falls back to the installed version while preserving evidence.
-  }
+  if (pending.length === 1)
+    try {
+      desired = (
+        await readJournal(join(root, pending[0]!.name, 'journal.json'))
+      ).desired
+    } catch {
+      // Repair falls back to the installed version while preserving evidence.
+    }
   const archiveRoot = join(outputDirectory, CONFIG_DIRECTORY, 'repair-fallback')
   await mkdir(archiveRoot, { recursive: true })
-  await rename(transactionRoot, join(archiveRoot, entry.name))
+  for (const entry of pending)
+    await rename(join(root, entry.name), join(archiveRoot, entry.name))
   return desired
 }
 
@@ -235,6 +248,21 @@ export async function clearRepairFallback(
       force: true,
     }),
   )
+}
+
+export async function hasRepairFallback(
+  outputDirectory: string,
+): Promise<boolean> {
+  try {
+    const entries = await readdir(
+      join(outputDirectory, CONFIG_DIRECTORY, 'repair-fallback'),
+      { withFileTypes: true },
+    )
+    return entries.some((entry) => entry.isDirectory())
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
+    throw error
+  }
 }
 
 export async function discardPrecommitApplicationTransaction(

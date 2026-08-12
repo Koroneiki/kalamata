@@ -31,6 +31,7 @@ defineOptions({ inheritAttrs: false })
 const props = defineProps<{
   state:
     | ProgressOperation
+    | Extract<OperationState, { status: 'failed' }>
     | Extract<OperationState, { status: 'repair-required' }>
   finished?: boolean
 }>()
@@ -75,6 +76,7 @@ const isUninstall = computed(
     !progressState.value.desiredDepotIds.length,
 )
 const phaseLabel = computed(() => {
+  if (props.state.status === 'failed') return 'DOWNLOAD FAILED'
   if (props.state.status === 'repair-required') return 'INSTALLATION BROKEN'
   if (props.state.status === 'paused') return 'PAUSED'
   if (props.state.status === 'resumable') return 'RESUME REQUIRED'
@@ -110,9 +112,7 @@ const canPause = computed(
   () =>
     !props.finished &&
     props.state.status === 'active' &&
-    ['planning', 'staging', 'downloading', 'verifying'].includes(
-      props.state.phase,
-    ),
+    ['staging', 'downloading', 'verifying'].includes(props.state.phase),
 )
 const canResume = computed(
   () => !props.finished && ['paused', 'resumable'].includes(props.state.status),
@@ -153,7 +153,7 @@ async function runControl(action: () => Promise<ControlResult>) {
 }
 
 async function openCancel() {
-  if (props.state.status === 'active') {
+  if (props.state.status === 'active' && props.state.phase !== 'planning') {
     if (!(await runControl(() => operation.pause()))) return
     pausedForCancel.value = true
   }
@@ -227,6 +227,13 @@ defineExpose({
         >
           Installation broken. Please verify game files.
         </span>
+        <p
+          v-else-if="state.status === 'failed'"
+          class="text-destructive"
+          role="alert"
+        >
+          {{ state.error.message }}
+        </p>
         <span v-else-if="isUninstall" class="text-muted-foreground">
           Removing files
         </span>
@@ -308,7 +315,11 @@ defineExpose({
       <DialogHeader>
         <DialogTitle>Cancel operation?</DialogTitle>
         <DialogDescription>
-          The operation is paused. Kalamata will discard its staged files.
+          {{
+            pausedForCancel
+              ? 'The operation is paused. Kalamata will discard its staged files.'
+              : 'Kalamata will stop the operation before installation begins.'
+          }}
         </DialogDescription>
       </DialogHeader>
       <p v-if="actionError" class="text-destructive text-sm" role="alert">

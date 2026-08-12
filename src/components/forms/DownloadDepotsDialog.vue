@@ -119,7 +119,12 @@ const unrepresentedActions = computed(() =>
     (item) => !visibleDepots.value.has(item.depotId),
   ),
 )
-const isFirstInstall = computed(() => !props.app.installPath)
+const isFirstInstall = computed(
+  () =>
+    !props.app.depots.some(
+      (depot) => depot.eligible && depot.installStatus !== 'not-installed',
+    ),
+)
 const confirmationLabel = computed(() => {
   if (isFirstInstall.value) return 'Install'
   return props.selectedDepotIds.length === 0 ? 'Uninstall' : 'Update'

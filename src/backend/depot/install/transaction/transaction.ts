@@ -314,7 +314,15 @@ async function runUnlocked(
           ...journalContext.journal,
           paused: isPause(error, options.signal),
         }
-        await checkpointJournal(journalContext).catch(() => {})
+        try {
+          await checkpointJournal(journalContext)
+        } catch (checkpointError) {
+          throw classify(
+            checkpointError,
+            'filesystem',
+            'Could not checkpoint interrupted staging',
+          )
+        }
       }
     }
     if (error instanceof ApplicationTransactionError) throw error

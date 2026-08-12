@@ -169,7 +169,11 @@ type RepairRequiredOperation = Extract<
   OperationState,
   { status: 'repair-required' }
 >
-type VisibleOperation = ProgressOperation | RepairRequiredOperation
+type FailedOperation = Extract<OperationState, { status: 'failed' }>
+type VisibleOperation =
+  | ProgressOperation
+  | FailedOperation
+  | RepairRequiredOperation
 
 function isProgressOperation(
   state: OperationState,
@@ -199,11 +203,17 @@ const hasDepotAdditionsOrRemovals = computed(() =>
           !selectedIdSet.value.has(depot.depotId))),
   ),
 )
+const hasInstalledDepots = computed(() =>
+  data.value?.depots.some(
+    (depot) => depot.eligible && depot.installStatus !== 'not-installed',
+  ),
+)
+// A first download reserves installPath before any depot is installed.
 const primaryActionLabel = computed(() => {
-  if (!data.value?.installPath) return 'Install'
+  if (!hasInstalledDepots.value) return 'Install'
   if (selectedDepotIds.value.length === 0) return 'Uninstall'
   return hasDepotAdditionsOrRemovals.value ||
-    data.value.depots.some(
+    data.value!.depots.some(
       (depot) =>
         depot.eligible &&
         depot.installStatus === 'outdated' &&
@@ -250,7 +260,8 @@ watch(
         operationVisibleSince = Date.now()
       const preserveProgress =
         !operationFinished.value &&
-        previous?.status !== 'repair-required' &&
+        previous !== null &&
+        isProgressOperation(previous) &&
         previous?.appId === state.appId
       // Resume replans from zero; visible progress must remain monotonic.
       operationForApp.value = preserveProgress
@@ -278,7 +289,7 @@ watch(
       selectedPath.value = state.installPath
       return
     }
-    if (state?.status === 'repair-required') {
+    if (state?.status === 'repair-required' || state?.status === 'failed') {
       operationForApp.value = state
       operationFinished.value = false
       selectedPath.value = state.installPath
@@ -289,7 +300,10 @@ watch(
       operationFinished.value = false
       return
     }
-    if (operationForApp.value.status === 'repair-required') {
+    if (
+      operationForApp.value.status === 'repair-required' ||
+      operationForApp.value.status === 'failed'
+    ) {
       operationForApp.value = null
       operationFinished.value = false
       return
@@ -724,7 +738,7 @@ async function verifyGameFiles() {
             :finished="operationFinished"
           />
           <Button
-            v-if="data.inLibrary && data.installPath"
+            v-if="data.inLibrary && hasInstalledDepots"
             class="h-12 shrink-0 self-stretch px-5 sm:ml-auto sm:self-auto"
             type="button"
             variant="outline"

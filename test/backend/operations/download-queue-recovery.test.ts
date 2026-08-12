@@ -1,7 +1,12 @@
 import { afterEach, expect, mock } from 'bun:test'
 import { mkdir, realpath, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import type { ReconcileApplicationOptions } from '../../../src/backend/depot/depot-download-service.ts'
 import { ApplicationTransactionError } from '../../../src/backend/depot/install/transaction/types.ts'
+import {
+  getResumableApplicationTransaction,
+  recoverApplicationTransaction,
+} from '../../../src/backend/depot/install/transaction/recovery.ts'
 import { DownloadQueueCoordinator } from '../../../src/backend/operations/download-queue.ts'
 import {
   APP_ID,
@@ -56,6 +61,69 @@ test('unavailable resources remain resumable after staging begins', async () => 
     status: 'resumable',
     error: { kind: 'unavailable-resource' },
   })
+})
+
+test('startup restores an explicitly paused download with its reserved path', async () => {
+  const fixture = await setup()
+  const options = restoreOptions(fixture)
+  fixture.database.reserveInstallPath(APP_ID, fixture.installPath)
+  await writeQueueStagingJournal(options, true)
+
+  await recoverApplicationTransaction(fixture.installPath, {
+    appId: APP_ID,
+    reconcile: async () => {},
+  })
+  const resumable = await getResumableApplicationTransaction(
+    fixture.installPath,
+    APP_ID,
+  )
+  if (!resumable) fixture.database.clearUnusedInstallPath(APP_ID)
+
+  const queue = new DownloadQueueCoordinator(
+    {
+      getProductInfoWithDlc: async () => products(),
+      reconcileApplication: successfulReconciliation,
+    },
+    fixture.database,
+  )
+  await queue.restoreInterrupted()
+
+  expect(fixture.database.getLibraryEntry(APP_ID)?.installPath).toBe(
+    fixture.installPath,
+  )
+  expect(queue.getOperationState()).toMatchObject({
+    status: 'paused',
+    appId: APP_ID,
+    installPath: fixture.installPath,
+  })
+})
+
+test('startup automatically restarts a download interrupted while running', async () => {
+  const fixture = await setup()
+  const options = restoreOptions(fixture)
+  fixture.database.reserveInstallPath(APP_ID, fixture.installPath)
+  await writeQueueStagingJournal(options)
+  const finish = deferred<void>()
+  const queue = new DownloadQueueCoordinator(
+    {
+      getProductInfoWithDlc: async () => products(),
+      reconcileApplication: async (reconcileOptions) => {
+        await finish.promise
+        return successfulReconciliation(reconcileOptions)
+      },
+    },
+    fixture.database,
+  )
+
+  await queue.restoreInterrupted()
+
+  expect(queue.getOperationState()).toMatchObject({
+    status: 'active',
+    appId: APP_ID,
+    installPath: fixture.installPath,
+  })
+  finish.resolve()
+  await waitForTerminal(queue)
 })
 
 test('commit-ready failures require repair and keep the app protected', async () => {
@@ -202,3 +270,28 @@ test('cleanup failure transitions to repair-required instead of staying active',
     appId: APP_ID,
   })
 })
+
+function restoreOptions(
+  fixture: DownloadQueueFixture,
+): ReconcileApplicationOptions {
+  const depot = DEPOTS[0]
+  const manifest = fixture.database
+    .getManifestRows(depot.depotId)
+    .find(({ manifestId }) => manifestId === depot.manifestId)!
+  return {
+    kind: 'download',
+    appId: APP_ID,
+    outputDirectory: fixture.installPath,
+    installedDepots: [],
+    desiredDepots: [
+      {
+        depotId: depot.depotId,
+        ownerAppId: APP_ID,
+        manifestId: depot.manifestId,
+        manifestPath: join(fixture.database.dataRoot, manifest.relativePath),
+        depotKey: Buffer.from(depot.key, 'hex'),
+      },
+    ],
+    reconcile: async () => {},
+  }
+}

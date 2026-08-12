@@ -99,6 +99,8 @@ export async function planApplication(
   const unavailableDesired = [...desiredIds].filter(
     (depotId) =>
       !installedRows.some((row) => row.depotId === depotId) &&
+      // Recovery pins the journal target; planDepot still validates its local input.
+      !request.fixedDesired?.some((record) => record.depotId === depotId) &&
       !metadata.has(depotId),
   )
   if (unavailableDesired.length > 0)
