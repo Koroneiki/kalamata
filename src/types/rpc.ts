@@ -12,6 +12,7 @@ export type DepotPlatform = 'windows' | 'macos' | 'linux'
 
 export interface AppSettings {
   hideRedistributables: boolean
+  hideUnknownDepots: boolean
   hideUnusedDepots: boolean
   platforms: DepotPlatform[]
 }
@@ -19,6 +20,7 @@ export interface AppSettings {
 export type DepotGroup =
   | 'Base Game'
   | 'DLC'
+  | 'Unknown'
   | 'Steamworks Common Redistributables'
   | 'Unused'
 
@@ -46,7 +48,7 @@ export interface EligibleAppDepot extends AppDepotBase {
 
 export interface IneligibleAppDepot extends AppDepotBase {
   eligible: false
-  group: 'Steamworks Common Redistributables' | 'Unused'
+  group: 'Unknown' | 'Steamworks Common Redistributables' | 'Unused'
   manifestStatus: null
   keyStatus: null
   installStatus: null

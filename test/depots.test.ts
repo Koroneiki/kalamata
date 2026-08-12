@@ -119,10 +119,12 @@ test('filters restricted and redistributable depots using settings', () => {
   ]
 
   expect(
-    filterDepots(depots, true, true, ['linux']).map(({ depotId }) => depotId),
+    filterDepots(depots, true, true, true, ['linux']).map(
+      ({ depotId }) => depotId,
+    ),
   ).toEqual([1, 4])
   expect(
-    filterDepots(depots, false, true, ['windows', 'linux']).map(
+    filterDepots(depots, false, true, true, ['windows', 'linux']).map(
       ({ depotId }) => depotId,
     ),
   ).toEqual([1, 2, 4, 228981])
@@ -144,7 +146,7 @@ test('keeps selected and installed depots visible through every filter', () => {
   ]
 
   expect(
-    filterDepots(depots, true, true, ['linux'], new Set([1, 3])).map(
+    filterDepots(depots, true, true, true, ['linux'], new Set([1, 3])).map(
       ({ depotId }) => depotId,
     ),
   ).toEqual([1, 2, 3])
@@ -161,6 +163,30 @@ test('shows unused depots when their filter is disabled', () => {
     selectable: false,
   } as AppDepot
 
-  expect(filterDepots([unused], false, true, ['macos'])).toEqual([])
-  expect(filterDepots([unused], false, false, ['macos'])).toEqual([unused])
+  expect(filterDepots([unused], false, false, true, ['macos'])).toEqual([])
+  expect(filterDepots([unused], false, false, false, ['macos'])).toEqual([
+    unused,
+  ])
+})
+
+test('filters unknown depots independently from unused depots', () => {
+  const ineligible = (depotId: number, group: 'Unknown' | 'Unused') =>
+    ({
+      ...depot(depotId),
+      group,
+      eligible: false,
+      manifestStatus: null,
+      keyStatus: null,
+      installStatus: null,
+      selectable: false,
+    }) as AppDepot
+  const unknown = ineligible(1, 'Unknown')
+  const unused = ineligible(2, 'Unused')
+
+  expect(
+    filterDepots([unknown, unused], false, true, false, ['macos']),
+  ).toEqual([unused])
+  expect(
+    filterDepots([unknown, unused], false, false, true, ['macos']),
+  ).toEqual([unknown])
 })

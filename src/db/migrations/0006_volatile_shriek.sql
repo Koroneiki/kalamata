@@ -1,0 +1,1 @@
+ALTER TABLE `settings` ADD `hide_unknown_depots` integer DEFAULT true NOT NULL;

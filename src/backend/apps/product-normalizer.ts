@@ -93,7 +93,7 @@ export function extractPublicDepots(
         depotId,
         product.appId === products.baseProduct.appId,
         dlcAppId !== null,
-        config.oslist,
+        dlcAppId === null || productNames.has(dlcAppId),
         publicManifest,
       )
       const ownerAppId = dlcAppId ?? product.appId
@@ -101,7 +101,11 @@ export function extractPublicDepots(
         depotId,
         ownerAppId,
         ownerAppName:
-          group === 'DLC' ? (productNames.get(ownerAppId) ?? null) : null,
+          group === 'Unknown'
+            ? `Unknown App ${ownerAppId}`
+            : group === 'DLC'
+              ? (productNames.get(ownerAppId) ?? null)
+              : null,
         group,
         platform: restriction(config.oslist),
         language: restriction(config.language),
@@ -277,7 +281,7 @@ function classifyDepot(
   depotId: number,
   ownedByBase: boolean,
   hasDlcOwner: boolean,
-  _oslist: unknown,
+  ownerKnown: boolean,
   publicManifest: Record<string, unknown>,
 ): DepotGroup {
   if (isSteamworksDepot(depotId)) return 'Steamworks Common Redistributables'
@@ -287,6 +291,7 @@ function classifyDepot(
     rawEmpty(publicManifest.download)
   )
     return 'Unused'
+  if (hasDlcOwner && !ownerKnown) return 'Unknown'
   // DLC is identified either explicitly by dlcappid or by the depot belonging
   // to a separately fetched DLC product.
   if (hasDlcOwner) return 'DLC'

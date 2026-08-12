@@ -47,19 +47,12 @@ const depotGroups = computed(() => [
         ]
       : []
   }),
-  ...(() => {
-    const depots = props.depots.filter((depot) => depot.group === 'Unused')
+  ...(['Unknown', 'Unused'] as const).flatMap((name) => {
+    const depots = props.depots.filter((depot) => depot.group === name)
     return depots.length
-      ? [
-          {
-            name: 'Unused' as const,
-            depots,
-            summary: null,
-            installable: false as const,
-          },
-        ]
+      ? [{ name, depots, summary: null, installable: false as const }]
       : []
-  })(),
+  }),
 ])
 const allInstallableDepots = computed(() => installableDepots(props.depots))
 const depotSummary = computed(() =>

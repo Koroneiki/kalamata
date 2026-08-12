@@ -110,6 +110,11 @@ export const settings = sqliteTable(
     hideRedistributables: integer('hide_redistributables', {
       mode: 'boolean',
     }).notNull(),
+    hideUnknownDepots: integer('hide_unknown_depots', {
+      mode: 'boolean',
+    })
+      .notNull()
+      .default(true),
     hideUnusedDepots: integer('hide_unused_depots', {
       mode: 'boolean',
     })

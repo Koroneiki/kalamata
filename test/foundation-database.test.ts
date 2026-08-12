@@ -240,11 +240,13 @@ describe('foundation database', () => {
     expect(
       db.getSettings({
         hideRedistributables: true,
+        hideUnknownDepots: true,
         hideUnusedDepots: true,
         platforms: ['macos'],
       }),
     ).toEqual({
       hideRedistributables: true,
+      hideUnknownDepots: true,
       hideUnusedDepots: true,
       platforms: ['macos'],
     })
@@ -252,11 +254,13 @@ describe('foundation database', () => {
     expect(
       db.updateSettings({
         hideRedistributables: false,
+        hideUnknownDepots: false,
         hideUnusedDepots: false,
         platforms: ['windows', 'linux'],
       }),
     ).toEqual({
       hideRedistributables: false,
+      hideUnknownDepots: false,
       hideUnusedDepots: false,
       platforms: ['windows', 'linux'],
     })
@@ -271,21 +275,23 @@ describe('foundation database', () => {
     expect(
       db.getSettings({
         hideRedistributables: true,
+        hideUnknownDepots: true,
         hideUnusedDepots: true,
         platforms: ['macos'],
       }),
     ).toEqual({
       hideRedistributables: false,
+      hideUnknownDepots: false,
       hideUnusedDepots: false,
       platforms: ['windows', 'linux'],
     })
   })
 
-  test('enables the unused depot filter when upgrading existing settings', async () => {
-    let db = await openDatabaseAtMigration(4)
+  test('enables the unknown depot filter when upgrading existing settings', async () => {
+    let db = await openDatabaseAtMigration(5)
     db.sqlite
       .query(
-        'INSERT INTO settings (id, hide_redistributables, show_windows, show_macos, show_linux) VALUES (1, 0, 1, 0, 1)',
+        'INSERT INTO settings (id, hide_redistributables, hide_unused_depots, show_windows, show_macos, show_linux) VALUES (1, 0, 0, 1, 0, 1)',
       )
       .run()
     db.close()
@@ -300,12 +306,14 @@ describe('foundation database', () => {
     expect(
       db.getSettings({
         hideRedistributables: true,
+        hideUnknownDepots: true,
         hideUnusedDepots: true,
         platforms: ['macos'],
       }),
     ).toEqual({
       hideRedistributables: false,
-      hideUnusedDepots: true,
+      hideUnknownDepots: true,
+      hideUnusedDepots: false,
       platforms: ['windows', 'linux'],
     })
   })

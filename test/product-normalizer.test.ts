@@ -265,6 +265,37 @@ test('classifies DLC from dlcappid or a containing DLC product', () => {
   ])
 })
 
+test('classifies unresolved DLC owners as Unknown', async () => {
+  const db = await setup()
+  const base = makeProductWithDepots(2531310, {
+    '2537700': { ...depotMetadata('1'), dlcappid: '2537700' },
+  })
+  const details = await normalizeAppDetails(products(base), db)
+
+  expect(details.depots).toEqual([
+    expect.objectContaining({
+      depotId: 2537700,
+      ownerAppId: 2537700,
+      ownerAppName: 'Unknown App 2537700',
+      group: 'Unknown',
+      eligible: false,
+      selectable: false,
+    }),
+  ])
+
+  db.addLibraryEntry(2531310)
+  const service = new AppService(
+    {
+      getProductInfo: async () => base,
+      getProductInfoWithDlc: async () => products(base),
+    },
+    db,
+  )
+  await expect(service.setSelectedDepots(2531310, [2537700])).rejects.toThrow(
+    'not available for this app',
+  )
+})
+
 test('classifies every Steamworks range boundary before ownership', () => {
   const steamworks = [
     228981, 228990, 229000, 229007, 229010, 229012, 229020, 229030, 229033,

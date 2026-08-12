@@ -51,6 +51,11 @@ function setHideRedistributables(value: boolean | 'indeterminate') {
   void persist({ ...settings.value, hideRedistributables: value })
 }
 
+function setHideUnknownDepots(value: boolean | 'indeterminate') {
+  if (!settings.value || typeof value !== 'boolean') return
+  void persist({ ...settings.value, hideUnknownDepots: value })
+}
+
 function setHideUnusedDepots(value: boolean | 'indeterminate') {
   if (!settings.value || typeof value !== 'boolean') return
   void persist({ ...settings.value, hideUnusedDepots: value })
@@ -116,6 +121,23 @@ function setHideUnusedDepots(value: boolean | 'indeterminate') {
           :disabled="updateMutation.isLoading.value"
           aria-label="Hide redistributables"
           @update:model-value="setHideRedistributables"
+        />
+      </div>
+      <div
+        class="bg-muted/45 border-border flex items-center justify-between gap-6 border-t px-4 py-3.5 sm:px-5"
+      >
+        <Label for="hide-unknown-depots" class="text-sm">
+          Hide unknown depots
+        </Label>
+        <Skeleton v-if="!settings" class="size-4" />
+        <Checkbox
+          v-else
+          id="hide-unknown-depots"
+          class="border-muted-foreground/70"
+          :model-value="settings.hideUnknownDepots"
+          :disabled="updateMutation.isLoading.value"
+          aria-label="Hide unknown depots"
+          @update:model-value="setHideUnknownDepots"
         />
       </div>
       <div
