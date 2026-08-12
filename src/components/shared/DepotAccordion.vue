@@ -28,7 +28,8 @@ const props = defineProps<{
   selectedDepotIds: number[]
   readOnly?: boolean
   selectionPending?: boolean
-  acquiringDepotId?: number | null
+  acquiringDepotIds?: number[]
+  automaticManifestAcquisition?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -227,24 +228,32 @@ function updateGroup(
                           {{ depot.manifestId ?? 'Unavailable' }}
                         </span>
                         <Button
-                          v-if="canAcquireManifest(depot)"
+                          v-if="
+                            canAcquireManifest(depot) &&
+                            !automaticManifestAcquisition
+                          "
                           size="icon-xs"
                           variant="outline"
                           type="button"
-                          :disabled="
-                            acquiringDepotId !== undefined &&
-                            acquiringDepotId !== null
-                          "
+                          :disabled="acquiringDepotIds?.includes(depot.depotId)"
                           :aria-label="`Get manifest ${depot.manifestId} for depot ${depot.depotId}`"
                           @click="emit('acquireManifest', depot)"
                         >
                           <LoaderCircle
-                            v-if="acquiringDepotId === depot.depotId"
+                            v-if="acquiringDepotIds?.includes(depot.depotId)"
                             class="animate-spin"
                             aria-hidden="true"
                           />
                           <Download v-else aria-hidden="true" />
                         </Button>
+                        <LoaderCircle
+                          v-else-if="
+                            canAcquireManifest(depot) &&
+                            acquiringDepotIds?.includes(depot.depotId)
+                          "
+                          class="size-4 animate-spin"
+                          aria-label="Acquiring manifest"
+                        />
                       </dd>
                     </div>
                     <div class="space-y-1">
@@ -322,24 +331,32 @@ function updateGroup(
                         {{ depot.manifestId ?? 'Unavailable' }}
                       </span>
                       <Button
-                        v-if="canAcquireManifest(depot)"
+                        v-if="
+                          canAcquireManifest(depot) &&
+                          !automaticManifestAcquisition
+                        "
                         size="icon-xs"
                         variant="outline"
                         type="button"
-                        :disabled="
-                          acquiringDepotId !== undefined &&
-                          acquiringDepotId !== null
-                        "
+                        :disabled="acquiringDepotIds?.includes(depot.depotId)"
                         :aria-label="`Get manifest ${depot.manifestId} for depot ${depot.depotId}`"
                         @click="emit('acquireManifest', depot)"
                       >
                         <LoaderCircle
-                          v-if="acquiringDepotId === depot.depotId"
+                          v-if="acquiringDepotIds?.includes(depot.depotId)"
                           class="animate-spin"
                           aria-hidden="true"
                         />
                         <Download v-else aria-hidden="true" />
                       </Button>
+                      <LoaderCircle
+                        v-else-if="
+                          canAcquireManifest(depot) &&
+                          acquiringDepotIds?.includes(depot.depotId)
+                        "
+                        class="size-4 animate-spin"
+                        aria-label="Acquiring manifest"
+                      />
                     </dd>
                   </div>
                   <div class="space-y-1">

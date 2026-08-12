@@ -26,6 +26,7 @@ export interface InstallRow {
 }
 
 interface SettingsRow {
+  automaticManifestAcquisition: number
   hideRedistributables: number
   hideUnknownDepots: number
   hideUnusedDepots: number
@@ -101,9 +102,10 @@ export class KalamataDatabase {
     this.validateSettings(defaults)
     this.sqlite
       .query(
-        'INSERT INTO settings (id, hide_redistributables, hide_unknown_depots, hide_unused_depots, show_windows, show_macos, show_linux) VALUES (1, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING',
+        'INSERT INTO settings (id, automatic_manifest_acquisition, hide_redistributables, hide_unknown_depots, hide_unused_depots, show_windows, show_macos, show_linux) VALUES (1, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING',
       )
       .run(
+        Number(defaults.automaticManifestAcquisition),
         Number(defaults.hideRedistributables),
         Number(defaults.hideUnknownDepots),
         Number(defaults.hideUnusedDepots),
@@ -118,9 +120,10 @@ export class KalamataDatabase {
     this.validateSettings(settings)
     this.sqlite
       .query(
-        'INSERT INTO settings (id, hide_redistributables, hide_unknown_depots, hide_unused_depots, show_windows, show_macos, show_linux) VALUES (1, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET hide_redistributables = excluded.hide_redistributables, hide_unknown_depots = excluded.hide_unknown_depots, hide_unused_depots = excluded.hide_unused_depots, show_windows = excluded.show_windows, show_macos = excluded.show_macos, show_linux = excluded.show_linux',
+        'INSERT INTO settings (id, automatic_manifest_acquisition, hide_redistributables, hide_unknown_depots, hide_unused_depots, show_windows, show_macos, show_linux) VALUES (1, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET automatic_manifest_acquisition = excluded.automatic_manifest_acquisition, hide_redistributables = excluded.hide_redistributables, hide_unknown_depots = excluded.hide_unknown_depots, hide_unused_depots = excluded.hide_unused_depots, show_windows = excluded.show_windows, show_macos = excluded.show_macos, show_linux = excluded.show_linux',
       )
       .run(
+        Number(settings.automaticManifestAcquisition),
         Number(settings.hideRedistributables),
         Number(settings.hideUnknownDepots),
         Number(settings.hideUnusedDepots),
@@ -134,10 +137,11 @@ export class KalamataDatabase {
   private readSettings(): AppSettings {
     const row = this.sqlite
       .query<SettingsRow, []>(
-        'SELECT hide_redistributables AS hideRedistributables, hide_unknown_depots AS hideUnknownDepots, hide_unused_depots AS hideUnusedDepots, show_windows AS showWindows, show_macos AS showMacos, show_linux AS showLinux FROM settings WHERE id = 1',
+        'SELECT automatic_manifest_acquisition AS automaticManifestAcquisition, hide_redistributables AS hideRedistributables, hide_unknown_depots AS hideUnknownDepots, hide_unused_depots AS hideUnusedDepots, show_windows AS showWindows, show_macos AS showMacos, show_linux AS showLinux FROM settings WHERE id = 1',
       )
       .get()!
     return {
+      automaticManifestAcquisition: Boolean(row.automaticManifestAcquisition),
       hideRedistributables: Boolean(row.hideRedistributables),
       hideUnknownDepots: Boolean(row.hideUnknownDepots),
       hideUnusedDepots: Boolean(row.hideUnusedDepots),
@@ -150,6 +154,8 @@ export class KalamataDatabase {
   }
 
   private validateSettings(settings: AppSettings): void {
+    if (typeof settings.automaticManifestAcquisition !== 'boolean')
+      throw new Error('automaticManifestAcquisition must be a boolean')
     if (typeof settings.hideRedistributables !== 'boolean')
       throw new Error('hideRedistributables must be a boolean')
     if (typeof settings.hideUnknownDepots !== 'boolean')

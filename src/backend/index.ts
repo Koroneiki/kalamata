@@ -20,6 +20,10 @@ export class SteamService {
   readonly #session: SteamSession
   readonly #downloads: DepotDownloadService
   readonly #products: ProductInfoService
+  readonly #manifestAcquisitions = new Map<
+    KalamataDatabase,
+    ManifestAcquisitionService
+  >()
 
   constructor() {
     this.#session = new SteamSession()
@@ -56,8 +60,19 @@ export class SteamService {
     database: KalamataDatabase,
     request: AcquireManifestRequest,
   ): Promise<AcquiredManifest> {
-    return new ManifestAcquisitionService(this.#session, database).acquire(
-      request,
+    let service = this.#manifestAcquisitions.get(database)
+    if (!service) {
+      service = new ManifestAcquisitionService(this.#session, database)
+      this.#manifestAcquisitions.set(database, service)
+    }
+    return service.acquire(request)
+  }
+
+  async shutdownManifestAcquisitions(): Promise<void> {
+    await Promise.all(
+      [...this.#manifestAcquisitions.values()].map((service) =>
+        service.shutdown(),
+      ),
     )
   }
 

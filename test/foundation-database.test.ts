@@ -342,12 +342,14 @@ describe('foundation database', () => {
     let db = await openDatabase()
     expect(
       db.getSettings({
+        automaticManifestAcquisition: true,
         hideRedistributables: true,
         hideUnknownDepots: true,
         hideUnusedDepots: true,
         platforms: ['macos'],
       }),
     ).toEqual({
+      automaticManifestAcquisition: true,
       hideRedistributables: true,
       hideUnknownDepots: true,
       hideUnusedDepots: true,
@@ -356,12 +358,14 @@ describe('foundation database', () => {
 
     expect(
       db.updateSettings({
+        automaticManifestAcquisition: false,
         hideRedistributables: false,
         hideUnknownDepots: false,
         hideUnusedDepots: false,
         platforms: ['windows', 'linux'],
       }),
     ).toEqual({
+      automaticManifestAcquisition: false,
       hideRedistributables: false,
       hideUnknownDepots: false,
       hideUnusedDepots: false,
@@ -377,12 +381,14 @@ describe('foundation database', () => {
     database = db
     expect(
       db.getSettings({
+        automaticManifestAcquisition: true,
         hideRedistributables: true,
         hideUnknownDepots: true,
         hideUnusedDepots: true,
         platforms: ['macos'],
       }),
     ).toEqual({
+      automaticManifestAcquisition: false,
       hideRedistributables: false,
       hideUnknownDepots: false,
       hideUnusedDepots: false,
@@ -408,12 +414,14 @@ describe('foundation database', () => {
 
     expect(
       db.getSettings({
+        automaticManifestAcquisition: true,
         hideRedistributables: true,
         hideUnknownDepots: true,
         hideUnusedDepots: true,
         platforms: ['macos'],
       }),
     ).toEqual({
+      automaticManifestAcquisition: true,
       hideRedistributables: false,
       hideUnknownDepots: true,
       hideUnusedDepots: false,

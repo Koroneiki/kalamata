@@ -22,15 +22,16 @@ const platformLabels: Record<DepotPlatform, string> = {
   linux: 'Linux',
 }
 
-async function persist(next: AppSettings) {
+async function persist(next: AppSettings, optimistic = true) {
   const previous = settings.value
   mutationError.value = ''
-  queryCache.setQueryData(settingsQueryKey, next)
+  if (optimistic) queryCache.setQueryData(settingsQueryKey, next)
   try {
     const saved = await updateMutation.mutateAsync(next)
     queryCache.setQueryData(settingsQueryKey, saved)
   } catch (error) {
-    if (previous) queryCache.setQueryData(settingsQueryKey, previous)
+    if (optimistic && previous)
+      queryCache.setQueryData(settingsQueryKey, previous)
     mutationError.value = error instanceof Error ? error.message : String(error)
   }
 }
@@ -49,6 +50,15 @@ function setPlatform(platform: DepotPlatform, active: boolean) {
 function setHideRedistributables(value: boolean | 'indeterminate') {
   if (!settings.value || typeof value !== 'boolean') return
   void persist({ ...settings.value, hideRedistributables: value })
+}
+
+function setAutomaticManifestAcquisition(value: boolean | 'indeterminate') {
+  if (!settings.value || typeof value !== 'boolean') return
+  // Cache updates trigger acquisition, so publish this only after persistence succeeds.
+  void persist(
+    { ...settings.value, automaticManifestAcquisition: value },
+    false,
+  )
 }
 
 function setHideUnknownDepots(value: boolean | 'indeterminate') {
@@ -106,6 +116,23 @@ function setHideUnusedDepots(value: boolean | 'indeterminate') {
         </div>
       </div>
 
+      <div
+        class="bg-muted/45 border-border flex items-center justify-between gap-6 border-t px-4 py-3.5 sm:px-5"
+      >
+        <Label for="automatic-manifest-acquisition" class="text-sm">
+          Automatically acquire latest manifests
+        </Label>
+        <Skeleton v-if="!settings" class="size-4" />
+        <Checkbox
+          v-else
+          id="automatic-manifest-acquisition"
+          class="border-muted-foreground/70"
+          :model-value="settings.automaticManifestAcquisition"
+          :disabled="updateMutation.isLoading.value"
+          aria-label="Automatically acquire latest manifests"
+          @update:model-value="setAutomaticManifestAcquisition"
+        />
+      </div>
       <div
         class="bg-muted/45 border-border flex items-center justify-between gap-6 border-t px-4 py-3.5 sm:px-5"
       >

@@ -176,6 +176,78 @@ describe('ManifestAcquisitionService', () => {
       ).toBe(true)
     }
   })
+
+  test('shares one acquisition for duplicate concurrent requests', async () => {
+    const fetcher = mock(async () => new Response('invalid'))
+    const service = new ManifestAcquisitionService(
+      {
+        getClient: async () => {
+          throw new Error('should not connect')
+        },
+      },
+      await openDatabase(),
+      fetcher,
+    )
+
+    const requests = [
+      service.acquire(MANIFESTS[0]),
+      service.acquire(MANIFESTS[0]),
+    ]
+
+    await Promise.all(
+      requests.map((request) => expect(request).rejects.toThrow('invalid')),
+    )
+    expect(fetcher).toHaveBeenCalledTimes(1)
+  })
+
+  test('serializes request-code lookups for independent manifests', async () => {
+    let activeLookups = 0
+    let maximumActiveLookups = 0
+    const fetcher = mock(async (input: string | URL | Request) => {
+      if (String(input).startsWith('https://manifest.opensteamtool.com/')) {
+        activeLookups += 1
+        maximumActiveLookups = Math.max(maximumActiveLookups, activeLookups)
+        await Bun.sleep(10)
+        activeLookups -= 1
+        return new Response('invalid')
+      }
+      throw new Error('should not reach Steam CDN')
+    })
+    const service = new ManifestAcquisitionService(
+      {
+        getClient: async () => {
+          throw new Error('should not connect')
+        },
+      },
+      await openDatabase(),
+      fetcher,
+    )
+
+    await Promise.allSettled(
+      MANIFESTS.map((request) => service.acquire(request)),
+    )
+
+    expect(maximumActiveLookups).toBe(1)
+    expect(fetcher).toHaveBeenCalledTimes(MANIFESTS.length)
+  })
+
+  test('cancels pending acquisition during shutdown', async () => {
+    const service = new ManifestAcquisitionService(
+      {
+        getClient: async () => {
+          throw new Error('should not connect')
+        },
+      },
+      await openDatabase(),
+      () => new Promise(() => {}),
+    )
+    const acquisition = service.acquire(MANIFESTS[0])
+
+    await service.shutdown()
+
+    await expect(acquisition).rejects.toThrow('cancelled')
+    await expect(service.acquire(MANIFESTS[0])).rejects.toThrow('shutting down')
+  })
 })
 
 function createService(
@@ -212,7 +284,7 @@ function mockFetcher(): (
 ) => Promise<Response> {
   return mock(async (input: string | URL | Request) => {
     const url = String(input)
-    if (url.startsWith('http://gmrc.wudrm.com/manifest/')) {
+    if (url.startsWith('https://manifest.opensteamtool.com/')) {
       return new Response('10907614392502571426')
     }
     const manifestId = /\/manifest\/(\d+)\/5\//u.exec(url)?.[1]

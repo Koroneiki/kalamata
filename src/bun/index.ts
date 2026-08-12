@@ -41,6 +41,7 @@ const systemPlatform: DepotPlatform =
       ? 'windows'
       : 'linux'
 const defaultSettings: AppSettings = {
+  automaticManifestAcquisition: true,
   hideRedistributables: true,
   hideUnknownDepots: true,
   hideUnusedDepots: true,
@@ -140,6 +141,7 @@ Electrobun.events.on(
       try {
         await startup.catch(() => {})
         await queue.shutdown()
+        await steam.shutdownManifestAcquisitions()
       } finally {
         steam.dispose()
         try {

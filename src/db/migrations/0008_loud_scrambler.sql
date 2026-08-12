@@ -1,0 +1,1 @@
+ALTER TABLE `settings` ADD `automatic_manifest_acquisition` integer DEFAULT true NOT NULL;

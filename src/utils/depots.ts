@@ -49,14 +49,22 @@ export function filterDepots(
       return false
     if (hideUnknownDepots && depot.group === 'Unknown') return false
     if (hideUnusedDepots && depot.group === 'Unused') return false
-    if (!depot.platform) return true
-
-    return depot.platform
-      .split(',')
-      .some((platform) =>
-        visiblePlatforms.has(platform.trim().toLowerCase() as DepotPlatform),
-      )
+    return matchesDepotPlatform(depot, visiblePlatforms)
   })
+}
+
+export function matchesDepotPlatform(
+  depot: AppDepot,
+  platforms: ReadonlySet<DepotPlatform> | readonly DepotPlatform[],
+): boolean {
+  if (!depot.platform) return true
+  const visiblePlatforms =
+    platforms instanceof Set ? platforms : new Set(platforms)
+  return depot.platform
+    .split(',')
+    .some((platform) =>
+      visiblePlatforms.has(platform.trim().toLowerCase() as DepotPlatform),
+    )
 }
 
 export function installableDepots(depots: AppDepot[]): EligibleAppDepot[] {

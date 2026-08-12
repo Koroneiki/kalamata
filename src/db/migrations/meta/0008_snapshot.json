@@ -1,0 +1,394 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "id": "59f5d6ae-e144-4b82-bc8a-cfe38bb96940",
+  "prevId": "c96165a3-86c7-4021-8d35-4569ac1839ff",
+  "tables": {
+    "depot_keys": {
+      "name": "depot_keys",
+      "columns": {
+        "depot_id": {
+          "name": "depot_id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "decryption_key": {
+          "name": "decryption_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "depot_keys_depot_id_valid": {
+          "name": "depot_keys_depot_id_valid",
+          "value": "\"depot_keys\".\"depot_id\" > 0 AND \"depot_keys\".\"depot_id\" <= 4294967295"
+        },
+        "depot_keys_decryption_key_valid": {
+          "name": "depot_keys_decryption_key_valid",
+          "value": "length(\"depot_keys\".\"decryption_key\") = 64 AND \"depot_keys\".\"decryption_key\" NOT GLOB '*[^0-9A-Fa-f]*'"
+        }
+      }
+    },
+    "library": {
+      "name": "library",
+      "columns": {
+        "app_id": {
+          "name": "app_id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "install_path": {
+          "name": "install_path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "library_install_path_unique": {
+          "name": "library_install_path_unique",
+          "columns": [
+            "install_path"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "library_app_id_valid": {
+          "name": "library_app_id_valid",
+          "value": "\"library\".\"app_id\" > 0 AND \"library\".\"app_id\" <= 4294967295"
+        }
+      }
+    },
+    "library_depot_installs": {
+      "name": "library_depot_installs",
+      "columns": {
+        "app_id": {
+          "name": "app_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "depot_id": {
+          "name": "depot_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "installed_manifest_id": {
+          "name": "installed_manifest_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "mount_index": {
+          "name": "mount_index",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_app_id": {
+          "name": "owner_app_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "library_depot_installs_mount_index_unique": {
+          "name": "library_depot_installs_mount_index_unique",
+          "columns": [
+            "app_id",
+            "mount_index"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "library_depot_installs_app_id_library_app_id_fk": {
+          "name": "library_depot_installs_app_id_library_app_id_fk",
+          "tableFrom": "library_depot_installs",
+          "tableTo": "library",
+          "columnsFrom": [
+            "app_id"
+          ],
+          "columnsTo": [
+            "app_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "library_depot_installs_app_id_depot_id_pk": {
+          "columns": [
+            "app_id",
+            "depot_id"
+          ],
+          "name": "library_depot_installs_app_id_depot_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "library_depot_installs_depot_id_valid": {
+          "name": "library_depot_installs_depot_id_valid",
+          "value": "\"library_depot_installs\".\"depot_id\" > 0 AND \"library_depot_installs\".\"depot_id\" <= 4294967295"
+        },
+        "library_depot_installs_owner_app_id_valid": {
+          "name": "library_depot_installs_owner_app_id_valid",
+          "value": "\"library_depot_installs\".\"owner_app_id\" IS NULL OR (\"library_depot_installs\".\"owner_app_id\" > 0 AND \"library_depot_installs\".\"owner_app_id\" <= 4294967295)"
+        },
+        "library_depot_installs_mount_index_valid": {
+          "name": "library_depot_installs_mount_index_valid",
+          "value": "\"library_depot_installs\".\"mount_index\" >= 0"
+        },
+        "library_depot_installs_manifest_id_valid": {
+          "name": "library_depot_installs_manifest_id_valid",
+          "value": "\"library_depot_installs\".\"installed_manifest_id\" <> '' AND \"library_depot_installs\".\"installed_manifest_id\" NOT GLOB '*[^0-9]*'"
+        }
+      }
+    },
+    "library_depot_selections": {
+      "name": "library_depot_selections",
+      "columns": {
+        "app_id": {
+          "name": "app_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "depot_id": {
+          "name": "depot_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "library_depot_selections_app_id_library_app_id_fk": {
+          "name": "library_depot_selections_app_id_library_app_id_fk",
+          "tableFrom": "library_depot_selections",
+          "tableTo": "library",
+          "columnsFrom": [
+            "app_id"
+          ],
+          "columnsTo": [
+            "app_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "library_depot_selections_app_id_depot_id_pk": {
+          "columns": [
+            "app_id",
+            "depot_id"
+          ],
+          "name": "library_depot_selections_app_id_depot_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "library_depot_selections_app_id_valid": {
+          "name": "library_depot_selections_app_id_valid",
+          "value": "\"library_depot_selections\".\"app_id\" > 0 AND \"library_depot_selections\".\"app_id\" <= 4294967295"
+        },
+        "library_depot_selections_depot_id_valid": {
+          "name": "library_depot_selections_depot_id_valid",
+          "value": "\"library_depot_selections\".\"depot_id\" > 0 AND \"library_depot_selections\".\"depot_id\" <= 4294967295"
+        }
+      }
+    },
+    "manifest_files": {
+      "name": "manifest_files",
+      "columns": {
+        "depot_id": {
+          "name": "depot_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "manifest_id": {
+          "name": "manifest_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "relative_path": {
+          "name": "relative_path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "manifest_files_relative_path_unique": {
+          "name": "manifest_files_relative_path_unique",
+          "columns": [
+            "relative_path"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "manifest_files_depot_id_manifest_id_pk": {
+          "columns": [
+            "depot_id",
+            "manifest_id"
+          ],
+          "name": "manifest_files_depot_id_manifest_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "manifest_files_depot_id_valid": {
+          "name": "manifest_files_depot_id_valid",
+          "value": "\"manifest_files\".\"depot_id\" > 0 AND \"manifest_files\".\"depot_id\" <= 4294967295"
+        },
+        "manifest_files_manifest_id_valid": {
+          "name": "manifest_files_manifest_id_valid",
+          "value": "\"manifest_files\".\"manifest_id\" <> '' AND \"manifest_files\".\"manifest_id\" NOT GLOB '*[^0-9]*'"
+        }
+      }
+    },
+    "settings": {
+      "name": "settings",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "automatic_manifest_acquisition": {
+          "name": "automatic_manifest_acquisition",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": true
+        },
+        "hide_redistributables": {
+          "name": "hide_redistributables",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "hide_unknown_depots": {
+          "name": "hide_unknown_depots",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": true
+        },
+        "hide_unused_depots": {
+          "name": "hide_unused_depots",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": true
+        },
+        "show_windows": {
+          "name": "show_windows",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "show_macos": {
+          "name": "show_macos",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "show_linux": {
+          "name": "show_linux",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "settings_singleton": {
+          "name": "settings_singleton",
+          "value": "\"settings\".\"id\" = 1"
+        }
+      }
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "indexes": {}
+  }
+}

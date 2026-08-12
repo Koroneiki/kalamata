@@ -1,4 +1,4 @@
-import { readFile, readdir, realpath, rename } from 'node:fs/promises'
+import { readFile, readdir, realpath, rename, rm } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
 import {
   parseManifest,
@@ -49,8 +49,9 @@ export async function ingestManifestFile(
   database: KalamataDatabase,
   incomingPath: string,
   now = Date.now(),
+  signal?: AbortSignal,
 ): Promise<ManifestRow> {
-  const contents = await readFile(incomingPath)
+  const contents = await readFile(incomingPath, { signal })
   const manifest = parseManifestEnvelope(contents)
   validateManifestEnvelope(manifest, manifest.depot_id, manifest.gid_manifest)
 
@@ -63,7 +64,15 @@ export async function ingestManifestFile(
     ),
   }
   const destination = join(database.dataRoot, row.relativePath)
-  if (incomingPath !== destination) await rename(incomingPath, destination)
+  signal?.throwIfAborted()
+  if (incomingPath !== destination) {
+    await rename(incomingPath, destination)
+    if (signal?.aborted) {
+      // A cancelled acquisition must not leave an unregistered managed file.
+      await rm(destination, { force: true })
+      signal.throwIfAborted()
+    }
+  }
   database.sqlite
     .query(
       'INSERT INTO manifest_files (depot_id, manifest_id, relative_path, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(depot_id, manifest_id) DO UPDATE SET relative_path = excluded.relative_path',

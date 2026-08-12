@@ -11,6 +11,7 @@ export interface AppSummary {
 export type DepotPlatform = 'windows' | 'macos' | 'linux'
 
 export interface AppSettings {
+  automaticManifestAcquisition: boolean
   hideRedistributables: boolean
   hideUnknownDepots: boolean
   hideUnusedDepots: boolean

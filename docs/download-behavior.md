@@ -18,7 +18,7 @@ Kalamata follows documented SteamPipe behavior where Valve publishes it and defi
 | Pause               | Stops pre-commit work after in-flight writes checkpoint, preserves staging, and survives restart.                                                                                                                              |
 | Resume              | Trusts a valid completion ledger and continues missing chunks without rereading completed staged chunks.                                                                                                                       |
 | Cancel              | Deletes pre-commit staging and resumable state. Commit-ready work cannot be cancelled.                                                                                                                                         |
-| Shutdown            | Rejects new work, preserves and awaits pre-commit staging, and waits for an in-progress commit without aborting it.                                                                                                            |
+| Shutdown            | Rejects new application operations, preserves and awaits pre-commit staging, and waits for an in-progress commit without aborting it.                                                                                          |
 | Restart             | Explicit pause remains paused. Active staging resumes automatically. A missing or malformed pre-commit ledger is discarded instead of scanning staged bytes.                                                                   |
 | Commit interruption | Commit actions roll forward idempotently. An already moved live file is accepted only after size and SHA-1 verification. If correctness cannot be proven, Kalamata exposes Repair and keeps the rest of the library available. |
 
@@ -26,7 +26,9 @@ Kalamata does not automatically roll back an interrupted commit. Valve does not 
 
 ## Manifest Acquisition
 
-Kalamata sends the displayed public manifest ID to `gmrc.wudrm.com` for a request code, then acquires the manifest from Steam CDN through its anonymous session. It validates the container marker and embedded depot and manifest IDs before publishing the file locally. Readable filenames, metadata, and chunk layouts receive full structural validation. A valid managed manifest is not downloaded again; a missing or invalid managed manifest can be replaced. Startup removes registrations whose managed files are missing, but does not import files copied into the manifest directory outside backend ingestion.
+For library apps, loading app details automatically acquires latest missing or invalid Base Game and DLC manifests for the selected platforms by default. Unknown, unused, redistributable, and platform-filtered depots are excluded. The persisted setting can disable this and restore per-depot controls. Request-code lookups are serialized against `manifest.opensteamtool.com`, while subsequent Steam CDN downloads can continue independently. Concurrent requests for the same depot and manifest share one acquisition. Quitting rejects new manifest work and cancels unfinished acquisitions before Steam and database disposal.
+
+Kalamata sends the displayed public manifest ID to `manifest.opensteamtool.com` for a request code, then acquires the manifest from Steam CDN through its anonymous session. It validates the container marker and embedded depot and manifest IDs before publishing the file locally. Readable filenames, metadata, and chunk layouts receive full structural validation. A valid managed manifest is not downloaded again; a missing or invalid managed manifest can be replaced. Startup removes registrations whose managed files are missing, but does not import files copied into the manifest directory outside backend ingestion.
 
 ## Operation Queue
 

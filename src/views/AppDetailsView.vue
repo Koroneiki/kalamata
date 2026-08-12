@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useMutation, useQuery, useQueryCache } from '@pinia/colada'
 import { Download, ImageOff, Plus, ShieldCheck, Trash2 } from '@lucide/vue'
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 import DownloadDepotsDialog from '@/components/forms/DownloadDepotsDialog.vue'
@@ -27,7 +27,7 @@ import type {
   PausedOperationState,
   ResumableOperationState,
 } from '@/types/rpc'
-import { filterDepots } from '@/utils/depots'
+import { filterDepots, matchesDepotPlatform } from '@/utils/depots'
 
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -58,7 +58,8 @@ const removeDialogOpen = ref(false)
 const selectedDepotIds = ref<number[]>([])
 const mutationError = ref('')
 const manifestError = ref('')
-const acquiringDepotId = ref<number | null>(null)
+const acquiringManifests = reactive(new Set<string>())
+const attemptedManifests = new Set<string>()
 const removeError = ref('')
 const operationPanel = ref<{ focusHeading: () => void } | null>(null)
 const loadedAppId = ref<number | null>(null)
@@ -95,7 +96,7 @@ watch(
       if (appChanged) {
         selectedPath.value = app.installPath ?? ''
         manifestError.value = ''
-        acquiringDepotId.value = null
+        attemptedManifests.clear()
       } else if (app.installPath) {
         selectedPath.value = app.installPath
       }
@@ -135,6 +136,13 @@ const visibleDepots = computed(() => {
       )
     : depots
 })
+const acquiringDepotIds = computed(() =>
+  (data.value?.depots ?? [])
+    .filter((depot) =>
+      acquiringManifests.has(manifestKey(data.value!.appId, depot)),
+    )
+    .map(({ depotId }) => depotId),
+)
 
 const releaseDate = computed(() => {
   if (!data.value?.releaseDate) return 'Unavailable'
@@ -376,27 +384,66 @@ async function removeFromLibrary() {
 async function getManifest(depot: AppDepot) {
   if (!depot.manifestId) return
   const targetAppId = appId.value
+  const targetManifestId = depot.manifestId
+  const key = manifestKey(targetAppId, depot)
   manifestError.value = ''
-  acquiringDepotId.value = depot.depotId
+  acquiringManifests.add(key)
   try {
     await manifestMutation.mutateAsync({
-      appId: targetAppId,
+      appId: depot.ownerAppId,
       depotId: depot.depotId,
-      manifestId: depot.manifestId,
+      manifestId: targetManifestId,
     })
     await queryCache.invalidateQueries({
       key: appQueryKeys.details(targetAppId),
       exact: true,
     })
   } catch (error) {
-    if (appId.value === targetAppId) {
+    if (
+      appId.value === targetAppId &&
+      data.value?.depots.some(
+        (current) =>
+          current.depotId === depot.depotId &&
+          current.manifestId === targetManifestId,
+      )
+    ) {
       manifestError.value =
         error instanceof Error ? error.message : String(error)
     }
   } finally {
-    if (appId.value === targetAppId) acquiringDepotId.value = null
+    acquiringManifests.delete(key)
   }
 }
+
+function manifestKey(appId: number, depot: AppDepot) {
+  return `${appId}:${depot.depotId}:${depot.manifestId}`
+}
+
+watch(
+  [
+    () => data.value,
+    () => settings.value?.automaticManifestAcquisition,
+    () => settings.value?.platforms,
+  ],
+  ([app, automatic, platforms]) => {
+    if (!app?.inLibrary || !automatic || !platforms) return
+    for (const depot of app.depots) {
+      if (
+        !depot.eligible ||
+        !depot.manifestId ||
+        depot.manifestStatus === 'ready' ||
+        !matchesDepotPlatform(depot, platforms)
+      )
+        continue
+      const key = manifestKey(app.appId, depot)
+      // Attempt each manifest version once per app view to avoid reactive refetch loops.
+      if (attemptedManifests.has(key)) continue
+      attemptedManifests.add(key)
+      void getManifest(depot)
+    }
+  },
+  { immediate: true },
+)
 
 function handleIconError() {
   iconIndex.value += 1
@@ -613,7 +660,10 @@ async function verifyGameFiles() {
           :selection-pending="
             selectionMutation.isLoading.value || operationBusy
           "
-          :acquiring-depot-id="acquiringDepotId"
+          :acquiring-depot-ids="acquiringDepotIds"
+          :automatic-manifest-acquisition="
+            data.inLibrary && settings?.automaticManifestAcquisition
+          "
           @update:selected-depot-ids="updateSelectedDepots"
           @acquire-manifest="getManifest"
         />

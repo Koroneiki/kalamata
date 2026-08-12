@@ -113,6 +113,11 @@ export const settings = sqliteTable(
   'settings',
   {
     id: integer('id').primaryKey(),
+    automaticManifestAcquisition: integer('automatic_manifest_acquisition', {
+      mode: 'boolean',
+    })
+      .notNull()
+      .default(true),
     hideRedistributables: integer('hide_redistributables', {
       mode: 'boolean',
     }).notNull(),

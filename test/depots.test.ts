@@ -4,6 +4,7 @@ import type { AppDepot, EligibleAppDepot } from '../src/types/rpc.ts'
 import {
   depotBadges,
   filterDepots,
+  matchesDepotPlatform,
   summarizeDepots,
 } from '../src/utils/depots.ts'
 
@@ -128,6 +129,16 @@ test('filters restricted and redistributable depots using settings', () => {
       ({ depotId }) => depotId,
     ),
   ).toEqual([1, 2, 4, 228981])
+})
+
+test('matches depot platforms without selection or install preservation', () => {
+  expect(matchesDepotPlatform(depot(1), ['linux'])).toBe(true)
+  expect(
+    matchesDepotPlatform(depot(2, { platform: 'windows, linux' }), ['linux']),
+  ).toBe(true)
+  expect(
+    matchesDepotPlatform(depot(3, { platform: 'windows' }), ['linux']),
+  ).toBe(false)
 })
 
 test('keeps selected and installed depots visible through every filter', () => {
