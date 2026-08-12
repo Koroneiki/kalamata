@@ -277,12 +277,11 @@ function classifyDepot(
   depotId: number,
   ownedByBase: boolean,
   hasDlcOwner: boolean,
-  oslist: unknown,
+  _oslist: unknown,
   publicManifest: Record<string, unknown>,
 ): DepotGroup {
   if (isSteamworksDepot(depotId)) return 'Steamworks Common Redistributables'
   if (
-    rawEmpty(oslist) &&
     rawEmpty(publicManifest.gid) &&
     rawEmpty(publicManifest.size) &&
     rawEmpty(publicManifest.download)

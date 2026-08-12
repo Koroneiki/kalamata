@@ -310,7 +310,7 @@ test('applies Steamworks then Unused then owner classification precedence', () =
   ])
 })
 
-test('requires all four raw fields to be empty for Unused', () => {
+test('classifies depots without public content as Unused', () => {
   const fields = {
     '600': { config: { oslist: 'bad' }, manifests: { public: {} } },
     '601': { manifests: { public: { gid: 'bad' } } },
@@ -324,8 +324,9 @@ test('requires all four raw fields to be empty for Unused', () => {
   )
   const groups = new Map(depots.map((depot) => [depot.depotId, depot.group]))
 
-  for (const depotId of [600, 601, 602, 603])
+  for (const depotId of [601, 602, 603])
     expect(groups.get(depotId)).toBe('Base Game')
+  expect(groups.get(600)).toBe('Unused')
   expect(groups.get(604)).toBe('Unused')
   expect(groups.get(605)).toBe('Unused')
 })
