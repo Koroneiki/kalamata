@@ -10,8 +10,14 @@ export default {
   build: {
     bun: {
       entrypoint: 'src/bun/index.ts',
+      // Bundling steam-crypto bakes its build-machine __dirname into the PEM lookup.
+      external: ['@doctormckay/steam-crypto'],
     },
     copy: {
+      'node_modules/@doctormckay/steam-crypto':
+        'node_modules/@doctormckay/steam-crypto',
+      // steam-user loads this fallback dynamically, so Bun cannot discover it.
+      'node_modules/lzma': 'node_modules/lzma',
       'dist/index.html': 'views/mainview/index.html',
       'dist/assets': 'views/mainview/assets',
       'dist/decompress-worker': 'bun/decompress-worker',
