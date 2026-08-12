@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { ApplicationTransactionError } from '../../../src/backend/depot/install/transaction/types.ts'
 import type { ReconcileApplicationOptions } from '../../../src/backend/depot/depot-download-service.ts'
 import { DownloadQueueCoordinator } from '../../../src/backend/operations/download-queue.ts'
+import { planApplication } from '../../../src/backend/operations/application-planner.ts'
 import {
   APP_ID,
   DEPOTS,
@@ -65,6 +66,43 @@ test('planning failure is a terminal typed state and does not reject start', asy
   const serialized = JSON.stringify(queue.getOperationState())
   expect(serialized).not.toContain(secret)
   expect(serialized).not.toContain(DEPOTS[0].key)
+})
+
+test('planning reuses manifest resources without reusing occurrence ownership', async () => {
+  const fixture = await setup()
+  await install(fixture, DEPOTS[0])
+  const getManifestRows = mock(
+    fixture.database.getManifestRows.bind(fixture.database),
+  )
+  fixture.database.getManifestRows = getManifestRows
+
+  const plan = await planApplication(
+    {
+      kind: 'repair',
+      appId: APP_ID,
+      installPath: fixture.installPath,
+      fixedDesired: [
+        {
+          depotId: DEPOTS[0].depotId,
+          manifestId: DEPOTS[0].manifestId,
+          mountIndex: 0,
+          ownerAppId: DLC_APP_ID,
+        },
+      ],
+    },
+    { getProductInfoWithDlc: async () => products() },
+    fixture.database,
+    new AbortController().signal,
+    () => {},
+  )
+
+  expect(getManifestRows).toHaveBeenCalledTimes(1)
+  expect(plan.installedDepots).toEqual([
+    expect.objectContaining({ ownerAppId: APP_ID }),
+  ])
+  expect(plan.desiredDepots).toEqual([
+    expect.objectContaining({ ownerAppId: DLC_APP_ID }),
+  ])
 })
 
 test('queueDepotUpdate persists selections and reconciles the returned metadata order', async () => {

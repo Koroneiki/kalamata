@@ -7,10 +7,13 @@ import {
 } from './manifest-utils.ts'
 import type { DepotManifest } from './types.ts'
 
+const END_OF_MANIFEST_MAGIC = 0x32c415ab
+
 export function parseManifest(contents: Buffer, key: Buffer): DepotManifest {
   if (!Buffer.isBuffer(key) || key.length !== 32) {
     throw new Error('Depot key must be a 32-byte Buffer')
   }
+  assertCompleteManifest(contents)
   const manifest = ContentManifest.parse(contents)
   if (manifest.filenames_encrypted) {
     ContentManifest.decryptFilenames(manifest, key)
@@ -19,6 +22,7 @@ export function parseManifest(contents: Buffer, key: Buffer): DepotManifest {
 }
 
 export function parseManifestEnvelope(contents: Buffer): DepotManifest {
+  assertCompleteManifest(contents)
   return ContentManifest.parse(contents)
 }
 
@@ -52,7 +56,7 @@ export function validateManifest(
 ): void {
   validateManifestEnvelope(manifest, depotId, manifestId)
 
-  const filenames = new Set<string>()
+  const filenames = new Map<string, { filename: string; directory: boolean }>()
   for (const file of manifest.files) {
     if (!file || typeof file.filename !== 'string' || !file.filename) {
       throw new Error('Manifest contains a file with no filename')
@@ -63,7 +67,10 @@ export function validateManifest(
     const filenameKey = manifestPathKey(file.filename)
     if (filenames.has(filenameKey))
       throw new Error(`Manifest contains duplicate path ${file.filename}`)
-    filenames.add(filenameKey)
+    filenames.set(filenameKey, {
+      filename: file.filename,
+      directory: Boolean(file.flags & DIRECTORY),
+    })
     if (file.flags & SYMLINK) {
       throw new Error(`Manifest symlinks are not supported: ${file.filename}`)
     }
@@ -122,6 +129,19 @@ export function validateManifest(
     if (previousEnd !== size)
       throw new Error(`Manifest chunks do not exactly cover ${file.filename}`)
   }
+
+  for (const [filenameKey, entry] of filenames) {
+    let separator = filenameKey.lastIndexOf('/')
+    while (separator !== -1) {
+      const parent = filenames.get(filenameKey.slice(0, separator))
+      if (parent && !parent.directory) {
+        throw new Error(
+          `Manifest path ${entry.filename} is nested beneath file ${parent.filename}`,
+        )
+      }
+      separator = filenameKey.lastIndexOf('/', separator - 1)
+    }
+  }
 }
 
 function parseSafeInteger(value: string | number, label: string): number {
@@ -132,4 +152,14 @@ function parseSafeInteger(value: string | number, label: string): number {
   if (!Number.isSafeInteger(parsed) || parsed < 0)
     throw new Error(`Manifest contains an invalid ${label}`)
   return parsed
+}
+
+function assertCompleteManifest(contents: Buffer): void {
+  // steam-user accepts EOF without this marker, including truncated containers.
+  if (
+    contents.length < 4 ||
+    contents.readUint32LE(contents.length - 4) !== END_OF_MANIFEST_MAGIC
+  ) {
+    throw new Error('Manifest is missing the end-of-manifest marker')
+  }
 }

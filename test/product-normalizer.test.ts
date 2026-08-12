@@ -128,7 +128,7 @@ test.skipIf(!(await Bun.file(MANIFEST_FIXTURE_PATH).exists()))(
     depot = selectedDetails.depots[0]!
     expect(depot).toMatchObject({
       manifestStatus: 'ready',
-      keyStatus: 'ready',
+      keyStatus: 'present',
       installStatus: 'not-installed',
       selectable: true,
     })
@@ -137,7 +137,9 @@ test.skipIf(!(await Bun.file(MANIFEST_FIXTURE_PATH).exists()))(
     depot = (await normalizeAppDetails(products(makeProduct()), db)).depots[0]!
     expect(depot).toMatchObject({ installStatus: 'current', selectable: false })
 
-    db.sqlite.query('UPDATE depot_keys SET decryption_key = ?').run('bad')
+    const getDepotKey = db.getDepotKey.bind(db)
+    db.getDepotKey = (depotId) =>
+      depotId === DEPOT_ID ? 'bad' : getDepotKey(depotId)
     depot = (await normalizeAppDetails(products(makeProduct()), db)).depots[0]!
     expect(depot.keyStatus).toBe('invalid')
 

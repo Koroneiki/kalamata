@@ -153,7 +153,7 @@ export async function normalizeAppDetails(
     if (keyText !== null) {
       try {
         key = depotKeyFromHex(keyText)
-        keyStatus = 'ready'
+        keyStatus = 'present'
       } catch {
         keyStatus = 'invalid'
       }
@@ -196,7 +196,7 @@ export async function normalizeAppDetails(
       installStatus,
       selectable:
         manifestStatus === 'ready' &&
-        keyStatus === 'ready' &&
+        keyStatus === 'present' &&
         installStatus !== 'current',
     })
   }
@@ -209,7 +209,7 @@ export async function normalizeAppDetails(
     if (keyText !== null) {
       try {
         key = depotKeyFromHex(keyText)
-        keyStatus = 'ready'
+        keyStatus = 'present'
       } catch {
         keyStatus = 'invalid'
       }

@@ -23,7 +23,7 @@ function depot(
     downloadBytes: '512',
     eligible: true,
     manifestStatus: 'ready',
-    keyStatus: 'ready',
+    keyStatus: 'present',
     installStatus: 'not-installed',
     selectable: true,
     ...overrides,

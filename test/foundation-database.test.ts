@@ -132,6 +132,35 @@ describe('foundation database', () => {
     expect(db.sqlite.query('PRAGMA foreign_key_check').all()).toEqual([])
   })
 
+  test('preserves valid depot keys and removes invalid keys during upgrade', async () => {
+    let db = await openDatabaseAtMigration(6)
+    const key = 'AB'.repeat(32)
+    db.sqlite
+      .query(
+        'INSERT INTO depot_keys (depot_id, decryption_key, created_at) VALUES (?, ?, ?), (?, ?, ?)',
+      )
+      .run(20, key, 1000, 21, 'bad', 2000)
+    db.close()
+    database = undefined
+
+    db = await KalamataDatabase.open(
+      root!,
+      join(import.meta.dir, '..', 'src', 'db', 'migrations'),
+    )
+    database = db
+
+    expect(db.getDepotKey(20)).toBe(key)
+    expect(db.getDepotKey(21)).toBeNull()
+    expect(
+      db.sqlite
+        .query<{ createdAt: number }, [number]>(
+          'SELECT created_at AS createdAt FROM depot_keys WHERE depot_id = ?',
+        )
+        .get(20),
+    ).toEqual({ createdAt: 1000 })
+    expect(db.sqlite.query('PRAGMA foreign_key_check').all()).toEqual([])
+  })
+
   test('requires a library entry and registered manifests', async () => {
     const db = await openDatabase()
     expect(() => db.recordInstalledDepot(10, root!, 20, '123')).toThrow()
@@ -403,4 +432,10 @@ test('depot keys enforce exact hexadecimal bytes and normalize writes', async ()
   expect(db.getDepotKey(20)).toBe(upper.toLowerCase())
   expect(depotKeyFromHex(upper)).toHaveLength(32)
   expect(() => db.setDepotKey(20, 'ab')).toThrow('64 hexadecimal')
+  const insert = db.sqlite.query(
+    'INSERT INTO depot_keys (depot_id, decryption_key, created_at) VALUES (?, ?, ?)',
+  )
+  expect(() => insert.run(21, 'ab', 0)).toThrow()
+  expect(() => insert.run(21, `${'ab'.repeat(31)}ag`, 0)).toThrow()
+  expect(() => insert.run(21, upper, 0)).not.toThrow()
 })

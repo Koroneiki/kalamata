@@ -3,17 +3,13 @@ import { createHash } from 'node:crypto'
 import { chmod, lstat, mkdir, open, stat } from 'node:fs/promises'
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { CONFIG_DIRECTORY } from './internal-paths.ts'
-import { normalizeManifestSeparators } from '../manifests/manifest-utils.ts'
+import { canonicalManifestPath } from '../manifests/manifest-utils.ts'
 import type { ManifestChunk, ManifestFile } from '../manifests/types.ts'
 
 const EXECUTABLE = 32
 
 export function resolveManifestPath(root: string, filename: string): string {
-  if (!filename || filename.includes('\0') || isAbsolute(filename)) {
-    throw new Error(`Unsafe manifest path: ${filename}`)
-  }
-
-  const normalized = normalizeManifestSeparators(filename)
+  const normalized = canonicalManifestPath(filename)
   const outputRoot = resolve(root)
   const outputPath = resolve(outputRoot, normalized)
   const fromRoot = relative(outputRoot, outputPath)

@@ -66,7 +66,13 @@ export const depotKeys = sqliteTable(
     decryptionKey: text('decryption_key').notNull(),
     createdAt: integer('created_at').notNull(),
   },
-  (table) => [check('depot_keys_depot_id_valid', validId(table.depotId))],
+  (table) => [
+    check('depot_keys_depot_id_valid', validId(table.depotId)),
+    check(
+      'depot_keys_decryption_key_valid',
+      sql`length(${table.decryptionKey}) = 64 AND ${table.decryptionKey} NOT GLOB '*[^0-9A-Fa-f]*'`,
+    ),
+  ],
 )
 
 export const libraryDepotInstalls = sqliteTable(

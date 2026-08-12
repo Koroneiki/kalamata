@@ -26,7 +26,7 @@ Kalamata does not automatically roll back an interrupted commit. Valve does not 
 
 ## Manifest Acquisition
 
-Kalamata sends the displayed public manifest ID to `gmrc.wudrm.com` for a request code, then acquires the manifest from Steam CDN through its anonymous session. It validates the embedded depot and manifest IDs before publishing the file locally. A valid managed manifest is not downloaded again; a missing or invalid managed manifest can be replaced. Startup removes registrations whose managed files are missing, but does not import files copied into the manifest directory outside backend ingestion.
+Kalamata sends the displayed public manifest ID to `gmrc.wudrm.com` for a request code, then acquires the manifest from Steam CDN through its anonymous session. It validates the container marker and embedded depot and manifest IDs before publishing the file locally. Readable filenames, metadata, and chunk layouts receive full structural validation. A valid managed manifest is not downloaded again; a missing or invalid managed manifest can be replaced. Startup removes registrations whose managed files are missing, but does not import files copied into the manifest directory outside backend ingestion.
 
 ## Operation Queue
 

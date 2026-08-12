@@ -117,7 +117,9 @@ export async function validateManagedManifest(
   const manifest: DepotManifest = key
     ? parseManifest(contents, key)
     : parseManifestEnvelope(contents)
-  if (key) validateManifest(manifest, depotId, manifestId)
+  // Encrypted filenames prevent structural validation until a key is available.
+  if (key || !manifest.filenames_encrypted)
+    validateManifest(manifest, depotId, manifestId)
   else validateManifestEnvelope(manifest, depotId, manifestId)
   return path
 }

@@ -76,6 +76,11 @@ export async function planApplication(
   const metadata = new Map(publicDepots.map((depot) => [depot.depotId, depot]))
   const metadataOrder = publicDepots.map(({ depotId }) => depotId)
   const requested = new Set(request.requestedDepotIds ?? [])
+  // Physical resources are shared; ownership remains specific to each occurrence.
+  const resources = new Map<
+    string,
+    Promise<Omit<ApplicationDepotInput, 'ownerAppId'>>
+  >()
   const installedDepots = await Promise.all(
     installedRows.map((row) =>
       planDepot(
@@ -87,6 +92,7 @@ export async function planApplication(
           metadata.get(row.depotId)?.ownerAppId ??
           request.appId,
         database,
+        resources,
       ),
     ),
   )
@@ -158,6 +164,7 @@ export async function planApplication(
           metadata.get(depotId)?.ownerAppId ??
           request.appId,
         database,
+        resources,
       )
     }),
   )
@@ -172,6 +179,7 @@ async function planDepot(
   signal: AbortSignal,
   fallbackOwnerAppId: number,
   database: KalamataDatabase,
+  resources: Map<string, Promise<Omit<ApplicationDepotInput, 'ownerAppId'>>>,
 ): Promise<ApplicationDepotInput> {
   signal.throwIfAborted()
   const depot = metadata.get(depotId)
@@ -180,6 +188,23 @@ async function planDepot(
       'planning',
       `Depot ${depotId} is not eligible for this application`,
     )
+  const resourceKey = `${depotId}:${manifestId}`
+  let resource = resources.get(resourceKey)
+  if (!resource) {
+    resource = loadDepotResource(depotId, manifestId, database)
+    resources.set(resourceKey, resource)
+  }
+  return {
+    ...(await resource),
+    ownerAppId: depot?.ownerAppId ?? fallbackOwnerAppId,
+  }
+}
+
+async function loadDepotResource(
+  depotId: number,
+  manifestId: string,
+  database: KalamataDatabase,
+): Promise<Omit<ApplicationDepotInput, 'ownerAppId'>> {
   const row = database
     .getManifestRows(depotId)
     .find((candidate) => candidate.manifestId === manifestId)
@@ -189,29 +214,21 @@ async function planDepot(
       'unavailable-resource',
       `Depot ${depotId} requires a manually supplied manifest and key`,
     )
-  let depotKey: Buffer
-  let manifestPath: string
   try {
-    depotKey = depotKeyFromHex(keyText)
-    manifestPath = await validateManagedManifest(
+    const depotKey = depotKeyFromHex(keyText)
+    const manifestPath = await validateManagedManifest(
       database.dataRoot,
       depotId,
       manifestId,
       row.relativePath,
       depotKey,
     )
+    return { depotId, manifestId, manifestPath, depotKey }
   } catch (error) {
     throw new ApplicationTransactionError(
       'unavailable-resource',
       `Depot ${depotId} manifest or key is invalid`,
       { cause: error },
     )
-  }
-  return {
-    depotId,
-    ownerAppId: depot?.ownerAppId ?? fallbackOwnerAppId,
-    manifestId,
-    manifestPath,
-    depotKey,
   }
 }

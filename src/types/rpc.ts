@@ -41,7 +41,7 @@ export interface EligibleAppDepot extends AppDepotBase {
   eligible: true
   group: 'Base Game' | 'DLC'
   manifestStatus: 'ready' | 'missing' | 'outdated' | 'invalid'
-  keyStatus: 'ready' | 'missing' | 'invalid'
+  keyStatus: 'present' | 'missing' | 'invalid'
   installStatus: 'not-installed' | 'current' | 'outdated'
   selectable: boolean
 }

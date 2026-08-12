@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
   parseManifest,
+  parseManifestEnvelope,
   validateManifest,
 } from '../src/backend/depot/manifests/manifest-codec.ts'
 import type { DepotManifest } from '../src/backend/depot/manifests/types.ts'
@@ -66,6 +67,47 @@ test('rejects manifest paths that differ only by separators', () => {
 
   expect(() => validateManifest(manifest, 20)).toThrow('duplicate path')
 })
+
+test('rejects canonical path collisions and unsafe paths', () => {
+  for (const [left, right] of [
+    ['a/../file.bin', 'file.bin'],
+    ['a/./file.bin', 'a/file.bin'],
+    ['a//file.bin', 'a/file.bin'],
+  ]) {
+    const manifest = basicManifest()
+    manifest.files[0]!.filename = left
+    manifest.files.push({ ...manifest.files[0]!, filename: right })
+    expect(() => validateManifest(manifest, 20)).toThrow('duplicate path')
+  }
+
+  for (const filename of ['../file.bin', '/file.bin', 'C:\\file.bin']) {
+    const manifest = basicManifest()
+    manifest.files[0]!.filename = filename
+    expect(() => validateManifest(manifest, 20)).toThrow(/Unsafe|escapes/u)
+  }
+
+  const internal = basicManifest()
+  internal.files[0]!.filename = '.Kalamata/state'
+  expect(() => validateManifest(internal, 20)).toThrow('internal state')
+})
+
+test('rejects entries nested beneath a regular file', () => {
+  const manifest = basicManifest()
+  manifest.files[0]!.filename = 'file'
+  manifest.files.push({ ...manifest.files[0]!, filename: 'file/nested.bin' })
+
+  expect(() => validateManifest(manifest, 20)).toThrow('nested beneath file')
+})
+
+test.skipIf(!(await Bun.file(fixturePath).exists()))(
+  'rejects a manifest without its end marker',
+  async () => {
+    const contents = await readFile(fixturePath)
+    expect(() => parseManifestEnvelope(contents.subarray(0, -4))).toThrow(
+      'end-of-manifest marker',
+    )
+  },
+)
 
 function basicManifest(): DepotManifest {
   return {

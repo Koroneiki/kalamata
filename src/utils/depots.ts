@@ -90,7 +90,7 @@ export function depotBadges(depot: AppDepot): DepotBadgeItem[] {
       variant: depot.manifestStatus === 'invalid' ? 'destructive' : 'outline',
     })
   }
-  if (depot.keyStatus !== 'ready') {
+  if (depot.keyStatus !== 'present') {
     badges.push({
       label: `Key ${depot.keyStatus}`,
       variant: depot.keyStatus === 'invalid' ? 'destructive' : 'outline',
@@ -123,7 +123,7 @@ export function summarizeDepots(
     sizeBytes,
     missing: depots.some(
       (depot) =>
-        depot.manifestStatus !== 'ready' || depot.keyStatus !== 'ready',
+        depot.manifestStatus !== 'ready' || depot.keyStatus !== 'present',
     ),
   }
 }

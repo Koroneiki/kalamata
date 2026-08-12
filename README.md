@@ -70,16 +70,16 @@ Mutable data is stored beneath Electrobun's `Utils.paths.userData` directory. Th
 - Manifest filename: `<depotId>_<manifestId>.manifest`
 - Stored manifest path: `manifest-files/<depotId>_<manifestId>.manifest`
 
-Public manifests can be acquired from their depot row in the app details screen. Acquisition sends the public manifest ID to `gmrc.wudrm.com` to obtain the request code required for the subsequent Steam CDN request. Kalamata validates the downloaded manifest's embedded depot and manifest IDs before publishing it under the managed filename. A valid managed manifest is retained; a missing or invalid managed manifest can be downloaded again and replaced. At startup, database rows whose managed files are missing are removed, while files that were copied into the directory without backend ingestion are not imported.
+Public manifests can be acquired from their depot row in the app details screen. Acquisition sends the public manifest ID to `gmrc.wudrm.com` to obtain the request code required for the subsequent Steam CDN request. Kalamata validates the downloaded manifest's container marker and embedded depot and manifest IDs before publishing it under the managed filename. When filenames are readable, it also validates their paths, metadata, and chunk layout. A valid managed manifest is retained; a missing or invalid managed manifest can be downloaded again and replaced. At startup, database rows whose managed files are missing are removed, while files that were copied into the directory without backend ingestion are not imported.
 
 Depot keys still require local seeding. Start Kalamata once so pending migrations create the database, then close the app and back up `kalamata.db` before editing it:
 
 ```sql
 INSERT INTO depot_keys (depot_id, decryption_key, created_at)
-VALUES (2379781, '<64 lowercase hexadecimal characters>', unixepoch('subsec') * 1000);
+VALUES (2379781, '<64 hexadecimal characters>', unixepoch('subsec') * 1000);
 ```
 
-Replace the example ID and value with the key matching the depot. Kalamata validates the managed manifest, depot ID, manifest ID, and key before use, and compares the manifest ID with Steam's current public manifest. An older manifest remains unavailable as `outdated`; do not change the database to bypass that check. Do not seed `library` or `library_depot_installs`: the first successful depot creates those records transactionally.
+Replace the example ID and value with the key matching the depot. Kalamata validates the key format and uses it to decrypt and validate encrypted manifest filenames when available. A key cannot be conclusively verified from a manifest with unencrypted filenames; downloaded chunks are decrypted and SHA-1 checked before use. Kalamata also compares the manifest ID with Steam's current public manifest. An older manifest remains unavailable as `outdated`; do not change the database to bypass that check. Do not seed `library` or `library_depot_installs`: the first successful depot creates those records transactionally.
 
 Generated migrations are bundled with packaged builds and are applied before the main window opens. A packaged launch with a fresh channel data directory must create `kalamata.db`, `manifest-files/`, and the four foundation tables without relying on the working directory.
 

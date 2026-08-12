@@ -42,12 +42,32 @@ export class DepotDownloadService {
   loadApplicationDepots(
     inputs: ApplicationDepotInput[],
   ): Promise<InstalledApplicationDepot[]> {
+    // Repeated identities may have different owners, but must use one path and key.
+    const manifests = new Map<
+      string,
+      { input: ApplicationDepotInput; manifest: Promise<DepotManifest> }
+    >()
     return Promise.all(
-      inputs.map(async (input) => ({
-        depotId: input.depotId,
-        ownerAppId: input.ownerAppId,
-        manifest: await loadApplicationManifest(input),
-      })),
+      inputs.map(async (input) => {
+        const key = `${input.depotId}:${input.manifestId}`
+        let loaded = manifests.get(key)
+        if (loaded) {
+          if (
+            loaded.input.manifestPath !== input.manifestPath ||
+            !loaded.input.depotKey.equals(input.depotKey)
+          ) {
+            throw new Error(`Conflicting inputs for depot ${input.depotId}`)
+          }
+        } else {
+          loaded = { input, manifest: loadApplicationManifest(input) }
+          manifests.set(key, loaded)
+        }
+        return {
+          depotId: input.depotId,
+          ownerAppId: input.ownerAppId,
+          manifest: await loaded.manifest,
+        }
+      }),
     )
   }
 
@@ -179,9 +199,7 @@ async function loadApplicationManifest(
 ): Promise<DepotManifest> {
   const contents = await readFile(input.manifestPath)
   const manifest = parseManifest(contents, Buffer.from(input.depotKey))
-  validateManifest(manifest, input.depotId)
-  if (manifest.gid_manifest !== input.manifestId)
-    throw new Error(`Depot ${input.depotId} manifest identity changed`)
+  validateManifest(manifest, input.depotId, input.manifestId)
   return manifest
 }
 
