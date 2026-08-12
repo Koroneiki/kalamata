@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test'
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ManifestAcquisitionService } from '../src/backend/depot/manifests/manifest-acquisition-service.ts'
@@ -22,27 +22,49 @@ afterEach(async () => {
 })
 
 describe('ManifestAcquisitionService', () => {
-  test('rejects an already-managed manifest before network access', async () => {
+  test('rejects a valid managed manifest before network access', async () => {
     const request = MANIFESTS[0]
     const db = await openDatabase()
-    db.addManifest(request.depotId, request.manifestId)
+    const path = db.addManifest(request.depotId, request.manifestId)
+    await writeFile(join(root!, path), await fixtureContents(request))
     const getClient = mock(async () => {
       throw new Error('should not connect')
     })
     const fetcher = mock(async () => {
       throw new Error('should not fetch')
     })
-    const service = new ManifestAcquisitionService(
-      { getClient },
-      db,
-      fetcher,
-    )
+    const service = new ManifestAcquisitionService({ getClient }, db, fetcher)
 
     await expect(service.acquire(request)).rejects.toThrow(
       'Manifest is already managed',
     )
     expect(fetcher).not.toHaveBeenCalled()
     expect(getClient).not.toHaveBeenCalled()
+  })
+
+  test('replaces an invalid managed manifest', async () => {
+    const request = MANIFESTS[0]
+    const fixture = await fixtureContents(request)
+    const db = await openDatabase()
+    const path = db.addManifest(request.depotId, request.manifestId)
+    await writeFile(join(root!, path), 'invalid')
+    const service = createService(db, mockFetcher(), async () => fixture)
+
+    await expect(service.acquire(request)).resolves.toEqual({
+      depotId: request.depotId,
+      manifestId: request.manifestId,
+      relativePath: path,
+    })
+    expect((await readFile(join(root!, path))).toString('hex')).toBe(
+      fixture.toString('hex'),
+    )
+    expect(db.getManifestRows(request.depotId)).toEqual([
+      {
+        depotId: request.depotId,
+        manifestId: request.manifestId,
+        relativePath: path,
+      },
+    ])
   })
 
   test('rejects a malformed request code before connecting to Steam', async () => {

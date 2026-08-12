@@ -7,3 +7,15 @@ export function getAppSummary(appId: number) {
 export function getAppDetails(appId: number) {
   return electroview.rpc!.request.getAppDetails({ appId })
 }
+
+export function acquireManifest(
+  appId: number,
+  depotId: number,
+  manifestId: string,
+) {
+  return electroview.rpc!.request.acquireManifest({
+    appId,
+    depotId,
+    manifestId,
+  })
+}

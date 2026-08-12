@@ -24,6 +24,10 @@ Kalamata follows documented SteamPipe behavior where Valve publishes it and defi
 
 Kalamata does not automatically roll back an interrupted commit. Valve does not document Steam client rollback or commit-recovery internals, so Repair is the explicit fallback.
 
+## Manifest Acquisition
+
+Kalamata sends the displayed public manifest ID to `gmrc.wudrm.com` for a request code, then acquires the manifest from Steam CDN through its anonymous session. It validates the embedded depot and manifest IDs before publishing the file locally. A valid managed manifest is not downloaded again; a missing or invalid managed manifest can be replaced. Startup removes registrations whose managed files are missing, but does not import files copied into the manifest directory outside backend ingestion.
+
 ## Operation Queue
 
 Kalamata runs one active, paused, or resumable application operation at a time. A repair requirement blocks only its affected application, so other applications remain available. Multiple repair requirements are retained and exposed one at a time when no operation occupies the queue.

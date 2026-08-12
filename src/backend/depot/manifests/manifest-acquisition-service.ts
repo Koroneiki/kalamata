@@ -2,8 +2,15 @@ import { randomUUID } from 'node:crypto'
 import { rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { KalamataDatabase } from '../../../db/database.ts'
-import { ingestManifestFile } from '../../../db/manifest-files.ts'
-import { validateId, validateManifestId } from '../../../db/validation.ts'
+import {
+  ingestManifestFile,
+  validateManagedManifest,
+} from '../../../db/manifest-files.ts'
+import {
+  depotKeyFromHex,
+  validateId,
+  validateManifestId,
+} from '../../../db/validation.ts'
 import type { SteamSession } from '../../steam/steam-session.ts'
 import type { ContentServer } from '../../steam/types.ts'
 import {
@@ -11,6 +18,7 @@ import {
   validateManifestEnvelope,
 } from './manifest-codec.ts'
 
+// Steam CDN manifest URLs require a code obtained from this external compatibility service.
 const REQUEST_CODE_URL = 'http://gmrc.wudrm.com/manifest'
 const STEAM_HEADERS = {
   Accept: 'text/html,*/*;q=0.9',
@@ -41,16 +49,45 @@ export class ManifestAcquisitionService {
     private readonly session: Pick<SteamSession, 'getClient'>,
     private readonly database: KalamataDatabase,
     private readonly fetcher: Fetcher = fetch,
-    private readonly decompress: (data: Buffer) => Promise<Buffer> =
-      decompressManifest,
+    private readonly decompress: (
+      data: Buffer,
+    ) => Promise<Buffer> = decompressManifest,
   ) {}
 
   async acquire(request: AcquireManifestRequest): Promise<AcquiredManifest> {
     validateId(request.appId, 'appId')
     validateId(request.depotId, 'depotId')
     validateManifestId(request.manifestId)
-    if (this.database.hasManifest(request.depotId, request.manifestId)) {
-      throw new Error('Manifest is already managed')
+    const existing = this.database
+      .getManifestRows(request.depotId)
+      .find(({ manifestId }) => manifestId === request.manifestId)
+    if (existing) {
+      // Use the same validity boundary as app details: keep ready files, but let acquisition repair invalid ones.
+      const keyText = this.database.getDepotKey(request.depotId)
+      let key: Buffer | undefined
+      if (keyText !== null) {
+        try {
+          key = depotKeyFromHex(keyText)
+        } catch {
+          key = undefined
+        }
+      }
+      try {
+        await validateManagedManifest(
+          this.database.dataRoot,
+          request.depotId,
+          request.manifestId,
+          existing.relativePath,
+          key,
+        )
+        throw new Error('Manifest is already managed')
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message === 'Manifest is already managed'
+        )
+          throw error
+      }
     }
 
     const requestCode = await fetchManifestRequestCode(
@@ -97,11 +134,10 @@ export class ManifestAcquisitionService {
 async function decompressManifest(data: Buffer): Promise<Buffer> {
   // The lzma fallback loaded by this module overwrites onmessage under Bun.
   const previousOnMessage = globalThis.onmessage
-  const { default: compression } = await import(
-    'steam-user/components/cdn_compression.js'
-  ).finally(() => {
-    globalThis.onmessage = previousOnMessage
-  })
+  const { default: compression } =
+    await import('steam-user/components/cdn_compression.js').finally(() => {
+      globalThis.onmessage = previousOnMessage
+    })
   return compression.unzip(data)
 }
 

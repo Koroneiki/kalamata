@@ -2,7 +2,7 @@
 
 Kalamata is an Electrobun desktop application. It uses an anonymous Steam session to look up public app metadata by App ID and can install ready public depots from resources managed locally by the user.
 
-Kalamata does not acquire manifests, depot keys, licenses, or account credentials. Manifests and keys must be seeded manually before a depot becomes available in the download UI.
+Kalamata can acquire displayed public-branch manifests using an external request-code service and its anonymous Steam session. Depot keys must still be seeded locally before encrypted depot content becomes available; Kalamata does not acquire keys, licenses, entitlements, or account credentials.
 
 Frontend native operations must go through typed Electrobun RPC. Frontend code must not import backend modules or manage `steam-user` directly. Bun-side Steam operations share one service and session.
 
@@ -61,7 +61,7 @@ is not signed with an Apple Developer ID or notarized. Only bypass the warning
 when the package came directly from the project's private GitHub release. Users
 must be authenticated with GitHub to download release assets.
 
-## Local Data And Manual Seeding
+## Local Data And Depot Keys
 
 Mutable data is stored beneath Electrobun's `Utils.paths.userData` directory. The exact platform path includes the app identifier and release channel.
 
@@ -70,22 +70,21 @@ Mutable data is stored beneath Electrobun's `Utils.paths.userData` directory. Th
 - Manifest filename: `<depotId>_<manifestId>.manifest`
 - Stored manifest path: `manifest-files/<depotId>_<manifestId>.manifest`
 
-Start Kalamata once so pending migrations create the database, then close the app and back up `kalamata.db` before editing it. Copy a manifest into the managed manifest directory using the exact filename above, then insert matching resource rows:
+Public manifests can be acquired from their depot row in the app details screen. Acquisition sends the public manifest ID to `gmrc.wudrm.com` to obtain the request code required for the subsequent Steam CDN request. Kalamata validates the downloaded manifest's embedded depot and manifest IDs before publishing it under the managed filename. A valid managed manifest is retained; a missing or invalid managed manifest can be downloaded again and replaced. At startup, database rows whose managed files are missing are removed, while files that were copied into the directory without backend ingestion are not imported.
+
+Depot keys still require local seeding. Start Kalamata once so pending migrations create the database, then close the app and back up `kalamata.db` before editing it:
 
 ```sql
-INSERT INTO manifest_files (depot_id, manifest_id, relative_path, created_at)
-VALUES (2379781, '3512319404653808464', 'manifest-files/2379781_3512319404653808464.manifest', unixepoch('subsec') * 1000);
-
 INSERT INTO depot_keys (depot_id, decryption_key, created_at)
 VALUES (2379781, '<64 lowercase hexadecimal characters>', unixepoch('subsec') * 1000);
 ```
 
-Replace the example IDs and values with one matching manifest and key. Kalamata validates the file path, depot ID, manifest ID, and key before use, and compares the manifest ID with Steam's current public manifest. An older fixture remains unavailable as `outdated`; do not change the database to bypass that check. Do not seed `library` or `library_depot_installs`: the first successful depot creates those records transactionally.
+Replace the example ID and value with the key matching the depot. Kalamata validates the managed manifest, depot ID, manifest ID, and key before use, and compares the manifest ID with Steam's current public manifest. An older manifest remains unavailable as `outdated`; do not change the database to bypass that check. Do not seed `library` or `library_depot_installs`: the first successful depot creates those records transactionally.
 
 Generated migrations are bundled with packaged builds and are applied before the main window opens. A packaged launch with a fresh channel data directory must create `kalamata.db`, `manifest-files/`, and the four foundation tables without relying on the working directory.
 
 ## Maintenance Constraints
 
-- Keep `steam-user` pinned to `5.3.0` while importing its private `steam-user/components/content_manifest.js` parser. Revalidate the adapter before upgrading the dependency.
+- Keep `steam-user` pinned to `5.3.0` while importing its private manifest parser and CDN decompression modules. Revalidate both adapters before upgrading the dependency.
 - Under Bun, `steam-user@5.3.0` loads `lzma@2.3.2`, which assigns `globalThis.onmessage` and can keep the process alive. Preserve the handler restoration around the `steam-user` import unless clean process exit is verified without it.
 - Keep `steam-user` on TCP unless Bun integration tests show that WebSocket connections no longer time out.

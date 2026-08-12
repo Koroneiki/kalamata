@@ -13,7 +13,7 @@ import {
   libraryQueryKey,
   useSettingsQuery,
 } from '@/composables/queries'
-import { getAppDetails } from '@/api/apps'
+import { acquireManifest, getAppDetails } from '@/api/apps'
 import {
   addLibraryEntry,
   removeLibraryEntry,
@@ -22,6 +22,7 @@ import {
 import { useOperationStore } from '@/stores/operation'
 import type {
   ActiveOperationState,
+  AppDepot,
   OperationState,
   PausedOperationState,
   ResumableOperationState,
@@ -56,6 +57,8 @@ const dialogOpen = ref(false)
 const removeDialogOpen = ref(false)
 const selectedDepotIds = ref<number[]>([])
 const mutationError = ref('')
+const manifestError = ref('')
+const acquiringDepotId = ref<number | null>(null)
 const removeError = ref('')
 const operationPanel = ref<{ focusHeading: () => void } | null>(null)
 const loadedAppId = ref<number | null>(null)
@@ -71,6 +74,17 @@ const selectionMutation = useMutation({
   mutation: ({ appId, depotIds }: { appId: number; depotIds: number[] }) =>
     setSelectedDepots(appId, depotIds),
 })
+const manifestMutation = useMutation({
+  mutation: ({
+    appId,
+    depotId,
+    manifestId,
+  }: {
+    appId: number
+    depotId: number
+    manifestId: string
+  }) => acquireManifest(appId, depotId, manifestId),
+})
 
 watch(
   () => data.value,
@@ -80,6 +94,8 @@ watch(
       loadedAppId.value = app.appId
       if (appChanged) {
         selectedPath.value = app.installPath ?? ''
+        manifestError.value = ''
+        acquiringDepotId.value = null
       } else if (app.installPath) {
         selectedPath.value = app.installPath
       }
@@ -357,6 +373,31 @@ async function removeFromLibrary() {
   }
 }
 
+async function getManifest(depot: AppDepot) {
+  if (!depot.manifestId) return
+  const targetAppId = appId.value
+  manifestError.value = ''
+  acquiringDepotId.value = depot.depotId
+  try {
+    await manifestMutation.mutateAsync({
+      appId: targetAppId,
+      depotId: depot.depotId,
+      manifestId: depot.manifestId,
+    })
+    await queryCache.invalidateQueries({
+      key: appQueryKeys.details(targetAppId),
+      exact: true,
+    })
+  } catch (error) {
+    if (appId.value === targetAppId) {
+      manifestError.value =
+        error instanceof Error ? error.message : String(error)
+    }
+  } finally {
+    if (appId.value === targetAppId) acquiringDepotId.value = null
+  }
+}
+
 function handleIconError() {
   iconIndex.value += 1
 }
@@ -572,8 +613,17 @@ async function verifyGameFiles() {
           :selection-pending="
             selectionMutation.isLoading.value || operationBusy
           "
+          :acquiring-depot-id="acquiringDepotId"
           @update:selected-depot-ids="updateSelectedDepots"
+          @acquire-manifest="getManifest"
         />
+        <p
+          v-if="manifestError"
+          class="text-destructive mt-3 text-sm"
+          role="alert"
+        >
+          {{ manifestError }}
+        </p>
       </section>
 
       <DownloadDepotsDialog

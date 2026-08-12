@@ -56,6 +56,9 @@ const rpc = BrowserView.defineRPC<AppRpc>({
       async getAppDetails({ appId }) {
         return appService.getAppDetails(appId)
       },
+      acquireManifest(request) {
+        return steam.acquireManifest(database, request)
+      },
       getLibrary() {
         return database.getLibrary()
       },

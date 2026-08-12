@@ -8,13 +8,13 @@ web
 
 ## Product Purpose
 
-Kalamata is a private desktop utility for anonymously looking up public Steam application information. Its planned foundation extends that workflow to installing depot content from resources already managed locally by the user.
+Kalamata is a private desktop utility for anonymously looking up public Steam application information and installing public-branch depot content from resources managed locally by the user.
 
 ## Operating Context
 
 - A user starts with a Steam App ID or an app already recorded in the local library.
 - Steam product identity remains live metadata rather than persisted user data.
-- Downloads use local manifest files and depot keys that are already available to Kalamata.
+- Kalamata can acquire displayed public-branch manifests through an external request-code service and Steam CDN; depot keys remain locally supplied resources.
 - Core screens must remain operable in narrow, resizable desktop windows.
 
 ## Capabilities and Constraints
@@ -23,6 +23,7 @@ Current capabilities:
 
 - Look up and display public Steam app metadata by App ID.
 - Show installed apps from a local library and public-branch depot readiness.
+- Acquire missing or invalid public-branch manifests through the anonymous Steam session.
 - Let the user choose an install directory for a new app.
 - Preview depot actions and size bounds before confirming an operation.
 - Let the user install, update, uninstall, and verify selected depots through one application-wide operation queue.
@@ -30,7 +31,7 @@ Current capabilities:
 
 Durable constraints:
 
-- Kalamata does not acquire manifests, depot keys, licenses, entitlements, or account credentials.
+- Kalamata does not acquire depot keys, licenses, entitlements, or account credentials.
 - The foundation exposes only public-branch manifests and does not provide branch selection.
 - The foundation does not include parallel downloads, download history, retries, automatic rollback, or partial file selection.
 

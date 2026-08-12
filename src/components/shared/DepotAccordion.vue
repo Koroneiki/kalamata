@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { Download, LoaderCircle } from '@lucide/vue'
 
 import DepotBadges from '@/components/shared/DepotBadges.vue'
 import DepotSummary from '@/components/shared/DepotSummary.vue'
@@ -19,6 +20,7 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 
 const props = defineProps<{
@@ -26,10 +28,12 @@ const props = defineProps<{
   selectedDepotIds: number[]
   readOnly?: boolean
   selectionPending?: boolean
+  acquiringDepotId?: number | null
 }>()
 
 const emit = defineEmits<{
   'update:selectedDepotIds': [value: number[]]
+  acquireManifest: [depot: AppDepot]
 }>()
 
 const selectedIds = computed(() => new Set(props.selectedDepotIds))
@@ -66,6 +70,13 @@ const redistributables = computed(() =>
 
 function formattedBytes(value: string | null) {
   return value ? formatBytes(value) : 'Unavailable'
+}
+
+function canAcquireManifest(depot: AppDepot) {
+  return (
+    depot.manifestId !== null &&
+    (!depot.eligible || depot.manifestStatus !== 'ready')
+  )
 }
 
 function updateDepot(depotId: number, checked: boolean | 'indeterminate') {
@@ -211,8 +222,29 @@ function updateGroup(
                       <dt class="text-muted-foreground text-xs">
                         Latest Manifest GID
                       </dt>
-                      <dd class="font-mono text-sm break-all">
-                        {{ depot.manifestId ?? 'Unavailable' }}
+                      <dd class="flex min-w-0 items-center gap-2">
+                        <span class="min-w-0 font-mono text-sm break-all">
+                          {{ depot.manifestId ?? 'Unavailable' }}
+                        </span>
+                        <Button
+                          v-if="canAcquireManifest(depot)"
+                          size="icon-xs"
+                          variant="outline"
+                          type="button"
+                          :disabled="
+                            acquiringDepotId !== undefined &&
+                            acquiringDepotId !== null
+                          "
+                          :aria-label="`Get manifest ${depot.manifestId} for depot ${depot.depotId}`"
+                          @click="emit('acquireManifest', depot)"
+                        >
+                          <LoaderCircle
+                            v-if="acquiringDepotId === depot.depotId"
+                            class="animate-spin"
+                            aria-hidden="true"
+                          />
+                          <Download v-else aria-hidden="true" />
+                        </Button>
                       </dd>
                     </div>
                     <div class="space-y-1">
@@ -285,8 +317,29 @@ function updateGroup(
                     <dt class="text-muted-foreground text-xs">
                       Latest Manifest GID
                     </dt>
-                    <dd class="font-mono text-sm break-all">
-                      {{ depot.manifestId ?? 'Unavailable' }}
+                    <dd class="flex min-w-0 items-center gap-2">
+                      <span class="min-w-0 font-mono text-sm break-all">
+                        {{ depot.manifestId ?? 'Unavailable' }}
+                      </span>
+                      <Button
+                        v-if="canAcquireManifest(depot)"
+                        size="icon-xs"
+                        variant="outline"
+                        type="button"
+                        :disabled="
+                          acquiringDepotId !== undefined &&
+                          acquiringDepotId !== null
+                        "
+                        :aria-label="`Get manifest ${depot.manifestId} for depot ${depot.depotId}`"
+                        @click="emit('acquireManifest', depot)"
+                      >
+                        <LoaderCircle
+                          v-if="acquiringDepotId === depot.depotId"
+                          class="animate-spin"
+                          aria-hidden="true"
+                        />
+                        <Download v-else aria-hidden="true" />
+                      </Button>
                     </dd>
                   </div>
                   <div class="space-y-1">

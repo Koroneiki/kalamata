@@ -105,6 +105,18 @@ export interface RepairApplicationRequest {
   appId: number
 }
 
+export interface AcquireManifestRequest {
+  appId: number
+  depotId: number
+  manifestId: string
+}
+
+export interface AcquiredManifest {
+  depotId: number
+  manifestId: string
+  relativePath: string
+}
+
 export type OperationKind = 'download' | 'reconcile' | 'repair'
 
 export type OperationPhase =
@@ -266,6 +278,10 @@ export type AppRpc = {
       repairApplication: {
         params: RepairApplicationRequest
         response: ActiveOperationState
+      }
+      acquireManifest: {
+        params: AcquireManifestRequest
+        response: AcquiredManifest
       }
       cancelOperation: {
         params: Record<string, never>
