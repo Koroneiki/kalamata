@@ -33,14 +33,34 @@ const emit = defineEmits<{
 }>()
 
 const selectedIds = computed(() => new Set(props.selectedDepotIds))
-const depotGroups = computed(() =>
-  installableDepotGroups.flatMap((name) => {
+const depotGroups = computed(() => [
+  ...installableDepotGroups.flatMap((name) => {
     const depots = depotsInGroup(props.depots, name)
     return depots.length
-      ? [{ name, depots, summary: summarizeDepots(depots, selectedIds.value) }]
+      ? [
+          {
+            name,
+            depots,
+            summary: summarizeDepots(depots, selectedIds.value),
+            installable: true as const,
+          },
+        ]
       : []
   }),
-)
+  ...(() => {
+    const depots = props.depots.filter((depot) => depot.group === 'Unused')
+    return depots.length
+      ? [
+          {
+            name: 'Unused' as const,
+            depots,
+            summary: null,
+            installable: false as const,
+          },
+        ]
+      : []
+  })(),
+])
 const allInstallableDepots = computed(() => installableDepots(props.depots))
 const depotSummary = computed(() =>
   summarizeDepots(allInstallableDepots.value, selectedIds.value),
@@ -133,7 +153,7 @@ function updateGroup(
           class="border-border relative overflow-hidden rounded-lg border last:border-b"
         >
           <Checkbox
-            v-if="!readOnly"
+            v-if="!readOnly && group.installable"
             class="absolute top-3.5 left-4 z-10"
             :model-value="groupSelectionState(group.depots)"
             :disabled="selectionPending || !canUpdateGroup(group.depots)"
@@ -142,7 +162,7 @@ function updateGroup(
           />
           <AccordionTrigger
             class="hover:bg-accent/50 rounded-none py-3 pr-4 hover:no-underline"
-            :class="readOnly ? 'pl-4' : 'pl-11'"
+            :class="readOnly || !group.installable ? 'pl-4' : 'pl-11'"
           >
             <span
               class="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-3 pr-2"
@@ -153,7 +173,7 @@ function updateGroup(
                   {{ group.depots.length }}
                 </Badge>
               </span>
-              <DepotSummary :summary="group.summary" />
+              <DepotSummary v-if="group.summary" :summary="group.summary" />
             </span>
           </AccordionTrigger>
           <AccordionContent class="pb-0">
@@ -168,7 +188,7 @@ function updateGroup(
                 }"
               >
                 <Checkbox
-                  v-if="!readOnly"
+                  v-if="!readOnly && depot.eligible"
                   class="mt-1"
                   :model-value="selectedIds.has(depot.depotId)"
                   :disabled="

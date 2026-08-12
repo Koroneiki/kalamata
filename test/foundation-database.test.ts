@@ -238,16 +238,26 @@ describe('foundation database', () => {
   test('persists settings after applying native defaults once', async () => {
     let db = await openDatabase()
     expect(
-      db.getSettings({ hideRedistributables: true, platforms: ['macos'] }),
-    ).toEqual({ hideRedistributables: true, platforms: ['macos'] })
+      db.getSettings({
+        hideRedistributables: true,
+        hideUnusedDepots: true,
+        platforms: ['macos'],
+      }),
+    ).toEqual({
+      hideRedistributables: true,
+      hideUnusedDepots: true,
+      platforms: ['macos'],
+    })
 
     expect(
       db.updateSettings({
         hideRedistributables: false,
+        hideUnusedDepots: false,
         platforms: ['windows', 'linux'],
       }),
     ).toEqual({
       hideRedistributables: false,
+      hideUnusedDepots: false,
       platforms: ['windows', 'linux'],
     })
 
@@ -259,9 +269,43 @@ describe('foundation database', () => {
     )
     database = db
     expect(
-      db.getSettings({ hideRedistributables: true, platforms: ['macos'] }),
+      db.getSettings({
+        hideRedistributables: true,
+        hideUnusedDepots: true,
+        platforms: ['macos'],
+      }),
     ).toEqual({
       hideRedistributables: false,
+      hideUnusedDepots: false,
+      platforms: ['windows', 'linux'],
+    })
+  })
+
+  test('enables the unused depot filter when upgrading existing settings', async () => {
+    let db = await openDatabaseAtMigration(4)
+    db.sqlite
+      .query(
+        'INSERT INTO settings (id, hide_redistributables, show_windows, show_macos, show_linux) VALUES (1, 0, 1, 0, 1)',
+      )
+      .run()
+    db.close()
+    database = undefined
+
+    db = await KalamataDatabase.open(
+      root!,
+      join(import.meta.dir, '..', 'src', 'db', 'migrations'),
+    )
+    database = db
+
+    expect(
+      db.getSettings({
+        hideRedistributables: true,
+        hideUnusedDepots: true,
+        platforms: ['macos'],
+      }),
+    ).toEqual({
+      hideRedistributables: false,
+      hideUnusedDepots: true,
       platforms: ['windows', 'linux'],
     })
   })

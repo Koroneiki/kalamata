@@ -29,16 +29,24 @@ export const depotPlatforms: DepotPlatform[] = ['windows', 'macos', 'linux']
 export function filterDepots(
   depots: AppDepot[],
   hideRedistributables: boolean,
+  hideUnusedDepots: boolean,
   platforms: readonly DepotPlatform[],
+  preservedDepotIds: ReadonlySet<number> = new Set(),
 ): AppDepot[] {
   const visiblePlatforms = new Set(platforms)
 
   return depots.filter((depot) => {
     if (
+      preservedDepotIds.has(depot.depotId) ||
+      (depot.eligible && depot.installStatus !== 'not-installed')
+    )
+      return true
+    if (
       hideRedistributables &&
       depot.group === 'Steamworks Common Redistributables'
     )
       return false
+    if (hideUnusedDepots && depot.group === 'Unused') return false
     if (!depot.platform) return true
 
     return depot.platform

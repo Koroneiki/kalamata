@@ -110,6 +110,11 @@ export const settings = sqliteTable(
     hideRedistributables: integer('hide_redistributables', {
       mode: 'boolean',
     }).notNull(),
+    hideUnusedDepots: integer('hide_unused_depots', {
+      mode: 'boolean',
+    })
+      .notNull()
+      .default(true),
     showWindows: integer('show_windows', { mode: 'boolean' }).notNull(),
     showMacos: integer('show_macos', { mode: 'boolean' }).notNull(),
     showLinux: integer('show_linux', { mode: 'boolean' }).notNull(),

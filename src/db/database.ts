@@ -27,6 +27,7 @@ export interface InstallRow {
 
 interface SettingsRow {
   hideRedistributables: number
+  hideUnusedDepots: number
   showWindows: number
   showMacos: number
   showLinux: number
@@ -99,10 +100,11 @@ export class KalamataDatabase {
     this.validateSettings(defaults)
     this.sqlite
       .query(
-        'INSERT INTO settings (id, hide_redistributables, show_windows, show_macos, show_linux) VALUES (1, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING',
+        'INSERT INTO settings (id, hide_redistributables, hide_unused_depots, show_windows, show_macos, show_linux) VALUES (1, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING',
       )
       .run(
         Number(defaults.hideRedistributables),
+        Number(defaults.hideUnusedDepots),
         Number(defaults.platforms.includes('windows')),
         Number(defaults.platforms.includes('macos')),
         Number(defaults.platforms.includes('linux')),
@@ -114,10 +116,11 @@ export class KalamataDatabase {
     this.validateSettings(settings)
     this.sqlite
       .query(
-        'INSERT INTO settings (id, hide_redistributables, show_windows, show_macos, show_linux) VALUES (1, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET hide_redistributables = excluded.hide_redistributables, show_windows = excluded.show_windows, show_macos = excluded.show_macos, show_linux = excluded.show_linux',
+        'INSERT INTO settings (id, hide_redistributables, hide_unused_depots, show_windows, show_macos, show_linux) VALUES (1, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET hide_redistributables = excluded.hide_redistributables, hide_unused_depots = excluded.hide_unused_depots, show_windows = excluded.show_windows, show_macos = excluded.show_macos, show_linux = excluded.show_linux',
       )
       .run(
         Number(settings.hideRedistributables),
+        Number(settings.hideUnusedDepots),
         Number(settings.platforms.includes('windows')),
         Number(settings.platforms.includes('macos')),
         Number(settings.platforms.includes('linux')),
@@ -128,11 +131,12 @@ export class KalamataDatabase {
   private readSettings(): AppSettings {
     const row = this.sqlite
       .query<SettingsRow, []>(
-        'SELECT hide_redistributables AS hideRedistributables, show_windows AS showWindows, show_macos AS showMacos, show_linux AS showLinux FROM settings WHERE id = 1',
+        'SELECT hide_redistributables AS hideRedistributables, hide_unused_depots AS hideUnusedDepots, show_windows AS showWindows, show_macos AS showMacos, show_linux AS showLinux FROM settings WHERE id = 1',
       )
       .get()!
     return {
       hideRedistributables: Boolean(row.hideRedistributables),
+      hideUnusedDepots: Boolean(row.hideUnusedDepots),
       platforms: depotPlatforms.filter((platform) => {
         if (platform === 'windows') return Boolean(row.showWindows)
         if (platform === 'macos') return Boolean(row.showMacos)
@@ -144,6 +148,8 @@ export class KalamataDatabase {
   private validateSettings(settings: AppSettings): void {
     if (typeof settings.hideRedistributables !== 'boolean')
       throw new Error('hideRedistributables must be a boolean')
+    if (typeof settings.hideUnusedDepots !== 'boolean')
+      throw new Error('hideUnusedDepots must be a boolean')
     if (!Array.isArray(settings.platforms))
       throw new Error('platforms must be an array')
     const unique = new Set(settings.platforms)

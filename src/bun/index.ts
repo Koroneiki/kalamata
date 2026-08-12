@@ -44,6 +44,7 @@ const systemPlatform: DepotPlatform =
       : 'linux'
 const defaultSettings: AppSettings = {
   hideRedistributables: true,
+  hideUnusedDepots: true,
   platforms: [systemPlatform],
 }
 const rpc = BrowserView.defineRPC<AppRpc>({

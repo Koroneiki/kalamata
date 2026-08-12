@@ -12,6 +12,7 @@ export type DepotPlatform = 'windows' | 'macos' | 'linux'
 
 export interface AppSettings {
   hideRedistributables: boolean
+  hideUnusedDepots: boolean
   platforms: DepotPlatform[]
 }
 

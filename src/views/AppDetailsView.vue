@@ -105,13 +105,16 @@ watch(
 )
 
 const iconUrl = computed(() => data.value?.iconUrls?.[iconIndex.value] ?? null)
+const selectedIdSet = computed(() => new Set(selectedDepotIds.value))
 const visibleDepots = computed(() => {
   const depots = data.value?.depots ?? []
   return settings.value
     ? filterDepots(
         depots,
         settings.value.hideRedistributables,
+        settings.value.hideUnusedDepots,
         settings.value.platforms,
+        selectedIdSet.value,
       )
     : depots
 })
@@ -153,7 +156,6 @@ const operationForApp = ref<VisibleOperation | null>(null)
 const operationFinished = ref(false)
 let operationVisibleSince = 0
 let hideOperationTimer: ReturnType<typeof setTimeout> | undefined
-const selectedIdSet = computed(() => new Set(selectedDepotIds.value))
 const hasDepotAdditionsOrRemovals = computed(() =>
   data.value?.depots.some(
     (depot) =>

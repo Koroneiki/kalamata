@@ -50,6 +50,11 @@ function setHideRedistributables(value: boolean | 'indeterminate') {
   if (!settings.value || typeof value !== 'boolean') return
   void persist({ ...settings.value, hideRedistributables: value })
 }
+
+function setHideUnusedDepots(value: boolean | 'indeterminate') {
+  if (!settings.value || typeof value !== 'boolean') return
+  void persist({ ...settings.value, hideUnusedDepots: value })
+}
 </script>
 
 <template>
@@ -97,7 +102,7 @@ function setHideRedistributables(value: boolean | 'indeterminate') {
       </div>
 
       <div
-        class="bg-muted/45 flex items-center justify-between gap-6 px-4 py-3.5 sm:px-5"
+        class="bg-muted/45 border-border flex items-center justify-between gap-6 border-t px-4 py-3.5 sm:px-5"
       >
         <Label for="hide-redistributables" class="text-sm">
           Hide redistributables
@@ -111,6 +116,23 @@ function setHideRedistributables(value: boolean | 'indeterminate') {
           :disabled="updateMutation.isLoading.value"
           aria-label="Hide redistributables"
           @update:model-value="setHideRedistributables"
+        />
+      </div>
+      <div
+        class="bg-muted/45 border-border flex items-center justify-between gap-6 border-t px-4 py-3.5 sm:px-5"
+      >
+        <Label for="hide-unused-depots" class="text-sm">
+          Hide unused depots
+        </Label>
+        <Skeleton v-if="!settings" class="size-4" />
+        <Checkbox
+          v-else
+          id="hide-unused-depots"
+          class="border-muted-foreground/70"
+          :model-value="settings.hideUnusedDepots"
+          :disabled="updateMutation.isLoading.value"
+          aria-label="Hide unused depots"
+          @update:model-value="setHideUnusedDepots"
         />
       </div>
     </section>
