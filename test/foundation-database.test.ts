@@ -23,6 +23,15 @@ import { depotKeyFromHex } from '../src/db/validation.ts'
 
 let root: string | undefined
 let database: KalamataDatabase | undefined
+const ingestDepotId = 2379781
+const ingestManifestId = '3512319404653808464'
+const hasIngestManifestFixture = await Bun.file(
+  join(
+    import.meta.dir,
+    'fixtures',
+    `${ingestDepotId}_${ingestManifestId}.manifest`,
+  ),
+).exists()
 
 afterEach(async () => {
   database?.close()
@@ -228,38 +237,41 @@ describe('foundation database', () => {
     ])
   })
 
-  test('ingests one supplied file using IDs from its contents', async () => {
-    const db = await openDatabase()
-    const depotId = 2379781
-    const manifestId = '3512319404653808464'
-    await copyFile(
-      join(import.meta.dir, 'fixtures', `${depotId}_${manifestId}.manifest`),
-      join(root!, 'manifest-files', 'incorrect-name.manifest'),
-    )
-
-    await expect(
-      ingestManifestFile(
-        db,
+  test.skipIf(!hasIngestManifestFixture)(
+    'ingests one supplied file using IDs from its contents',
+    async () => {
+      const db = await openDatabase()
+      const depotId = ingestDepotId
+      const manifestId = ingestManifestId
+      await copyFile(
+        join(import.meta.dir, 'fixtures', `${depotId}_${manifestId}.manifest`),
         join(root!, 'manifest-files', 'incorrect-name.manifest'),
-        1000,
-      ),
-    ).resolves.toEqual({
-      depotId,
-      manifestId,
-      relativePath: `manifest-files/${depotId}_${manifestId}.manifest`,
-    })
+      )
 
-    expect(await readdir(join(root!, 'manifest-files'))).toEqual([
-      `${depotId}_${manifestId}.manifest`,
-    ])
-    expect(db.getManifestRows(depotId)).toEqual([
-      {
+      await expect(
+        ingestManifestFile(
+          db,
+          join(root!, 'manifest-files', 'incorrect-name.manifest'),
+          1000,
+        ),
+      ).resolves.toEqual({
         depotId,
         manifestId,
         relativePath: `manifest-files/${depotId}_${manifestId}.manifest`,
-      },
-    ])
-  })
+      })
+
+      expect(await readdir(join(root!, 'manifest-files'))).toEqual([
+        `${depotId}_${manifestId}.manifest`,
+      ])
+      expect(db.getManifestRows(depotId)).toEqual([
+        {
+          depotId,
+          manifestId,
+          relativePath: `manifest-files/${depotId}_${manifestId}.manifest`,
+        },
+      ])
+    },
+  )
 
   test('rejects canonical duplicate paths and changes to locked paths', async () => {
     const db = await openDatabase()

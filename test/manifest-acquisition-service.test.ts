@@ -10,6 +10,16 @@ const MANIFESTS = [
   { appId: 2379780, depotId: 2379781, manifestId: '3512319404653808464' },
   { appId: 593280, depotId: 593281, manifestId: '7871757316108895128' },
 ] as const
+const hasManifestFixtures = (
+  await Promise.all(
+    MANIFESTS.map(({ depotId, manifestId }) =>
+      Bun.file(
+        join(import.meta.dir, 'fixtures', `${depotId}_${manifestId}.manifest`),
+      ).exists(),
+    ),
+  )
+).every(Boolean)
+const fixtureTest = test.skipIf(!hasManifestFixtures)
 
 let root: string | undefined
 let database: KalamataDatabase | undefined
@@ -22,27 +32,30 @@ afterEach(async () => {
 })
 
 describe('ManifestAcquisitionService', () => {
-  test('rejects a valid managed manifest before network access', async () => {
-    const request = MANIFESTS[0]
-    const db = await openDatabase()
-    const path = db.addManifest(request.depotId, request.manifestId)
-    await writeFile(join(root!, path), await fixtureContents(request))
-    const getClient = mock(async () => {
-      throw new Error('should not connect')
-    })
-    const fetcher = mock(async () => {
-      throw new Error('should not fetch')
-    })
-    const service = new ManifestAcquisitionService({ getClient }, db, fetcher)
+  fixtureTest(
+    'rejects a valid managed manifest before network access',
+    async () => {
+      const request = MANIFESTS[0]
+      const db = await openDatabase()
+      const path = db.addManifest(request.depotId, request.manifestId)
+      await writeFile(join(root!, path), await fixtureContents(request))
+      const getClient = mock(async () => {
+        throw new Error('should not connect')
+      })
+      const fetcher = mock(async () => {
+        throw new Error('should not fetch')
+      })
+      const service = new ManifestAcquisitionService({ getClient }, db, fetcher)
 
-    await expect(service.acquire(request)).rejects.toThrow(
-      'Manifest is already managed',
-    )
-    expect(fetcher).not.toHaveBeenCalled()
-    expect(getClient).not.toHaveBeenCalled()
-  })
+      await expect(service.acquire(request)).rejects.toThrow(
+        'Manifest is already managed',
+      )
+      expect(fetcher).not.toHaveBeenCalled()
+      expect(getClient).not.toHaveBeenCalled()
+    },
+  )
 
-  test('replaces an invalid managed manifest', async () => {
+  fixtureTest('replaces an invalid managed manifest', async () => {
     const request = MANIFESTS[0]
     const fixture = await fixtureContents(request)
     const db = await openDatabase()
@@ -83,52 +96,58 @@ describe('ManifestAcquisitionService', () => {
     expect(getClient).not.toHaveBeenCalled()
   })
 
-  test('rejects a manifest whose embedded IDs differ from the request', async () => {
-    const fixture = await fixtureContents(MANIFESTS[0])
-    const db = await openDatabase()
-    const service = createService(db, mockFetcher(), async () => fixture)
+  fixtureTest(
+    'rejects a manifest whose embedded IDs differ from the request',
+    async () => {
+      const fixture = await fixtureContents(MANIFESTS[0])
+      const db = await openDatabase()
+      const service = createService(db, mockFetcher(), async () => fixture)
 
-    await expect(
-      service.acquire({ ...MANIFESTS[0], depotId: 593281 }),
-    ).rejects.toThrow(
-      `Manifest belongs to depot ${MANIFESTS[0].depotId}, expected 593281`,
-    )
-    expect(await readdir(join(root!, 'manifest-files'))).toEqual([])
-    expect(db.getManifestRows(MANIFESTS[0].depotId)).toEqual([])
-  })
+      await expect(
+        service.acquire({ ...MANIFESTS[0], depotId: 593281 }),
+      ).rejects.toThrow(
+        `Manifest belongs to depot ${MANIFESTS[0].depotId}, expected 593281`,
+      )
+      expect(await readdir(join(root!, 'manifest-files'))).toEqual([])
+      expect(db.getManifestRows(MANIFESTS[0].depotId)).toEqual([])
+    },
+  )
 
-  test('publishes a validated manifest under its embedded IDs and syncs it', async () => {
-    const request = MANIFESTS[0]
-    const fixture = await fixtureContents(request)
-    const db = await openDatabase()
-    const service = createService(db, mockFetcher(), async () => fixture)
+  fixtureTest(
+    'publishes a validated manifest under its embedded IDs and syncs it',
+    async () => {
+      const request = MANIFESTS[0]
+      const fixture = await fixtureContents(request)
+      const db = await openDatabase()
+      const service = createService(db, mockFetcher(), async () => fixture)
 
-    await expect(service.acquire(request)).resolves.toEqual({
-      depotId: request.depotId,
-      manifestId: request.manifestId,
-      relativePath: `manifest-files/${request.depotId}_${request.manifestId}.manifest`,
-    })
-    expect(db.getManifestRows(request.depotId)).toEqual([
-      {
+      await expect(service.acquire(request)).resolves.toEqual({
         depotId: request.depotId,
         manifestId: request.manifestId,
         relativePath: `manifest-files/${request.depotId}_${request.manifestId}.manifest`,
-      },
-    ])
-    expect(
-      (
-        await readFile(
-          join(
-            root!,
-            'manifest-files',
-            `${request.depotId}_${request.manifestId}.manifest`,
-          ),
-        )
-      ).toString('hex'),
-    ).toBe(fixture.toString('hex'))
-  })
+      })
+      expect(db.getManifestRows(request.depotId)).toEqual([
+        {
+          depotId: request.depotId,
+          manifestId: request.manifestId,
+          relativePath: `manifest-files/${request.depotId}_${request.manifestId}.manifest`,
+        },
+      ])
+      expect(
+        (
+          await readFile(
+            join(
+              root!,
+              'manifest-files',
+              `${request.depotId}_${request.manifestId}.manifest`,
+            ),
+          )
+        ).toString('hex'),
+      ).toBe(fixture.toString('hex'))
+    },
+  )
 
-  test('acquires independent manifests in parallel', async () => {
+  fixtureTest('acquires independent manifests in parallel', async () => {
     const fixtures = new Map<string, Buffer>(
       await Promise.all(
         MANIFESTS.map(
