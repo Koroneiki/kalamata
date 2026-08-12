@@ -532,7 +532,6 @@ async function submit() {
       <p v-if="startError" class="text-destructive text-sm" role="alert">
         {{ startError }}
       </p>
-
       <DialogFooter class="min-w-0">
         <Button
           type="button"

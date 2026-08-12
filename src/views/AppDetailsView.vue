@@ -20,6 +20,7 @@ import {
   setSelectedDepots,
 } from '@/api/library'
 import { useOperationStore } from '@/stores/operation'
+import { useManifestQueueStore } from '@/stores/manifest-queue'
 import type {
   ActiveOperationState,
   AppDepot,
@@ -34,6 +35,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 
 const route = useRoute()
 const operation = useOperationStore()
+const manifestQueue = useManifestQueueStore()
 const queryCache = useQueryCache()
 const { data: settings } = useSettingsQuery()
 const appId = computed(() => Number(route.params.appId))
@@ -325,10 +327,9 @@ async function addToLibrary() {
     await addMutation.mutateAsync(targetAppId)
     await invalidateDetailsAndLibrary(targetAppId)
   } catch (error) {
-    if (appId.value === targetAppId) {
+    if (appId.value === targetAppId)
       mutationError.value =
         error instanceof Error ? error.message : String(error)
-    }
   }
 }
 
@@ -375,14 +376,14 @@ async function removeFromLibrary() {
     }
     await invalidateDetailsAndLibrary(targetAppId)
   } catch (error) {
-    if (appId.value === targetAppId) {
+    if (appId.value === targetAppId)
       removeError.value = error instanceof Error ? error.message : String(error)
-    }
   }
 }
 
-async function getManifest(depot: AppDepot) {
+async function getManifest(depot: AppDepot, queueId?: number) {
   if (!depot.manifestId) return
+  const manifestQueueId = queueId ?? manifestQueue.begin(1)
   const targetAppId = appId.value
   const targetManifestId = depot.manifestId
   const key = manifestKey(targetAppId, depot)
@@ -412,6 +413,7 @@ async function getManifest(depot: AppDepot) {
     }
   } finally {
     acquiringManifests.delete(key)
+    manifestQueue.settle(manifestQueueId)
   }
 }
 
@@ -427,19 +429,22 @@ watch(
   ],
   ([app, automatic, platforms]) => {
     if (!app?.inLibrary || !automatic || !platforms) return
-    for (const depot of app.depots) {
-      if (
-        !depot.eligible ||
-        !depot.manifestId ||
-        depot.manifestStatus === 'ready' ||
-        !matchesDepotPlatform(depot, platforms)
-      )
-        continue
+    const pending = app.depots.filter(
+      (depot) =>
+        depot.eligible &&
+        depot.manifestId &&
+        depot.manifestStatus !== 'ready' &&
+        matchesDepotPlatform(depot, platforms) &&
+        !attemptedManifests.has(manifestKey(app.appId, depot)),
+    )
+    if (pending.length === 0) return
+
+    const queueId = manifestQueue.begin(pending.length)
+    for (const depot of pending) {
       const key = manifestKey(app.appId, depot)
       // Attempt each manifest version once per app view to avoid reactive refetch loops.
-      if (attemptedManifests.has(key)) continue
       attemptedManifests.add(key)
-      void getManifest(depot)
+      void getManifest(depot, queueId)
     }
   },
   { immediate: true },
