@@ -1,6 +1,7 @@
 import { access } from 'node:fs/promises'
 import { join } from 'node:path'
 import { KalamataDatabase } from './database.ts'
+import { pruneMissingManifestFiles } from './manifest-files.ts'
 
 export { KalamataDatabase } from './database.ts'
 export * from './manifest-files.ts'
@@ -25,5 +26,10 @@ export async function discoverMigrationsFolder(): Promise<string> {
 export async function openKalamataDatabase(
   dataRoot: string,
 ): Promise<KalamataDatabase> {
-  return KalamataDatabase.open(dataRoot, await discoverMigrationsFolder())
+  const database = await KalamataDatabase.open(
+    dataRoot,
+    await discoverMigrationsFolder(),
+  )
+  await pruneMissingManifestFiles(database)
+  return database
 }

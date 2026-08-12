@@ -1,4 +1,4 @@
-import { readFile, realpath, rename } from 'node:fs/promises'
+import { readFile, readdir, realpath, rename } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
 import {
   parseManifest,
@@ -17,6 +17,32 @@ export function manifestRelativePath(
   validateId(depotId, 'depotId')
   validateManifestId(manifestId)
   return `manifest-files/${depotId}_${manifestId}.manifest`
+}
+
+export async function pruneMissingManifestFiles(
+  database: KalamataDatabase,
+): Promise<void> {
+  // Reconcile registered resources only; unmanaged files must pass explicit ingestion.
+  const filenames = new Set(
+    await readdir(join(database.dataRoot, 'manifest-files')),
+  )
+  const rows = database.sqlite
+    .query<ManifestRow, []>(
+      'SELECT depot_id AS depotId, manifest_id AS manifestId, relative_path AS relativePath FROM manifest_files',
+    )
+    .all()
+  const remove = database.sqlite.query(
+    'DELETE FROM manifest_files WHERE depot_id = ? AND manifest_id = ?',
+  )
+
+  database.sqlite.transaction(() => {
+    for (const row of rows) {
+      const expected = manifestRelativePath(row.depotId, row.manifestId)
+      if (row.relativePath !== expected || !filenames.has(basename(expected))) {
+        remove.run(row.depotId, row.manifestId)
+      }
+    }
+  })()
 }
 
 export async function ingestManifestFile(

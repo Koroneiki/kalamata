@@ -16,6 +16,7 @@ import { KalamataDatabase } from '../src/db/database.ts'
 import {
   ingestManifestFile,
   manifestRelativePath,
+  pruneMissingManifestFiles,
   resolveManagedManifest,
 } from '../src/db/manifest-files.ts'
 import { depotKeyFromHex } from '../src/db/validation.ts'
@@ -163,6 +164,35 @@ describe('foundation database', () => {
       {
         depotId: 20,
         installedManifestId: '123',
+        mountIndex: 0,
+        ownerAppId: 10,
+      },
+    ])
+  })
+
+  test('prunes registered manifests whose files were removed', async () => {
+    const db = await openDatabase()
+    const present = db.addManifest(20, '123')
+    db.addManifest(30, '456')
+    db.addLibraryEntry(10)
+    db.recordInstalledDepot(10, root!, 30, '456')
+    await writeFile(join(root!, present), '')
+    await writeFile(join(root!, 'manifest-files', 'unmanaged.manifest'), '')
+
+    await pruneMissingManifestFiles(db)
+
+    expect(db.getManifestRows(20)).toEqual([
+      {
+        depotId: 20,
+        manifestId: '123',
+        relativePath: 'manifest-files/20_123.manifest',
+      },
+    ])
+    expect(db.getManifestRows(30)).toEqual([])
+    expect(db.getInstalls(10)).toEqual([
+      {
+        depotId: 30,
+        installedManifestId: '456',
         mountIndex: 0,
         ownerAppId: 10,
       },
