@@ -4,6 +4,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  readdir,
   realpath,
   rm,
   symlink,
@@ -13,9 +14,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { KalamataDatabase } from '../src/db/database.ts'
 import {
+  ingestManifestFile,
   manifestRelativePath,
   resolveManagedManifest,
-  syncManifestFiles,
 } from '../src/db/manifest-files.ts'
 import { depotKeyFromHex } from '../src/db/validation.ts'
 
@@ -143,29 +144,60 @@ describe('foundation database', () => {
     expect(db.getInstalls(10)).toEqual([])
   })
 
-  test('syncs manifest rows to regular files without losing install state', async () => {
+  test('ignores files that are added without backend ingestion', async () => {
     const db = await openDatabase()
     db.addLibraryEntry(10)
     db.addManifest(20, '123')
     db.recordInstalledDepot(10, root!, 20, '123')
     await writeFile(join(root!, 'manifest-files', '30_456.manifest'), '')
 
-    await syncManifestFiles(db, 1000)
-
-    expect(db.getManifestRows(20)).toEqual([])
-    expect(db.getManifestRows(30)).toEqual([
+    expect(db.getManifestRows(20)).toEqual([
       {
-        depotId: 30,
-        manifestId: '456',
-        relativePath: 'manifest-files/30_456.manifest',
+        depotId: 20,
+        manifestId: '123',
+        relativePath: 'manifest-files/20_123.manifest',
       },
     ])
+    expect(db.getManifestRows(30)).toEqual([])
     expect(db.getInstalls(10)).toEqual([
       {
         depotId: 20,
         installedManifestId: '123',
         mountIndex: 0,
         ownerAppId: 10,
+      },
+    ])
+  })
+
+  test('ingests one supplied file using IDs from its contents', async () => {
+    const db = await openDatabase()
+    const depotId = 2379781
+    const manifestId = '3512319404653808464'
+    await copyFile(
+      join(import.meta.dir, 'fixtures', `${depotId}_${manifestId}.manifest`),
+      join(root!, 'manifest-files', 'incorrect-name.manifest'),
+    )
+
+    await expect(
+      ingestManifestFile(
+        db,
+        join(root!, 'manifest-files', 'incorrect-name.manifest'),
+        1000,
+      ),
+    ).resolves.toEqual({
+      depotId,
+      manifestId,
+      relativePath: `manifest-files/${depotId}_${manifestId}.manifest`,
+    })
+
+    expect(await readdir(join(root!, 'manifest-files'))).toEqual([
+      `${depotId}_${manifestId}.manifest`,
+    ])
+    expect(db.getManifestRows(depotId)).toEqual([
+      {
+        depotId,
+        manifestId,
+        relativePath: `manifest-files/${depotId}_${manifestId}.manifest`,
       },
     ])
   })

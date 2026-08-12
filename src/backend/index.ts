@@ -1,12 +1,18 @@
 import { DepotDownloadService } from './depot/depot-download-service.ts'
 import type { ReconcileApplicationOptions } from './depot/depot-download-service.ts'
 import type { ApplicationTransactionResult } from './depot/install/transaction/types.ts'
+import {
+  ManifestAcquisitionService,
+  type AcquiredManifest,
+  type AcquireManifestRequest,
+} from './depot/manifests/manifest-acquisition-service.ts'
 import { previewApplicationOperation } from './operations/application-preview.ts'
 import type { ApplicationPlan } from './operations/application-planner.ts'
 import type { ApplicationOperationPreview } from '../types/rpc.ts'
 import { ProductInfoService } from './steam/product-info-service.ts'
 import { SteamSession } from './steam/steam-session.ts'
 import type { ProductInfo, ProductInfoResult } from './steam/types.ts'
+import type { KalamataDatabase } from '../db/database.ts'
 
 export type { ProductInfo, ProductInfoResult } from './steam/types.ts'
 
@@ -44,6 +50,15 @@ export class SteamService {
 
   getProductInfoWithDlc(appId: number): Promise<ProductInfoResult> {
     return this.#products.getProductInfoWithDlc(appId)
+  }
+
+  acquireManifest(
+    database: KalamataDatabase,
+    request: AcquireManifestRequest,
+  ): Promise<AcquiredManifest> {
+    return new ManifestAcquisitionService(this.#session, database).acquire(
+      request,
+    )
   }
 
   dispose(): void {

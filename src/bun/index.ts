@@ -10,7 +10,6 @@ import { AppService } from '../backend/apps/app-service.ts'
 import { DownloadQueueCoordinator } from '../backend/operations/download-queue.ts'
 import { recoverApplicationTransaction } from '../backend/depot/install/transaction/recovery.ts'
 import { openKalamataDatabase } from '../db/index.ts'
-import { syncManifestFiles } from '../db/manifest-files.ts'
 import { canonicalizeInstallDirectory } from '../db/validation.ts'
 import type { AppRpc, AppSettings, DepotPlatform } from '../types/rpc.ts'
 
@@ -30,7 +29,6 @@ async function getMainViewUrl(): Promise<string> {
 }
 
 const database = await openKalamataDatabase(Utils.paths.userData)
-await syncManifestFiles(database)
 const steam = createSteamService()
 const appService = new AppService(steam, database)
 let queue: DownloadQueueCoordinator

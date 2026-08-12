@@ -4,3 +4,10 @@ declare module 'steam-user/components/content_manifest.js' {
   export function parse(buffer: Buffer): DepotManifest
   export function decryptFilenames(manifest: DepotManifest, key: Buffer): void
 }
+
+declare module 'steam-user/components/cdn_compression.js' {
+  const compression: {
+    unzip(data: Buffer): Promise<Buffer>
+  }
+  export default compression
+}

@@ -1,4 +1,4 @@
-import { readdir, readFile, realpath } from 'node:fs/promises'
+import { readFile, realpath, rename } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
 import {
   parseManifest,
@@ -10,8 +10,6 @@ import type { DepotManifest } from '../backend/depot/manifests/types.ts'
 import type { KalamataDatabase, ManifestRow } from './database.ts'
 import { validateId, validateManifestId } from './validation.ts'
 
-const MANIFEST_FILENAME = /^([1-9]\d*)_(\d+)\.manifest$/
-
 export function manifestRelativePath(
   depotId: number,
   manifestId: string,
@@ -21,64 +19,31 @@ export function manifestRelativePath(
   return `manifest-files/${depotId}_${manifestId}.manifest`
 }
 
-export async function syncManifestFiles(
+export async function ingestManifestFile(
   database: KalamataDatabase,
+  incomingPath: string,
   now = Date.now(),
-): Promise<void> {
-  const entries = await readdir(join(database.dataRoot, 'manifest-files'), {
-    withFileTypes: true,
-  })
-  const files = new Map<string, ManifestRow>()
+): Promise<ManifestRow> {
+  const contents = await readFile(incomingPath)
+  const manifest = parseManifestEnvelope(contents)
+  validateManifestEnvelope(manifest, manifest.depot_id, manifest.gid_manifest)
 
-  for (const entry of entries) {
-    if (!entry.isFile()) continue
-    const match = MANIFEST_FILENAME.exec(entry.name)
-    if (!match) continue
-
-    const depotId = Number(match[1])
-    const manifestId = match[2]
-    try {
-      const relativePath = manifestRelativePath(depotId, manifestId)
-      if (basename(relativePath) !== entry.name) continue
-      files.set(`${depotId}:${manifestId}`, {
-        depotId,
-        manifestId,
-        relativePath,
-      })
-    } catch {
-      // Files outside the managed naming contract are not database resources.
-    }
+  const row = {
+    depotId: manifest.depot_id,
+    manifestId: manifest.gid_manifest,
+    relativePath: manifestRelativePath(
+      manifest.depot_id,
+      manifest.gid_manifest,
+    ),
   }
-
-  const rows = database.sqlite
-    .query<ManifestRow, []>(
-      'SELECT depot_id AS depotId, manifest_id AS manifestId, relative_path AS relativePath FROM manifest_files',
+  const destination = join(database.dataRoot, row.relativePath)
+  if (incomingPath !== destination) await rename(incomingPath, destination)
+  database.sqlite
+    .query(
+      'INSERT INTO manifest_files (depot_id, manifest_id, relative_path, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(depot_id, manifest_id) DO UPDATE SET relative_path = excluded.relative_path',
     )
-    .all()
-  const stored = new Set(
-    rows.map(({ depotId, manifestId }) => `${depotId}:${manifestId}`),
-  )
-
-  database.sqlite.transaction(() => {
-    const remove = database.sqlite.query(
-      'DELETE FROM manifest_files WHERE depot_id = ? AND manifest_id = ?',
-    )
-    for (const row of rows) {
-      if (!files.has(`${row.depotId}:${row.manifestId}`)) {
-        remove.run(row.depotId, row.manifestId)
-      }
-    }
-
-    for (const [key, file] of files) {
-      if (!stored.has(key)) {
-        database.sqlite
-          .query(
-            'INSERT INTO manifest_files (depot_id, manifest_id, relative_path, created_at) VALUES (?, ?, ?, ?)',
-          )
-          .run(file.depotId, file.manifestId, file.relativePath, now)
-      }
-    }
-  })()
+    .run(row.depotId, row.manifestId, row.relativePath, now)
+  return row
 }
 
 export async function resolveManagedManifest(

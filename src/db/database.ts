@@ -205,6 +205,18 @@ export class KalamataDatabase {
       .all(depotId)
   }
 
+  hasManifest(depotId: number, manifestId: string): boolean {
+    validateId(depotId, 'depotId')
+    validateManifestId(manifestId)
+    return Boolean(
+      this.sqlite
+        .query<{ present: number }, [number, string]>(
+          'SELECT 1 AS present FROM manifest_files WHERE depot_id = ? AND manifest_id = ?',
+        )
+        .get(depotId, manifestId),
+    )
+  }
+
   getDepotKey(depotId: number): string | null {
     const row = this.sqlite
       .query<{ decryptionKey: string }, [number]>(
