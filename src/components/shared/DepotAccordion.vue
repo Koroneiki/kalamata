@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Download, LoaderCircle } from '@lucide/vue'
+import { Download, LoaderCircle, Pin } from '@lucide/vue'
 
 import DepotBadges from '@/components/shared/DepotBadges.vue'
 import DepotSummary from '@/components/shared/DepotSummary.vue'
@@ -30,11 +30,13 @@ const props = defineProps<{
   selectionPending?: boolean
   acquiringDepotIds?: number[]
   automaticResourceAcquisition?: boolean
+  customManifestTargets?: ReadonlyMap<number, string>
 }>()
 
 const emit = defineEmits<{
   'update:selectedDepotIds': [value: number[]]
   acquireResources: [depot: AppDepot]
+  editCustomManifest: [depot: EligibleAppDepot]
 }>()
 
 const selectedIds = computed(() => new Set(props.selectedDepotIds))
@@ -80,6 +82,22 @@ function canAcquireResources(depot: AppDepot) {
       depot.manifestStatus !== 'ready' ||
       depot.keyStatus !== 'present')
   )
+}
+
+function displayedManifestId(depot: AppDepot) {
+  return (
+    props.customManifestTargets?.get(depot.depotId) ??
+    depot.installedManifestId ??
+    depot.manifestId
+  )
+}
+
+function isLatestManifest(depot: AppDepot) {
+  return displayedManifestId(depot) === depot.manifestId
+}
+
+function isDisplayedManifestPinned(depot: AppDepot) {
+  return props.customManifestTargets?.has(depot.depotId) || depot.pinned
 }
 
 function updateDepot(depotId: number, checked: boolean | 'indeterminate') {
@@ -221,14 +239,48 @@ function updateGroup(
                   </div>
 
                   <dl class="mt-4 grid min-w-0 gap-x-6 gap-y-3 sm:grid-cols-3">
-                    <div class="min-w-0 space-y-1">
-                      <dt class="text-muted-foreground text-xs">
-                        Latest Manifest GID
-                      </dt>
-                      <dd class="flex min-w-0 items-center gap-2">
-                        <span class="min-w-0 font-mono text-sm break-all">
-                          {{ depot.manifestId ?? 'Unavailable' }}
+                    <div class="min-w-0">
+                      <button
+                        v-if="depot.eligible && !readOnly"
+                        class="hover:bg-accent/50 focus-visible:ring-ring -m-2 flex w-[calc(100%+1rem)] min-w-0 flex-col items-start gap-1 rounded-md p-2 text-left focus-visible:ring-2 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50"
+                        type="button"
+                        :disabled="selectionPending"
+                        :aria-label="`Change manifest GID for depot ${depot.depotId}`"
+                        @click="emit('editCustomManifest', depot)"
+                      >
+                        <span class="text-muted-foreground text-xs">
+                          {{
+                            isLatestManifest(depot)
+                              ? 'Latest Manifest GID'
+                              : 'Manifest GID'
+                          }}
                         </span>
+                        <span
+                          class="flex min-w-0 items-center gap-1.5 font-mono text-sm break-all"
+                        >
+                          <span>
+                            {{ displayedManifestId(depot) ?? 'Unavailable' }}
+                          </span>
+                          <Pin
+                            v-if="isDisplayedManifestPinned(depot)"
+                            class="text-primary size-4 shrink-0"
+                            aria-label="Manifest pinned"
+                          />
+                        </span>
+                      </button>
+                      <dl v-else class="space-y-1">
+                        <dt class="text-muted-foreground text-xs">
+                          {{
+                            isLatestManifest(depot)
+                              ? 'Latest Manifest GID'
+                              : 'Manifest GID'
+                          }}
+                        </dt>
+                        <dd class="min-w-0 font-mono text-sm break-all">
+                          {{ displayedManifestId(depot) ?? 'Unavailable' }}
+                        </dd>
+                      </dl>
+                      <div class="mt-1 flex min-w-0 items-center gap-2">
                         <Button
                           v-if="
                             canAcquireResources(depot) &&
@@ -256,7 +308,7 @@ function updateGroup(
                           class="size-4 animate-spin"
                           aria-label="Acquiring manifest"
                         />
-                      </dd>
+                      </div>
                     </div>
                     <div class="space-y-1">
                       <dt class="text-muted-foreground text-xs">

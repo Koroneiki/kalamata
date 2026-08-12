@@ -13,7 +13,7 @@ import {
 } from '../depot/install/transaction/recovery.ts'
 import type { ProductInfoResult } from '../steam/types.ts'
 import type { KalamataDatabase } from '../../db/database.ts'
-import { validateId } from '../../db/validation.ts'
+import { validateId, validateManifestId } from '../../db/validation.ts'
 import type {
   ActiveOperationState,
   ApplicationOperationPreview,
@@ -93,6 +93,7 @@ export class DownloadQueueCoordinator {
   async start(request: StartDownloadRequest): Promise<ActiveOperationState> {
     validateId(request.appId, 'appId')
     validateDepotIds(request.depotIds, false)
+    validateManifestTargets(request.manifestTargets, request.depotIds)
     this.claimAcceptance(request.appId)
     try {
       const installPath = await this.database.assertInstallPathAvailable(
@@ -107,6 +108,7 @@ export class DownloadQueueCoordinator {
           appId: request.appId,
           installPath,
           requestedDepotIds: request.depotIds,
+          manifestTargets: request.manifestTargets,
         },
         true,
       )
@@ -121,6 +123,7 @@ export class DownloadQueueCoordinator {
   ): Promise<ActiveOperationState> {
     validateId(request.appId, 'appId')
     validateDepotIds(request.desiredDepotIds, true)
+    validateManifestTargets(request.manifestTargets, request.desiredDepotIds)
     this.claimAcceptance(request.appId)
     try {
       const entry = this.database.getLibraryEntry(request.appId)
@@ -136,6 +139,7 @@ export class DownloadQueueCoordinator {
           appId: request.appId,
           installPath,
           desiredDepotIds: request.desiredDepotIds,
+          manifestTargets: request.manifestTargets,
         },
         true,
       )
@@ -150,6 +154,7 @@ export class DownloadQueueCoordinator {
     // Preview plans without claiming the queue, reserving a path, or persisting selection.
     validateId(request.appId, 'appId')
     validateDepotIds(request.desiredDepotIds, true)
+    validateManifestTargets(request.manifestTargets, request.desiredDepotIds)
     const entry = this.database.getLibraryEntry(request.appId)
     const installed = this.database.getInstalls(request.appId).length > 0
     const plan = await planApplication(
@@ -159,12 +164,14 @@ export class DownloadQueueCoordinator {
             appId: request.appId,
             installPath: entry?.installPath ?? '',
             desiredDepotIds: request.desiredDepotIds,
+            manifestTargets: request.manifestTargets,
           }
         : {
             kind: 'download',
             appId: request.appId,
             installPath: entry?.installPath ?? '',
             requestedDepotIds: request.desiredDepotIds,
+            manifestTargets: request.manifestTargets,
           },
       this.steam,
       this.database,
@@ -602,12 +609,15 @@ export class DownloadQueueCoordinator {
     this.database.reconcileInstalledDepots(
       request.appId,
       request.installPath,
-      desired.map(({ depotId, manifestId, mountIndex, ownerAppId }) => ({
-        depotId,
-        manifestId,
-        mountIndex,
-        ownerAppId,
-      })),
+      desired.map(
+        ({ depotId, manifestId, pinned, mountIndex, ownerAppId }) => ({
+          depotId,
+          manifestId,
+          pinned,
+          mountIndex,
+          ownerAppId,
+        }),
+      ),
     )
   }
 
@@ -648,5 +658,23 @@ export class DownloadQueueCoordinator {
   private emitState(): void {
     const operation = structuredClone(this.#state)
     this.emitOperation(operation)
+  }
+}
+
+function validateManifestTargets(
+  targets: StartDownloadRequest['manifestTargets'],
+  desiredDepotIds: number[],
+): void {
+  if (!targets) return
+  const desired = new Set(desiredDepotIds)
+  const seen = new Set<number>()
+  for (const target of targets) {
+    validateId(target.depotId, 'depotId')
+    validateManifestId(target.manifestId)
+    if (!desired.has(target.depotId))
+      throw new Error('Manifest target must belong to a selected depot')
+    if (seen.has(target.depotId))
+      throw new Error('Manifest targets must not contain duplicate depots')
+    seen.add(target.depotId)
   }
 }

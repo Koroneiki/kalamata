@@ -5,6 +5,7 @@ import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 import DownloadDepotsDialog from '@/components/forms/DownloadDepotsDialog.vue'
+import CustomManifestDialog from '@/components/forms/CustomManifestDialog.vue'
 import RemoveLibraryEntryDialog from '@/components/forms/RemoveLibraryEntryDialog.vue'
 import DepotAccordion from '@/components/shared/DepotAccordion.vue'
 import InlineOperationStatus from '@/components/shared/InlineOperationStatus.vue'
@@ -17,6 +18,7 @@ import { acquireDepotKeys, acquireManifest, getAppDetails } from '@/api/apps'
 import {
   addLibraryEntry,
   removeLibraryEntry,
+  setDepotPinned,
   setSelectedDepots,
 } from '@/api/library'
 import { useOperationStore } from '@/stores/operation'
@@ -24,6 +26,7 @@ import { useManifestQueueStore } from '@/stores/manifest-queue'
 import type {
   ActiveOperationState,
   AppDepot,
+  EligibleAppDepot,
   OperationState,
   PausedOperationState,
   ResumableOperationState,
@@ -67,6 +70,11 @@ const removeError = ref('')
 const operationPanel = ref<{ focusHeading: () => void } | null>(null)
 const loadedAppId = ref<number | null>(null)
 const draftDirty = ref(false)
+const customManifestTargets = reactive(new Map<number, string>())
+const customManifestDialogOpen = ref(false)
+const customManifestDepot = ref<EligibleAppDepot | null>(null)
+const customManifestError = ref('')
+const customManifestAcquiring = ref(false)
 
 const addMutation = useMutation({
   mutation: (id: number) => addLibraryEntry(id),
@@ -93,6 +101,10 @@ const depotKeysMutation = useMutation({
   mutation: ({ appId, depotIds }: { appId: number; depotIds: number[] }) =>
     acquireDepotKeys(appId, depotIds),
 })
+const pinMutation = useMutation({
+  mutation: ({ depotId, pinned }: { depotId: number; pinned: boolean }) =>
+    setDepotPinned(appId.value, depotId, pinned),
+})
 
 watch(
   () => data.value,
@@ -105,6 +117,7 @@ watch(
         manifestError.value = ''
         attemptedManifests.clear()
         attemptedDepotKeys.clear()
+        customManifestTargets.clear()
       } else if (app.installPath) {
         selectedPath.value = app.installPath
       }
@@ -147,11 +160,12 @@ const visibleDepots = computed(() => {
 const acquiringDepotIds = computed(() =>
   (data.value?.depots ?? [])
     .filter((depot) =>
-      acquiringManifests.has(manifestKey(data.value!.appId, depot)),
+      [...acquiringManifests].some((key) =>
+        key.startsWith(`${data.value!.appId}:${depot.depotId}:`),
+      ),
     )
     .map(({ depotId }) => depotId),
 )
-
 const releaseDate = computed(() => {
   if (!data.value?.releaseDate) return 'Unavailable'
   return new Intl.DateTimeFormat(undefined, {
@@ -213,6 +227,12 @@ const primaryActionLabel = computed(() => {
   if (!hasInstalledDepots.value) return 'Install'
   if (selectedDepotIds.value.length === 0) return 'Uninstall'
   return hasDepotAdditionsOrRemovals.value ||
+    [...customManifestTargets].some(
+      ([depotId, manifestId]) =>
+        selectedIdSet.value.has(depotId) &&
+        data.value?.depots.find((depot) => depot.depotId === depotId)
+          ?.installedManifestId !== manifestId,
+    ) ||
     data.value!.depots.some(
       (depot) =>
         depot.eligible &&
@@ -238,6 +258,7 @@ const canOpenDownload = computed(() => {
   if (!data.value.installPath)
     return selectedDepotIds.value.some(
       (depotId) =>
+        customManifestTargets.has(depotId) ||
         data.value?.depots.find((depot) => depot.depotId === depotId)
           ?.selectable,
     )
@@ -328,6 +349,13 @@ onBeforeUnmount(() => {
 
 function openDownload() {
   dialogOpen.value = true
+}
+
+function setDownloadDialogOpen(open: boolean) {
+  dialogOpen.value = open
+  if (!open) {
+    customManifestTargets.clear()
+  }
 }
 
 async function invalidateDetailsAndLibrary(id = appId.value) {
@@ -479,6 +507,88 @@ async function getDepotResources(depot: AppDepot) {
   }
 }
 
+function editCustomManifest(depot: EligibleAppDepot) {
+  customManifestDepot.value = depot
+  customManifestError.value = ''
+  customManifestDialogOpen.value = true
+}
+
+function clearCustomManifest(depot: EligibleAppDepot) {
+  customManifestTargets.delete(depot.depotId)
+}
+
+async function removeCustomManifest() {
+  const depot = customManifestDepot.value
+  if (!depot) return
+  if (customManifestTargets.has(depot.depotId)) {
+    clearCustomManifest(depot)
+    customManifestDialogOpen.value = false
+    return
+  }
+  if (!depot.pinned) return
+  customManifestError.value = ''
+  customManifestAcquiring.value = true
+  try {
+    await pinMutation.mutateAsync({ depotId: depot.depotId, pinned: false })
+    await queryCache.invalidateQueries({
+      key: appQueryKeys.details(appId.value),
+      exact: true,
+    })
+    customManifestDialogOpen.value = false
+  } catch (error) {
+    customManifestError.value =
+      error instanceof Error ? error.message : String(error)
+  } finally {
+    customManifestAcquiring.value = false
+  }
+}
+
+async function setCustomManifest(manifestId: string) {
+  const depot = customManifestDepot.value
+  if (!depot) return
+  customManifestError.value = ''
+  customManifestAcquiring.value = true
+  const key = `${appId.value}:${depot.depotId}:${manifestId}`
+  acquiringManifests.add(key)
+  try {
+    if (depot.keyStatus !== 'present') {
+      const result = await depotKeysMutation.mutateAsync({
+        appId: appId.value,
+        depotIds: [depot.depotId],
+      })
+      if (result.missingDepotIds.includes(depot.depotId))
+        throw new Error(`Depot key ${depot.depotId} is unavailable.`)
+    }
+    await manifestMutation.mutateAsync({
+      appId: depot.ownerAppId,
+      depotId: depot.depotId,
+      manifestId,
+    })
+    if (manifestId === depot.installedManifestId) {
+      if (!depot.pinned) {
+        await pinMutation.mutateAsync({ depotId: depot.depotId, pinned: true })
+        await queryCache.invalidateQueries({
+          key: appQueryKeys.details(appId.value),
+          exact: true,
+        })
+      }
+      customManifestTargets.delete(depot.depotId)
+      customManifestDialogOpen.value = false
+      return
+    }
+    customManifestTargets.set(depot.depotId, manifestId)
+    if (!selectedIdSet.value.has(depot.depotId))
+      await updateSelectedDepots([...selectedDepotIds.value, depot.depotId])
+    customManifestDialogOpen.value = false
+  } catch (error) {
+    customManifestError.value =
+      error instanceof Error ? error.message : String(error)
+  } finally {
+    acquiringManifests.delete(key)
+    customManifestAcquiring.value = false
+  }
+}
+
 function manifestKey(appId: number, depot: AppDepot) {
   return `${appId}:${depot.depotId}:${depot.manifestId}`
 }
@@ -556,6 +666,7 @@ function handleIconError() {
 
 async function focusDownloadQueue() {
   draftDirty.value = false
+  customManifestTargets.clear()
   await nextTick()
   operationPanel.value?.focusHeading()
 }
@@ -769,8 +880,10 @@ async function verifyGameFiles() {
           :automatic-resource-acquisition="
             data.inLibrary && settings?.automaticManifestAcquisition
           "
+          :custom-manifest-targets="customManifestTargets"
           @update:selected-depot-ids="updateSelectedDepots"
           @acquire-resources="getDepotResources"
+          @edit-custom-manifest="editCustomManifest"
         />
         <p
           v-if="manifestError"
@@ -783,11 +896,28 @@ async function verifyGameFiles() {
 
       <DownloadDepotsDialog
         v-if="data.inLibrary"
-        v-model:open="dialogOpen"
+        :open="dialogOpen"
         :app="{ ...data, depots: visibleDepots }"
         :initial-path="selectedPath"
         :selected-depot-ids="selectedDepotIds"
+        :custom-manifest-targets="customManifestTargets"
+        @update:open="setDownloadDialogOpen"
         @download-started="focusDownloadQueue"
+      />
+
+      <CustomManifestDialog
+        :open="customManifestDialogOpen"
+        :removable="
+          customManifestDepot
+            ? customManifestTargets.has(customManifestDepot.depotId) ||
+              customManifestDepot.pinned
+            : false
+        "
+        :acquiring="customManifestAcquiring"
+        :error="customManifestError"
+        @update:open="customManifestDialogOpen = $event"
+        @confirm="setCustomManifest"
+        @remove="removeCustomManifest"
       />
 
       <RemoveLibraryEntryDialog

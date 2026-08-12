@@ -156,6 +156,15 @@ test.skipIf(!(await Bun.file(MANIFEST_FIXTURE_PATH).exists()))(
       manifestStatus: 'outdated',
       installStatus: 'outdated',
     })
+
+    db.setDepotPinned(10, DEPOT_ID, true)
+    depot = (await normalizeAppDetails(products(outdatedProduct), db))
+      .depots[0]!
+    expect(depot).toMatchObject({
+      installedManifestId: MANIFEST_ID,
+      pinned: true,
+      installStatus: 'current',
+    })
   },
 )
 

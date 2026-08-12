@@ -100,9 +100,10 @@ export async function successfulReconciliation(
   options: ReconcileApplicationOptions,
 ): Promise<ApplicationTransactionResult> {
   const desired: ApplicationDepotRecord[] = options.desiredDepots.map(
-    ({ depotId, manifestId, ownerAppId }, mountIndex) => ({
+    ({ depotId, manifestId, pinned, ownerAppId }, mountIndex) => ({
       depotId,
       manifestId,
+      pinned,
       mountIndex,
       ownerAppId,
     }),

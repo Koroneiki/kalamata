@@ -35,6 +35,7 @@ export class ApplicationTransactionError extends Error {
 export interface ApplicationDepotRecord {
   depotId: number
   manifestId: string
+  pinned?: boolean
   mountIndex: number
   ownerAppId?: number
 }
@@ -42,6 +43,7 @@ export interface ApplicationDepotRecord {
 export interface InstalledApplicationDepot {
   depotId: number
   manifest: DepotManifest
+  pinned?: boolean
   appId?: number
   ownerAppId?: number
 }

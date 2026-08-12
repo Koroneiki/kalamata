@@ -15,3 +15,11 @@ export function removeLibraryEntry(appId: number) {
 export function setSelectedDepots(appId: number, depotIds: number[]) {
   return electroview.rpc!.request.setSelectedDepots({ appId, depotIds })
 }
+
+export function setDepotPinned(
+  appId: number,
+  depotId: number,
+  pinned: boolean,
+) {
+  return electroview.rpc!.request.setDepotPinned({ appId, depotId, pinned })
+}

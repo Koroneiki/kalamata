@@ -1,0 +1,1 @@
+ALTER TABLE `library_depot_installs` ADD `pinned` integer DEFAULT false NOT NULL;

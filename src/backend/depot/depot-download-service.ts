@@ -21,6 +21,7 @@ export interface ApplicationDepotInput {
   depotId: number
   ownerAppId: number
   manifestId: string
+  pinned?: boolean
   manifestPath: string
   depotKey: Buffer
 }
@@ -65,6 +66,7 @@ export class DepotDownloadService {
         return {
           depotId: input.depotId,
           ownerAppId: input.ownerAppId,
+          pinned: input.pinned,
           manifest: await loaded.manifest,
         }
       }),

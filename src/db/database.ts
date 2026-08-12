@@ -21,6 +21,7 @@ export interface ManifestRow {
 export interface InstallRow {
   depotId: number
   installedManifestId: string
+  pinned?: boolean
   mountIndex: number
   ownerAppId: number | null
 }
@@ -234,10 +235,22 @@ export class KalamataDatabase {
 
   getInstalls(appId: number): InstallRow[] {
     return this.sqlite
-      .query<InstallRow, [number]>(
-        'SELECT depot_id AS depotId, installed_manifest_id AS installedManifestId, mount_index AS mountIndex, owner_app_id AS ownerAppId FROM library_depot_installs WHERE app_id = ? ORDER BY mount_index',
+      .query<Omit<InstallRow, 'pinned'> & { pinned: number }, [number]>(
+        'SELECT depot_id AS depotId, installed_manifest_id AS installedManifestId, pinned, mount_index AS mountIndex, owner_app_id AS ownerAppId FROM library_depot_installs WHERE app_id = ? ORDER BY mount_index',
       )
       .all(appId)
+      .map((row) => ({ ...row, pinned: Boolean(row.pinned) }))
+  }
+
+  setDepotPinned(appId: number, depotId: number, pinned: boolean): void {
+    validateId(appId, 'appId')
+    validateId(depotId, 'depotId')
+    const result = this.sqlite
+      .query(
+        'UPDATE library_depot_installs SET pinned = ? WHERE app_id = ? AND depot_id = ?',
+      )
+      .run(pinned, appId, depotId)
+    if (result.changes !== 1) throw new Error('Depot is not installed')
   }
 
   async assertInstallPathAvailable(
@@ -354,6 +367,7 @@ export class KalamataDatabase {
     depots: ReadonlyArray<{
       depotId: number
       manifestId: string
+      pinned?: boolean
       mountIndex: number
       ownerAppId?: number
     }>,
@@ -389,13 +403,20 @@ export class KalamataDatabase {
         .query('DELETE FROM library_depot_installs WHERE app_id = ?')
         .run(appId)
       const insert = this.sqlite.query(
-        'INSERT INTO library_depot_installs (app_id, depot_id, installed_manifest_id, mount_index, owner_app_id, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+        'INSERT INTO library_depot_installs (app_id, depot_id, installed_manifest_id, pinned, mount_index, owner_app_id, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
       )
-      for (const { depotId, manifestId, mountIndex, ownerAppId } of depots)
+      for (const {
+        depotId,
+        manifestId,
+        pinned,
+        mountIndex,
+        ownerAppId,
+      } of depots)
         insert.run(
           appId,
           depotId,
           manifestId,
+          pinned ?? false,
           mountIndex,
           ownerAppId ?? appId,
           now,

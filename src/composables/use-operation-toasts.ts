@@ -7,6 +7,7 @@ import GameCompletionToast from '@/components/shared/GameCompletionToast.vue'
 import { appQueryKeys } from '@/composables/queries'
 import { useOperationStore } from '@/stores/operation'
 import type { AppSummary } from '@/types/rpc'
+import { operationCompletionMessage } from '@/utils/operation'
 
 export function useOperationToasts() {
   const operation = useOperationStore()
@@ -30,7 +31,6 @@ export function useOperationToasts() {
     async (state, previous) => {
       if (
         state.status !== 'completed' ||
-        (state.kind !== 'download' && state.kind !== 'repair') ||
         (previous.status === 'completed' &&
           'appId' in previous &&
           previous.appId === state.appId)
@@ -42,10 +42,7 @@ export function useOperationToasts() {
         componentProps: {
           name: summary?.name ?? `App ${state.appId}`,
           iconUrl: summary?.iconUrls[0] ?? null,
-          message:
-            state.kind === 'download'
-              ? 'Finished downloading'
-              : 'Files have been verified',
+          message: operationCompletionMessage(state.kind),
         },
         duration: 6_000,
         class:

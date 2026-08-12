@@ -113,14 +113,8 @@ export class ManifestAcquisitionService {
           existing.relativePath,
           key,
         )
-        throw new Error('Manifest is already managed')
-      } catch (error) {
-        if (
-          error instanceof Error &&
-          error.message === 'Manifest is already managed'
-        )
-          throw error
-      }
+        return existing
+      } catch {}
     }
 
     const requestCode = await this.fetchManifestRequestCode(

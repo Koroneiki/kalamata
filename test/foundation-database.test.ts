@@ -134,6 +134,7 @@ describe('foundation database', () => {
       {
         depotId: 20,
         installedManifestId: '123',
+        pinned: false,
         mountIndex: 0,
         ownerAppId: null,
       },
@@ -183,6 +184,22 @@ describe('foundation database', () => {
     expect(db.getInstalls(10)).toEqual([])
   })
 
+  test('pins only installed depots and removes pins with the install', async () => {
+    const db = await openDatabase()
+    db.addLibraryEntry(10)
+    db.addManifest(20, '123')
+    db.recordInstalledDepot(10, root!, 20, '123')
+
+    db.setDepotPinned(10, 20, true)
+    expect(db.getInstalls(10)[0]).toMatchObject({ pinned: true })
+    expect(() => db.setDepotPinned(10, 30, true)).toThrow(
+      'Depot is not installed',
+    )
+
+    db.reconcileInstalledDepots(10, root!, [])
+    expect(db.getInstalls(10)).toEqual([])
+  })
+
   test('ignores files that are added without backend ingestion', async () => {
     const db = await openDatabase()
     db.addLibraryEntry(10)
@@ -202,6 +219,7 @@ describe('foundation database', () => {
       {
         depotId: 20,
         installedManifestId: '123',
+        pinned: false,
         mountIndex: 0,
         ownerAppId: 10,
       },
@@ -231,6 +249,7 @@ describe('foundation database', () => {
       {
         depotId: 30,
         installedManifestId: '456',
+        pinned: false,
         mountIndex: 0,
         ownerAppId: 10,
       },

@@ -140,6 +140,36 @@ test('planning restores a fixed new depot from its local manifest and key', asyn
   ])
 })
 
+test('custom targets are always pinned', async () => {
+  const fixture = await setup()
+  await install(fixture, DEPOTS[0])
+  fixture.database.setDepotPinned(APP_ID, DEPOTS[0].depotId, true)
+
+  const plan = await planApplication(
+    {
+      kind: 'reconcile',
+      appId: APP_ID,
+      installPath: fixture.installPath,
+      desiredDepotIds: [DEPOTS[0].depotId],
+      manifestTargets: [
+        {
+          depotId: DEPOTS[0].depotId,
+          manifestId: DEPOTS[0].manifestId,
+        },
+      ],
+    },
+    { getProductInfoWithDlc: async () => products() },
+    fixture.database,
+    new AbortController().signal,
+    () => {},
+  )
+
+  expect(plan.desiredDepots[0]).toMatchObject({
+    manifestId: DEPOTS[0].manifestId,
+    pinned: true,
+  })
+})
+
 test('queueDepotUpdate persists selections and reconciles the returned metadata order', async () => {
   const fixture = await setup()
   await install(fixture, DEPOTS[0])

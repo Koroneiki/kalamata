@@ -81,6 +81,7 @@ export function desiredRecords(
   return depots.map((depot, mountIndex) => ({
     depotId: depot.depotId,
     manifestId: depot.manifest.gid_manifest,
+    pinned: depot.pinned ?? false,
     mountIndex,
     ownerAppId: depot.ownerAppId ?? depot.appId,
   }))

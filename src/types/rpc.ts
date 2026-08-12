@@ -34,6 +34,8 @@ interface AppDepotBase {
   platform: string | null
   language: string | null
   manifestId: string | null
+  installedManifestId?: string | null
+  pinned?: boolean
   sizeBytes: string | null
   downloadBytes: string | null
 }
@@ -75,16 +77,24 @@ export interface StartDownloadRequest {
   appId: number
   installPath: string
   depotIds: number[]
+  manifestTargets?: DepotManifestTarget[]
 }
 
 export interface QueueDepotUpdateRequest {
   appId: number
   desiredDepotIds: number[]
+  manifestTargets?: DepotManifestTarget[]
 }
 
 export interface PreviewApplicationOperationRequest {
   appId: number
   desiredDepotIds: number[]
+  manifestTargets?: DepotManifestTarget[]
+}
+
+export interface DepotManifestTarget {
+  depotId: number
+  manifestId: string
 }
 
 export interface ApplicationOperationPreview {
@@ -269,6 +279,10 @@ export type AppRpc = {
       setSelectedDepots: {
         params: { appId: number; depotIds: number[] }
         response: number[]
+      }
+      setDepotPinned: {
+        params: { appId: number; depotId: number; pinned: boolean }
+        response: void
       }
       selectInstallDirectory: {
         params: { startingPath?: string }

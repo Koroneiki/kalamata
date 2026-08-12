@@ -83,6 +83,7 @@ export const libraryDepotInstalls = sqliteTable(
       .references(() => library.appId, { onDelete: 'cascade' }),
     depotId: integer('depot_id').notNull(),
     installedManifestId: text('installed_manifest_id').notNull(),
+    pinned: integer('pinned', { mode: 'boolean' }).notNull().default(false),
     mountIndex: integer('mount_index').notNull(),
     ownerAppId: integer('owner_app_id'),
     updatedAt: integer('updated_at').notNull(),

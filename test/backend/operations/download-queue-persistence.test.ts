@@ -47,6 +47,7 @@ test('reconciliation callback replaces SQLite installs as one desired set', asyn
     {
       depotId: DEPOTS[0].depotId,
       installedManifestId: DEPOTS[0].manifestId,
+      pinned: false,
       mountIndex: 0,
       ownerAppId: APP_ID,
     },

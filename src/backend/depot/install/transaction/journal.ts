@@ -94,7 +94,27 @@ export async function readJournal(path: string): Promise<TransactionJournal> {
       'recovery',
       `Malformed journal ${path}`,
     )
-  return parsed
+  return {
+    ...parsed,
+    source: parsed.source.map((record) => ({
+      depotId: record.depotId,
+      manifestId: record.manifestId,
+      pinned: record.pinned ?? false,
+      mountIndex: record.mountIndex,
+      ...(record.ownerAppId === undefined
+        ? {}
+        : { ownerAppId: record.ownerAppId }),
+    })),
+    desired: parsed.desired.map((record) => ({
+      depotId: record.depotId,
+      manifestId: record.manifestId,
+      pinned: record.pinned ?? false,
+      mountIndex: record.mountIndex,
+      ...(record.ownerAppId === undefined
+        ? {}
+        : { ownerAppId: record.ownerAppId }),
+    })),
+  }
 }
 
 function isJournal(value: unknown): value is TransactionJournal {
@@ -208,6 +228,7 @@ function isDepotRecord(value: unknown): value is ApplicationDepotRecord {
     Number.isSafeInteger(item.depotId) &&
     typeof item.manifestId === 'string' &&
     /^\d+$/u.test(item.manifestId) &&
+    (item.pinned === undefined || typeof item.pinned === 'boolean') &&
     Number.isSafeInteger(item.mountIndex) &&
     (item.mountIndex ?? -1) >= 0 &&
     (item.ownerAppId === undefined || Number.isSafeInteger(item.ownerAppId))

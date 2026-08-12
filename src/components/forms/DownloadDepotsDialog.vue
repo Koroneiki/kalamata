@@ -37,6 +37,7 @@ import {
 } from '@/components/ui/accordion'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
   DialogContent,
@@ -57,6 +58,7 @@ const props = defineProps<{
   app: AppDetails
   initialPath: string
   selectedDepotIds: number[]
+  customManifestTargets: ReadonlyMap<number, string>
 }>()
 
 const emit = defineEmits<{
@@ -85,6 +87,14 @@ const visibleDepots = computed(
     ),
 )
 const displayedActions = computed(() => preview.value?.depots ?? [])
+const manifestTargets = computed(() =>
+  [...props.customManifestTargets]
+    .filter(([depotId]) => props.selectedDepotIds.includes(depotId))
+    .map(([depotId, manifestId]) => ({
+      depotId,
+      manifestId,
+    })),
+)
 const actionByDepotId = computed(
   () => new Map(displayedActions.value.map((item) => [item.depotId, item])),
 )
@@ -145,7 +155,7 @@ const canStart = computed(
 )
 
 watch(
-  [() => props.open, () => props.selectedDepotIds],
+  [() => props.open, () => props.selectedDepotIds, manifestTargets],
   ([open]) => {
     if (!open) return
     void requestPreview()
@@ -175,6 +185,7 @@ async function requestPreview() {
     const result = await previewApplicationOperation({
       appId: props.app.appId,
       desiredDepotIds: props.selectedDepotIds,
+      manifestTargets: manifestTargets.value,
     })
     if (request === previewRequest) preview.value = result
   } catch (error) {
@@ -229,11 +240,13 @@ async function submit() {
         appId: props.app.appId,
         installPath: selectedPath.value,
         depotIds: props.selectedDepotIds,
+        manifestTargets: manifestTargets.value,
       })
     } else {
       await operation.reconcile({
         appId: props.app.appId,
         desiredDepotIds: props.selectedDepotIds,
+        manifestTargets: manifestTargets.value,
       })
     }
     downloadStarted.value = true
@@ -464,6 +477,15 @@ async function submit() {
                     <DepotBadges :depot="depot" />
                   </div>
                   <dl class="mt-3 grid gap-3 text-xs sm:grid-cols-2">
+                    <div
+                      v-if="customManifestTargets.has(depot.depotId)"
+                      class="min-w-0 sm:col-span-2"
+                    >
+                      <dt class="text-muted-foreground">Target Manifest</dt>
+                      <dd class="mt-1 font-mono break-all tabular-nums">
+                        {{ customManifestTargets.get(depot.depotId) }}
+                      </dd>
+                    </div>
                     <div>
                       <dt class="text-muted-foreground">Download Size</dt>
                       <dd class="mt-1 font-medium tabular-nums">

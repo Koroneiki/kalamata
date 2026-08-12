@@ -33,7 +33,7 @@ afterEach(async () => {
 
 describe('ManifestAcquisitionService', () => {
   fixtureTest(
-    'rejects a valid managed manifest before network access',
+    'returns a valid managed manifest before network access',
     async () => {
       const request = MANIFESTS[0]
       const db = await openDatabase()
@@ -47,9 +47,11 @@ describe('ManifestAcquisitionService', () => {
       })
       const service = new ManifestAcquisitionService({ getClient }, db, fetcher)
 
-      await expect(service.acquire(request)).rejects.toThrow(
-        'Manifest is already managed',
-      )
+      await expect(service.acquire(request)).resolves.toEqual({
+        depotId: request.depotId,
+        manifestId: request.manifestId,
+        relativePath: path,
+      })
       expect(fetcher).not.toHaveBeenCalled()
       expect(getClient).not.toHaveBeenCalled()
     },

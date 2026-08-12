@@ -90,6 +90,11 @@ const rpc = BrowserView.defineRPC<AppRpc>({
       setSelectedDepots({ appId, depotIds }) {
         return appService.setSelectedDepots(appId, depotIds)
       },
+      setDepotPinned({ appId, depotId, pinned }) {
+        if (queue.isBusyForApp(appId))
+          throw new Error('A depot cannot be pinned while it is downloading')
+        return database.setDepotPinned(appId, depotId, pinned)
+      },
       async selectInstallDirectory({ startingPath }) {
         const selected = await Utils.openFileDialog({
           startingFolder: startingPath ?? Utils.paths.home,
@@ -178,12 +183,15 @@ startup = (async () => {
           database.reconcileInstalledDepots(
             entry.appId,
             entry.installPath!,
-            desired.map(({ depotId, manifestId, mountIndex, ownerAppId }) => ({
-              depotId,
-              manifestId,
-              mountIndex,
-              ownerAppId,
-            })),
+            desired.map(
+              ({ depotId, manifestId, pinned, mountIndex, ownerAppId }) => ({
+                depotId,
+                manifestId,
+                pinned,
+                mountIndex,
+                ownerAppId,
+              }),
+            ),
           ),
       })
       const resumable = await getResumableApplicationTransaction(

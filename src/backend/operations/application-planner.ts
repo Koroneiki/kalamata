@@ -8,6 +8,7 @@ import type { KalamataDatabase } from '../../db/database.ts'
 import { validateManagedManifest } from '../../db/manifest-files.ts'
 import { depotKeyFromHex } from '../../db/validation.ts'
 import type { OperationKind } from '../../types/rpc.ts'
+import type { DepotManifestTarget } from '../../types/rpc.ts'
 
 export interface ApplicationPlanRequest {
   kind: OperationKind
@@ -16,6 +17,7 @@ export interface ApplicationPlanRequest {
   requestedDepotIds?: number[]
   desiredDepotIds?: number[]
   fixedDesired?: ApplicationDepotRecord[]
+  manifestTargets?: DepotManifestTarget[]
 }
 
 export interface ApplicationMetadataService {
@@ -76,10 +78,13 @@ export async function planApplication(
   const metadata = new Map(publicDepots.map((depot) => [depot.depotId, depot]))
   const metadataOrder = publicDepots.map(({ depotId }) => depotId)
   const requested = new Set(request.requestedDepotIds ?? [])
+  const manifestTargets = new Map(
+    request.manifestTargets?.map((target) => [target.depotId, target]),
+  )
   // Physical resources are shared; ownership remains specific to each occurrence.
   const resources = new Map<
     string,
-    Promise<Omit<ApplicationDepotInput, 'ownerAppId'>>
+    Promise<Omit<ApplicationDepotInput, 'ownerAppId' | 'pinned'>>
   >()
   const installedDepots = await Promise.all(
     installedRows.map((row) =>
@@ -93,6 +98,7 @@ export async function planApplication(
           request.appId,
         database,
         resources,
+        row.pinned,
       ),
     ),
   )
@@ -142,6 +148,8 @@ export async function planApplication(
       const fixed = request.fixedDesired?.find(
         (record) => record.depotId === depotId,
       )
+      const customTarget = manifestTargets.get(depotId)
+      const customManifestId = customTarget?.manifestId
       const useInstalled =
         pureRemoval ||
         request.kind === 'repair' ||
@@ -150,7 +158,10 @@ export async function planApplication(
           !requested.has(depotId))
       const manifestId =
         fixed?.manifestId ??
-        (useInstalled ? installed?.installedManifestId : publicManifestId)
+        customManifestId ??
+        (installed?.pinned || useInstalled
+          ? installed?.installedManifestId
+          : publicManifestId)
       if (!manifestId)
         throw new ApplicationTransactionError(
           'unavailable-resource',
@@ -167,6 +178,10 @@ export async function planApplication(
           request.appId,
         database,
         resources,
+        fixed?.pinned ??
+          (customManifestId !== undefined
+            ? true
+            : (installed?.pinned ?? false)),
       )
     }),
   )
@@ -181,7 +196,11 @@ async function planDepot(
   signal: AbortSignal,
   fallbackOwnerAppId: number,
   database: KalamataDatabase,
-  resources: Map<string, Promise<Omit<ApplicationDepotInput, 'ownerAppId'>>>,
+  resources: Map<
+    string,
+    Promise<Omit<ApplicationDepotInput, 'ownerAppId' | 'pinned'>>
+  >,
+  pinned = false,
 ): Promise<ApplicationDepotInput> {
   signal.throwIfAborted()
   const depot = metadata.get(depotId)
@@ -199,6 +218,7 @@ async function planDepot(
   return {
     ...(await resource),
     ownerAppId: depot?.ownerAppId ?? fallbackOwnerAppId,
+    pinned,
   }
 }
 
@@ -206,7 +226,7 @@ async function loadDepotResource(
   depotId: number,
   manifestId: string,
   database: KalamataDatabase,
-): Promise<Omit<ApplicationDepotInput, 'ownerAppId'>> {
+): Promise<Omit<ApplicationDepotInput, 'ownerAppId' | 'pinned'>> {
   const row = database
     .getManifestRows(depotId)
     .find((candidate) => candidate.manifestId === manifestId)

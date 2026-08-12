@@ -126,9 +126,7 @@ export async function normalizeAppDetails(
   const product = products.baseProduct
   const library = database.getLibraryEntry(product.appId)
   const installedRows = database.getInstalls(product.appId)
-  const installs = new Map(
-    installedRows.map((row) => [row.depotId, row.installedManifestId]),
-  )
+  const installs = new Map(installedRows.map((row) => [row.depotId, row]))
   const depots: AppDepot[] = []
   const publicDepots = extractPublicDepots(products)
   const publicDepotIds = new Set(publicDepots.map(({ depotId }) => depotId))
@@ -137,6 +135,8 @@ export async function normalizeAppDetails(
     if (!isEligibleGroup(group)) {
       depots.push({
         ...depotFields,
+        installedManifestId: null,
+        pinned: false,
         group,
         eligible: false,
         manifestStatus: null,
@@ -184,11 +184,13 @@ export async function normalizeAppDetails(
     const installed = installs.get(depot.depotId)
     const installStatus: EligibleAppDepot['installStatus'] = !installed
       ? 'not-installed'
-      : installed === depot.manifestId
+      : installed.pinned || installed.installedManifestId === depot.manifestId
         ? 'current'
         : 'outdated'
     depots.push({
       ...depotFields,
+      installedManifestId: installed?.installedManifestId ?? null,
+      pinned: installed?.pinned ?? false,
       group,
       eligible: true,
       manifestStatus,
@@ -246,6 +248,8 @@ export async function normalizeAppDetails(
       platform: null,
       language: null,
       manifestId: installed.installedManifestId,
+      installedManifestId: installed.installedManifestId,
+      pinned: installed.pinned,
       sizeBytes: null,
       downloadBytes: null,
       eligible: true,
