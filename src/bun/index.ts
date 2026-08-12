@@ -30,6 +30,8 @@ async function getMainViewUrl(): Promise<string> {
 
 const database = await openKalamataDatabase(Utils.paths.userData)
 const steam = createSteamService()
+// Warm the shared fallback without delaying the main window.
+void steam.initializeDepotKeyCache(database).catch(() => {})
 const appService = new AppService(steam, database)
 let queue: DownloadQueueCoordinator
 // Recovery runs before BrowserWindow attaches the RPC transport.
@@ -59,6 +61,9 @@ const rpc = BrowserView.defineRPC<AppRpc>({
       },
       acquireManifest(request) {
         return steam.acquireManifest(database, request)
+      },
+      acquireDepotKeys(request) {
+        return steam.acquireDepotKeys(database, request)
       },
       getLibrary() {
         return database.getLibrary()
@@ -142,6 +147,7 @@ Electrobun.events.on(
         await startup.catch(() => {})
         await queue.shutdown()
         await steam.shutdownManifestAcquisitions()
+        await steam.shutdownDepotKeyAcquisitions()
       } finally {
         steam.dispose()
         try {

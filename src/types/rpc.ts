@@ -118,6 +118,16 @@ export interface AcquiredManifest {
   relativePath: string
 }
 
+export interface AcquireDepotKeysRequest {
+  appId: number
+  depotIds: number[]
+}
+
+export interface AcquiredDepotKeys {
+  acquiredDepotIds: number[]
+  missingDepotIds: number[]
+}
+
 export type OperationKind = 'download' | 'reconcile' | 'repair'
 
 export type OperationPhase =
@@ -283,6 +293,10 @@ export type AppRpc = {
       acquireManifest: {
         params: AcquireManifestRequest
         response: AcquiredManifest
+      }
+      acquireDepotKeys: {
+        params: AcquireDepotKeysRequest
+        response: AcquiredDepotKeys
       }
       cancelOperation: {
         params: Record<string, never>

@@ -13,7 +13,7 @@ import {
   libraryQueryKey,
   useSettingsQuery,
 } from '@/composables/queries'
-import { acquireManifest, getAppDetails } from '@/api/apps'
+import { acquireDepotKeys, acquireManifest, getAppDetails } from '@/api/apps'
 import {
   addLibraryEntry,
   removeLibraryEntry,
@@ -62,6 +62,7 @@ const mutationError = ref('')
 const manifestError = ref('')
 const acquiringManifests = reactive(new Set<string>())
 const attemptedManifests = new Set<string>()
+const attemptedDepotKeys = new Set<number>()
 const removeError = ref('')
 const operationPanel = ref<{ focusHeading: () => void } | null>(null)
 const loadedAppId = ref<number | null>(null)
@@ -88,6 +89,10 @@ const manifestMutation = useMutation({
     manifestId: string
   }) => acquireManifest(appId, depotId, manifestId),
 })
+const depotKeysMutation = useMutation({
+  mutation: ({ appId, depotIds }: { appId: number; depotIds: number[] }) =>
+    acquireDepotKeys(appId, depotIds),
+})
 
 watch(
   () => data.value,
@@ -99,6 +104,7 @@ watch(
         selectedPath.value = app.installPath ?? ''
         manifestError.value = ''
         attemptedManifests.clear()
+        attemptedDepotKeys.clear()
       } else if (app.installPath) {
         selectedPath.value = app.installPath
       }
@@ -381,13 +387,17 @@ async function removeFromLibrary() {
   }
 }
 
-async function getManifest(depot: AppDepot, queueId?: number) {
+async function getManifest(
+  depot: AppDepot,
+  queueId?: number,
+  precedingError = '',
+) {
   if (!depot.manifestId) return
   const manifestQueueId = queueId ?? manifestQueue.begin(1)
   const targetAppId = appId.value
   const targetManifestId = depot.manifestId
   const key = manifestKey(targetAppId, depot)
-  manifestError.value = ''
+  manifestError.value = precedingError
   acquiringManifests.add(key)
   try {
     await manifestMutation.mutateAsync({
@@ -408,12 +418,50 @@ async function getManifest(depot: AppDepot, queueId?: number) {
           current.manifestId === targetManifestId,
       )
     ) {
-      manifestError.value =
-        error instanceof Error ? error.message : String(error)
+      const message = error instanceof Error ? error.message : String(error)
+      manifestError.value = precedingError
+        ? `${precedingError} Manifest acquisition failed: ${message}`
+        : message
     }
   } finally {
     acquiringManifests.delete(key)
     manifestQueue.settle(manifestQueueId)
+  }
+}
+
+async function getDepotResources(depot: AppDepot) {
+  const key = manifestKey(appId.value, depot)
+  let keyError = ''
+  acquiringManifests.add(key)
+  try {
+    if (depot.eligible && depot.keyStatus !== 'present') {
+      try {
+        const result = await depotKeysMutation.mutateAsync({
+          appId: appId.value,
+          depotIds: [depot.depotId],
+        })
+        if (result.missingDepotIds.includes(depot.depotId)) {
+          keyError = `Depot key ${depot.depotId} is unavailable.`
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        keyError = `Depot key acquisition failed: ${message}`
+      }
+    }
+
+    if (!depot.eligible || depot.manifestStatus !== 'ready') {
+      // Manifest acquisition does not require a key; encrypted filenames can
+      // be validated after the key becomes available.
+      await getManifest(depot, undefined, keyError)
+    } else {
+      manifestError.value = keyError
+      await queryCache.invalidateQueries({
+        key: appQueryKeys.details(appId.value),
+        exact: true,
+      })
+    }
+  } finally {
+    acquiringManifests.delete(key)
   }
 }
 
@@ -446,6 +494,44 @@ watch(
       attemptedManifests.add(key)
       void getManifest(depot, queueId)
     }
+  },
+  { immediate: true },
+)
+
+watch(
+  [
+    () => data.value,
+    () => settings.value?.automaticManifestAcquisition,
+    () => settings.value?.platforms,
+  ],
+  ([app, automatic, platforms]) => {
+    if (!app?.inLibrary || !automatic || !platforms) return
+    const depotIds = app.depots
+      .filter(
+        (depot) =>
+          depot.eligible &&
+          depot.keyStatus !== 'present' &&
+          matchesDepotPlatform(depot, platforms) &&
+          !attemptedDepotKeys.has(depot.depotId),
+      )
+      .map(({ depotId }) => depotId)
+    if (depotIds.length === 0) return
+
+    for (const depotId of depotIds) attemptedDepotKeys.add(depotId)
+    void depotKeysMutation
+      .mutateAsync({ appId: app.appId, depotIds })
+      .catch((error) => {
+        if (data.value?.appId === app.appId) {
+          manifestError.value =
+            error instanceof Error ? error.message : String(error)
+        }
+      })
+      .then(() =>
+        queryCache.invalidateQueries({
+          key: appQueryKeys.details(app.appId),
+          exact: true,
+        }),
+      )
   },
   { immediate: true },
 )
@@ -666,11 +752,11 @@ async function verifyGameFiles() {
             selectionMutation.isLoading.value || operationBusy
           "
           :acquiring-depot-ids="acquiringDepotIds"
-          :automatic-manifest-acquisition="
+          :automatic-resource-acquisition="
             data.inLibrary && settings?.automaticManifestAcquisition
           "
           @update:selected-depot-ids="updateSelectedDepots"
-          @acquire-manifest="getManifest"
+          @acquire-resources="getDepotResources"
         />
         <p
           v-if="manifestError"

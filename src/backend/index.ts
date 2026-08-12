@@ -2,6 +2,11 @@ import { DepotDownloadService } from './depot/depot-download-service.ts'
 import type { ReconcileApplicationOptions } from './depot/depot-download-service.ts'
 import type { ApplicationTransactionResult } from './depot/install/transaction/types.ts'
 import {
+  DepotKeyAcquisitionService,
+  type AcquiredDepotKeys,
+  type AcquireDepotKeysRequest,
+} from './depot/keys/depot-key-acquisition-service.ts'
+import {
   ManifestAcquisitionService,
   type AcquiredManifest,
   type AcquireManifestRequest,
@@ -20,6 +25,10 @@ export class SteamService {
   readonly #session: SteamSession
   readonly #downloads: DepotDownloadService
   readonly #products: ProductInfoService
+  readonly #depotKeyAcquisitions = new Map<
+    KalamataDatabase,
+    DepotKeyAcquisitionService
+  >()
   readonly #manifestAcquisitions = new Map<
     KalamataDatabase,
     ManifestAcquisitionService
@@ -68,12 +77,42 @@ export class SteamService {
     return service.acquire(request)
   }
 
+  initializeDepotKeyCache(database: KalamataDatabase): Promise<void> {
+    return this.getDepotKeyAcquisitionService(database).initializeCache()
+  }
+
+  acquireDepotKeys(
+    database: KalamataDatabase,
+    request: AcquireDepotKeysRequest,
+  ): Promise<AcquiredDepotKeys> {
+    return this.getDepotKeyAcquisitionService(database).acquire(request)
+  }
+
   async shutdownManifestAcquisitions(): Promise<void> {
     await Promise.all(
       [...this.#manifestAcquisitions.values()].map((service) =>
         service.shutdown(),
       ),
     )
+  }
+
+  async shutdownDepotKeyAcquisitions(): Promise<void> {
+    await Promise.all(
+      [...this.#depotKeyAcquisitions.values()].map((service) =>
+        service.shutdown(),
+      ),
+    )
+  }
+
+  private getDepotKeyAcquisitionService(
+    database: KalamataDatabase,
+  ): DepotKeyAcquisitionService {
+    let service = this.#depotKeyAcquisitions.get(database)
+    if (!service) {
+      service = new DepotKeyAcquisitionService(database)
+      this.#depotKeyAcquisitions.set(database, service)
+    }
+    return service
   }
 
   dispose(): void {

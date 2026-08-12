@@ -19,3 +19,7 @@ export function acquireManifest(
     manifestId,
   })
 }
+
+export function acquireDepotKeys(appId: number, depotIds: number[]) {
+  return electroview.rpc!.request.acquireDepotKeys({ appId, depotIds })
+}

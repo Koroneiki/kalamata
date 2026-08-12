@@ -2,7 +2,7 @@
 
 Kalamata is an Electrobun desktop application. It uses an anonymous Steam session to look up public app metadata by App ID and can install ready public depots from resources managed locally by the user.
 
-Kalamata can acquire displayed public-branch manifests using an external request-code service and its anonymous Steam session. Depot keys must still be seeded locally before encrypted depot content becomes available; Kalamata does not acquire keys, licenses, entitlements, or account credentials.
+Kalamata can acquire displayed public-branch manifests using an external request-code service and its anonymous Steam session. It also attempts to acquire matching depot keys from a configured public repository. Kalamata does not acquire licenses, entitlements, or account credentials.
 
 Frontend native operations must go through typed Electrobun RPC. Frontend code must not import backend modules or manage `steam-user` directly. Bun-side Steam operations share one service and session.
 
@@ -69,10 +69,11 @@ Mutable data is stored beneath Electrobun's `Utils.paths.userData` directory. Th
 - Managed manifests: `<userData>/manifest-files/`
 - Manifest filename: `<depotId>_<manifestId>.manifest`
 - Stored manifest path: `manifest-files/<depotId>_<manifestId>.manifest`
+- Shared depot-key cache: `<userData>/depot-keys/depotkeys.json`
 
-By default, loading an app-details screen for a library game automatically acquires its latest missing or invalid Base Game and DLC manifests for the selected platforms. Unknown, unused, redistributable, and platform-filtered depots are excluded. This persisted setting can be disabled to restore per-depot acquisition controls. Acquisition sends public manifest IDs to `manifest.opensteamtool.com` one at a time to obtain the request codes required for subsequent Steam CDN requests; CDN downloads can continue independently. Kalamata validates each downloaded manifest's container marker and embedded depot and manifest IDs before publishing it under the managed filename. When filenames are readable, it also validates their paths, metadata, and chunk layout. A valid managed manifest is retained; a missing or invalid managed manifest can be downloaded again and replaced. At startup, database rows whose managed files are missing are removed, while files that were copied into the directory without backend ingestion are not imported.
+By default, loading an app-details screen for a library game automatically acquires its latest missing or invalid Base Game and DLC depot keys and manifests for the selected platforms. Unknown, unused, redistributable, and platform-filtered depots are excluded. This persisted setting can be disabled to restore per-depot acquisition controls. A manual acquisition attempts a missing key first but still downloads the manifest if no key is available. Key acquisition first checks the app-specific Lua source, then a shared JSON fallback. The fallback is conditionally refreshed at startup using HTTP validators; a valid local copy remains available when refresh fails. Manifest acquisition sends public manifest IDs to `manifest.opensteamtool.com` one at a time to obtain the request codes required for subsequent Steam CDN requests; CDN downloads can continue independently. Kalamata validates each downloaded manifest's container marker and embedded depot and manifest IDs before publishing it under the managed filename. When filenames are readable, it also validates their paths, metadata, and chunk layout. A valid managed manifest is retained; a missing or invalid managed manifest can be downloaded again and replaced. At startup, database rows whose managed files are missing are removed, while files that were copied into the directory without backend ingestion are not imported.
 
-Depot keys still require local seeding. Start Kalamata once so pending migrations create the database, then close the app and back up `kalamata.db` before editing it:
+Keys unavailable from the configured repository can still be seeded locally. Start Kalamata once so pending migrations create the database, then close the app and back up `kalamata.db` before editing it:
 
 ```sql
 INSERT INTO depot_keys (depot_id, decryption_key, created_at)

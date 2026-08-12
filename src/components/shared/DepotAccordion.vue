@@ -29,12 +29,12 @@ const props = defineProps<{
   readOnly?: boolean
   selectionPending?: boolean
   acquiringDepotIds?: number[]
-  automaticManifestAcquisition?: boolean
+  automaticResourceAcquisition?: boolean
 }>()
 
 const emit = defineEmits<{
   'update:selectedDepotIds': [value: number[]]
-  acquireManifest: [depot: AppDepot]
+  acquireResources: [depot: AppDepot]
 }>()
 
 const selectedIds = computed(() => new Set(props.selectedDepotIds))
@@ -73,10 +73,12 @@ function formattedBytes(value: string | null) {
   return value ? formatBytes(value) : 'Unavailable'
 }
 
-function canAcquireManifest(depot: AppDepot) {
+function canAcquireResources(depot: AppDepot) {
   return (
     depot.manifestId !== null &&
-    (!depot.eligible || depot.manifestStatus !== 'ready')
+    (!depot.eligible ||
+      depot.manifestStatus !== 'ready' ||
+      depot.keyStatus !== 'present')
   )
 }
 
@@ -229,15 +231,15 @@ function updateGroup(
                         </span>
                         <Button
                           v-if="
-                            canAcquireManifest(depot) &&
-                            !automaticManifestAcquisition
+                            canAcquireResources(depot) &&
+                            !automaticResourceAcquisition
                           "
                           size="icon-xs"
                           variant="outline"
                           type="button"
                           :disabled="acquiringDepotIds?.includes(depot.depotId)"
-                          :aria-label="`Get manifest ${depot.manifestId} for depot ${depot.depotId}`"
-                          @click="emit('acquireManifest', depot)"
+                          :aria-label="`Get resources for depot ${depot.depotId}`"
+                          @click="emit('acquireResources', depot)"
                         >
                           <LoaderCircle
                             v-if="acquiringDepotIds?.includes(depot.depotId)"
@@ -248,7 +250,7 @@ function updateGroup(
                         </Button>
                         <LoaderCircle
                           v-else-if="
-                            canAcquireManifest(depot) &&
+                            canAcquireResources(depot) &&
                             acquiringDepotIds?.includes(depot.depotId)
                           "
                           class="size-4 animate-spin"
@@ -332,15 +334,15 @@ function updateGroup(
                       </span>
                       <Button
                         v-if="
-                          canAcquireManifest(depot) &&
-                          !automaticManifestAcquisition
+                          canAcquireResources(depot) &&
+                          !automaticResourceAcquisition
                         "
                         size="icon-xs"
                         variant="outline"
                         type="button"
                         :disabled="acquiringDepotIds?.includes(depot.depotId)"
-                        :aria-label="`Get manifest ${depot.manifestId} for depot ${depot.depotId}`"
-                        @click="emit('acquireManifest', depot)"
+                        :aria-label="`Get resources for depot ${depot.depotId}`"
+                        @click="emit('acquireResources', depot)"
                       >
                         <LoaderCircle
                           v-if="acquiringDepotIds?.includes(depot.depotId)"
@@ -351,7 +353,7 @@ function updateGroup(
                       </Button>
                       <LoaderCircle
                         v-else-if="
-                          canAcquireManifest(depot) &&
+                          canAcquireResources(depot) &&
                           acquiringDepotIds?.includes(depot.depotId)
                         "
                         class="size-4 animate-spin"

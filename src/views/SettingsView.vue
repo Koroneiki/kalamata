@@ -120,7 +120,7 @@ function setHideUnusedDepots(value: boolean | 'indeterminate') {
         class="bg-muted/45 border-border flex items-center justify-between gap-6 border-t px-4 py-3.5 sm:px-5"
       >
         <Label for="automatic-manifest-acquisition" class="text-sm">
-          Automatically acquire latest manifests
+          Automatically acquire depot keys and latest manifests
         </Label>
         <Skeleton v-if="!settings" class="size-4" />
         <Checkbox
@@ -129,7 +129,7 @@ function setHideUnusedDepots(value: boolean | 'indeterminate') {
           class="border-muted-foreground/70"
           :model-value="settings.automaticManifestAcquisition"
           :disabled="updateMutation.isLoading.value"
-          aria-label="Automatically acquire latest manifests"
+          aria-label="Automatically acquire depot keys and latest manifests"
           @update:model-value="setAutomaticManifestAcquisition"
         />
       </div>
