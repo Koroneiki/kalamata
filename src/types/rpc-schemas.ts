@@ -238,6 +238,11 @@ export const rpcResponseSchemas = {
       strict({
         depotId: steamIdSchema,
         action: z.enum(['install', 'remove', 'update']),
+        currentManifestId: manifestIdSchema.nullable(),
+        targetManifestId: manifestIdSchema.nullable(),
+        currentSizeBytes: manifestIdSchema,
+        targetSizeBytes: manifestIdSchema,
+        targetDownloadBytes: manifestIdSchema,
       }),
     ),
     counts: strict({

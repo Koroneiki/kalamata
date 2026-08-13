@@ -2,7 +2,6 @@
 import {
   Download,
   FolderOpen,
-  HardDrive,
   Layers3,
   Lock,
   Minus,
@@ -14,7 +13,6 @@ import { computed, ref, watch } from 'vue'
 import { selectInstallDirectory } from '@/api/install-directory'
 import { previewApplicationOperation } from '@/api/operations'
 import DepotBadges from '@/components/shared/DepotBadges.vue'
-import DepotSummary from '@/components/shared/DepotSummary.vue'
 import { useOperationStore } from '@/stores/operation'
 import type {
   AppDetails,
@@ -22,12 +20,6 @@ import type {
   EligibleAppDepot,
 } from '@/types/rpc'
 import { formatBytes } from '@/utils/bytes'
-import {
-  depotsInGroup,
-  installableDepotGroups,
-  installableDepots,
-  summarizeDepots,
-} from '@/utils/depots'
 
 import {
   Accordion,
@@ -37,21 +29,14 @@ import {
 } from '@/components/ui/accordion'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
 
 const props = defineProps<{
   open: boolean
@@ -76,6 +61,7 @@ const starting = ref(false)
 const downloadStarted = ref(false)
 const previewLoading = ref(false)
 const preview = ref<ApplicationOperationPreview | null>(null)
+const acceptedPreviewKey = ref('')
 let previewRequest = 0
 
 const visibleDepots = computed(
@@ -95,39 +81,11 @@ const manifestTargets = computed(() =>
       manifestId,
     })),
 )
-const actionByDepotId = computed(
-  () => new Map(displayedActions.value.map((item) => [item.depotId, item])),
-)
-const touchedIds = computed(() => new Set(actionByDepotId.value.keys()))
-const touchedDepots = computed(() =>
-  installableDepots(props.app.depots).filter((depot) =>
-    touchedIds.value.has(depot.depotId),
-  ),
-)
-const depotSummary = computed(() =>
-  summarizeDepots(installableDepots(props.app.depots), touchedIds.value),
-)
-const depotGroups = computed(() =>
-  installableDepotGroups.flatMap((name) => {
-    const allDepots = depotsInGroup(props.app.depots, name)
-    const depots = allDepots.filter((depot) =>
-      touchedIds.value.has(depot.depotId),
-    )
-    return depots.length
-      ? [
-          {
-            name,
-            depots,
-            summary: summarizeDepots(allDepots, touchedIds.value),
-          },
-        ]
-      : []
-  }),
-)
-const unrepresentedActions = computed(() =>
-  displayedActions.value.filter(
-    (item) => !visibleDepots.value.has(item.depotId),
-  ),
+const changeRows = computed(() =>
+  displayedActions.value.map((item) => ({
+    ...item,
+    depot: visibleDepots.value.get(item.depotId),
+  })),
 )
 const isFirstInstall = computed(
   () =>
@@ -139,10 +97,32 @@ const confirmationLabel = computed(() => {
   if (isFirstInstall.value) return 'Install'
   return props.selectedDepotIds.length === 0 ? 'Uninstall' : 'Update'
 })
+const currentPreviewKey = computed(() =>
+  JSON.stringify({
+    appId: props.app.appId,
+    firstInstall: isFirstInstall.value,
+    desiredDepotIds: props.selectedDepotIds,
+    manifestTargets: [...manifestTargets.value].sort(
+      (left, right) => left.depotId - right.depotId,
+    ),
+    installPath: isFirstInstall.value ? selectedPath.value : null,
+  }),
+)
+const hasPlannedChanges = computed(() => {
+  if (!preview.value) return false
+  return (
+    preview.value.depots.length > 0 ||
+    preview.value.logicalSizeDeltaBytes !== '0' ||
+    preview.value.estimatedDownloadBytes !== '0' ||
+    preview.value.stagingLogicalUpperBoundBytes !== '0'
+  )
+})
 const canStart = computed(
   () =>
     Boolean(selectedPath.value) &&
     preview.value !== null &&
+    acceptedPreviewKey.value === currentPreviewKey.value &&
+    hasPlannedChanges.value &&
     !previewLoading.value &&
     !previewError.value &&
     (!isFirstInstall.value || props.selectedDepotIds.length > 0) &&
@@ -157,7 +137,13 @@ const canStart = computed(
 watch(
   () => props.open,
   (open) => {
-    if (!open) return
+    if (!open) {
+      ++previewRequest
+      acceptedPreviewKey.value = ''
+      preview.value = null
+      previewLoading.value = false
+      return
+    }
     selectedPath.value = props.app.installPath ?? props.initialPath
     pathError.value = ''
     startError.value = ''
@@ -184,19 +170,29 @@ watch(
 async function requestPreview() {
   // Selection changes can race planning; only the latest response is usable.
   const request = ++previewRequest
+  const requestKey = currentPreviewKey.value
+  const desiredDepotIds = [...props.selectedDepotIds]
+  const requestedManifestTargets = manifestTargets.value.map((target) => ({
+    ...target,
+  }))
+  const installPath = isFirstInstall.value
+    ? selectedPath.value || undefined
+    : undefined
   previewLoading.value = true
   preview.value = null
+  acceptedPreviewKey.value = ''
   previewError.value = ''
   try {
     const result = await previewApplicationOperation({
       appId: props.app.appId,
-      desiredDepotIds: props.selectedDepotIds,
-      manifestTargets: manifestTargets.value,
-      installPath: isFirstInstall.value
-        ? selectedPath.value || undefined
-        : undefined,
+      desiredDepotIds,
+      manifestTargets: requestedManifestTargets,
+      installPath,
     })
-    if (request === previewRequest) preview.value = result
+    if (request === previewRequest && requestKey === currentPreviewKey.value) {
+      preview.value = result
+      acceptedPreviewKey.value = requestKey
+    }
   } catch (error) {
     if (request === previewRequest) {
       preview.value = null
@@ -216,6 +212,33 @@ function formattedSignedBytes(value: string) {
 
 function formattedBytes(value: string | null) {
   return value ? formatBytes(value) : 'Unavailable'
+}
+
+function formattedDepotSizeDelta(current: string, target: string) {
+  return formattedSignedBytes((BigInt(target) - BigInt(current)).toString())
+}
+
+function actionLabel(
+  action: ApplicationOperationPreview['depots'][number]['action'],
+) {
+  return action[0].toUpperCase() + action.slice(1)
+}
+
+function depotCountSummary(value: ApplicationOperationPreview) {
+  const parts = [
+    [value.counts.install, 'install'],
+    [value.counts.update, 'update'],
+    [value.counts.remove, 'removal'],
+  ] as const
+  return parts
+    .filter(([count]) => count > 0)
+    .map(([count, label]) => `${count} ${label}${count === 1 ? '' : 's'}`)
+    .join(' · ')
+}
+
+function handleOpenChange(value: boolean) {
+  if (!value && starting.value) return
+  emit('update:open', value)
 }
 
 function handleCloseAutoFocus(event: Event) {
@@ -269,314 +292,289 @@ async function submit() {
 </script>
 
 <template>
-  <Dialog :open="open" @update:open="emit('update:open', $event)">
+  <Dialog :open="open" @update:open="handleOpenChange">
     <DialogContent
-      class="max-h-[calc(100dvh-2rem)] gap-5 overflow-y-auto sm:max-w-xl"
+      class="max-h-[calc(100dvh-2rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:max-w-2xl"
+      :show-close-button="!starting"
       @close-auto-focus="handleCloseAutoFocus"
     >
-      <DialogHeader class="min-w-0">
+      <DialogHeader class="min-w-0 border-b px-5 py-4 pr-12 sm:px-6">
         <DialogTitle>{{ confirmationLabel }} {{ app.name }}</DialogTitle>
-        <DialogDescription class="sr-only">
-          Review changed depots and the operation size before confirming.
-        </DialogDescription>
       </DialogHeader>
 
-      <section class="min-w-0 space-y-2" aria-labelledby="install-path-title">
-        <h3 id="install-path-title" class="text-sm font-medium">
-          Install directory
-        </h3>
+      <div class="min-w-0 space-y-6 overflow-y-auto px-5 py-5 sm:px-6">
+        <section class="min-w-0 space-y-2" aria-labelledby="install-path-title">
+          <h3 id="install-path-title" class="text-sm font-medium">
+            Install directory
+          </h3>
+          <div
+            class="bg-muted/40 flex min-w-0 flex-col items-stretch gap-2 rounded-md border px-3 py-2 sm:flex-row sm:items-center"
+          >
+            <Lock
+              v-if="app.installPath"
+              class="text-muted-foreground size-4 shrink-0"
+              aria-hidden="true"
+            />
+            <FolderOpen
+              v-else
+              class="text-muted-foreground size-4 shrink-0"
+              aria-hidden="true"
+            />
+            <span
+              v-if="selectedPath"
+              class="min-w-0 flex-1 truncate font-mono text-xs"
+              :aria-label="`Install path: ${selectedPath}`"
+              >{{ selectedPath }}</span
+            >
+            <span v-else class="text-muted-foreground min-w-0 flex-1 text-sm"
+              >No directory selected</span
+            >
+            <Button
+              v-if="!app.installPath"
+              type="button"
+              size="sm"
+              variant="outline"
+              :disabled="choosingPath"
+              @click="chooseDirectory"
+            >
+              {{ choosingPath ? 'Choosing…' : 'Choose' }}
+            </Button>
+          </div>
+          <p v-if="pathError" class="text-destructive text-xs" role="alert">
+            {{ pathError }}
+          </p>
+        </section>
+
+        <section class="min-w-0" aria-labelledby="resource-plan-title">
+          <h3 id="resource-plan-title" class="text-sm font-medium">
+            Resource plan
+          </h3>
+          <div
+            v-if="previewLoading"
+            class="bg-muted/40 mt-2 grid gap-px overflow-hidden rounded-lg border sm:grid-cols-2"
+            role="status"
+          >
+            <div v-for="index in 2" :key="index" class="bg-background p-4">
+              <Skeleton class="h-4 w-24" />
+              <Skeleton class="mt-3 h-7 w-32" />
+              <Skeleton class="mt-2 h-3 w-40 max-w-full" />
+            </div>
+            <span class="sr-only">Calculating operation requirements.</span>
+          </div>
+          <div
+            v-else-if="preview"
+            class="bg-muted/40 mt-2 grid gap-px overflow-hidden rounded-lg border sm:grid-cols-2"
+          >
+            <div class="bg-background p-4">
+              <p
+                class="text-muted-foreground flex items-center gap-2 text-xs font-medium"
+              >
+                <Download class="size-4" aria-hidden="true" /> Estimated
+                download
+              </p>
+              <p class="mt-1 text-xl font-semibold tabular-nums">
+                {{ formatBytes(preview.estimatedDownloadBytes) }}
+              </p>
+              <p class="text-muted-foreground mt-1 text-xs">
+                Up to
+                {{ formattedBytes(preview.networkPayloadUpperBoundBytes) }}
+                before reusing local content
+              </p>
+            </div>
+            <div class="bg-background p-4">
+              <p
+                class="text-muted-foreground flex items-center gap-2 text-xs font-medium"
+              >
+                <Layers3 class="size-4" aria-hidden="true" /> Temporary space
+              </p>
+              <p class="mt-1 text-xl font-semibold tabular-nums">
+                Up to {{ formatBytes(preview.stagingLogicalUpperBoundBytes) }}
+              </p>
+              <p class="text-muted-foreground mt-1 text-xs">
+                Final installation
+                {{ formattedSignedBytes(preview.logicalSizeDeltaBytes) }}
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section class="min-w-0" aria-labelledby="selected-depots-title">
+          <header class="flex flex-wrap items-baseline justify-between gap-2">
+            <h3 id="selected-depots-title" class="text-sm font-medium">
+              Depot changes
+            </h3>
+            <p
+              v-if="preview && changeRows.length"
+              class="text-muted-foreground text-xs tabular-nums"
+            >
+              {{ depotCountSummary(preview) }}
+            </p>
+          </header>
+
+          <Accordion
+            v-if="changeRows.length"
+            type="multiple"
+            class="mt-2 overflow-hidden rounded-lg border"
+          >
+            <AccordionItem
+              v-for="item in changeRows"
+              :key="item.depotId"
+              :value="String(item.depotId)"
+              class="last:border-b-0"
+            >
+              <AccordionTrigger
+                class="hover:bg-accent/50 rounded-none px-3 py-3 hover:no-underline"
+              >
+                <span
+                  class="flex min-w-0 flex-1 flex-wrap items-center gap-3 pr-2"
+                >
+                  <Badge
+                    variant="outline"
+                    :class="{
+                      'border-primary/40 bg-primary/15 text-primary dark:border-ring/50 dark:bg-ring/15 dark:text-ring':
+                        item.action === 'install',
+                      'border-destructive/40 bg-destructive/10 text-destructive':
+                        item.action === 'remove',
+                      'border-info/40 bg-info/10 text-info':
+                        item.action === 'update',
+                    }"
+                  >
+                    <Plus
+                      v-if="item.action === 'install'"
+                      class="size-3"
+                      aria-hidden="true"
+                    />
+                    <Minus
+                      v-else-if="item.action === 'remove'"
+                      class="size-3"
+                      aria-hidden="true"
+                    />
+                    <RefreshCw v-else class="size-3" aria-hidden="true" />
+                    {{ actionLabel(item.action) }}
+                  </Badge>
+                  <span class="font-medium tabular-nums">
+                    <span class="text-muted-foreground font-normal">Depot</span>
+                    {{ item.depotId }}
+                  </span>
+                  <DepotBadges
+                    v-if="item.depot"
+                    class="ml-auto"
+                    :depot="item.depot"
+                  />
+                </span>
+              </AccordionTrigger>
+              <AccordionContent class="border-t px-3 pb-3">
+                <dl class="grid gap-3 pt-3 text-xs sm:grid-cols-2">
+                  <div class="min-w-0 sm:col-span-2">
+                    <dt class="text-muted-foreground">
+                      {{
+                        item.action === 'update'
+                          ? 'Manifest change'
+                          : 'Manifest'
+                      }}
+                    </dt>
+                    <dd
+                      class="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 font-mono break-all tabular-nums"
+                    >
+                      <span v-if="item.currentManifestId">{{
+                        item.currentManifestId
+                      }}</span>
+                      <span
+                        v-if="item.action === 'update'"
+                        class="text-muted-foreground"
+                        aria-hidden="true"
+                        >→</span
+                      >
+                      <span v-if="item.targetManifestId">{{
+                        item.targetManifestId
+                      }}</span>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt class="text-muted-foreground">Target download size</dt>
+                    <dd class="mt-1 font-medium tabular-nums">
+                      {{ formatBytes(item.targetDownloadBytes) }}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt class="text-muted-foreground">Size on disk</dt>
+                    <dd
+                      class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 font-medium tabular-nums"
+                    >
+                      <span v-if="item.action !== 'install'">
+                        {{ formatBytes(item.currentSizeBytes) }}
+                      </span>
+                      <span
+                        v-if="item.action !== 'install'"
+                        class="text-muted-foreground"
+                        aria-hidden="true"
+                        >→</span
+                      >
+                      <span>{{ formatBytes(item.targetSizeBytes) }}</span>
+                      <span
+                        v-if="item.action !== 'install'"
+                        class="text-muted-foreground font-normal"
+                      >
+                        ({{
+                          formattedDepotSizeDelta(
+                            item.currentSizeBytes,
+                            item.targetSizeBytes,
+                          )
+                        }})
+                      </span>
+                    </dd>
+                  </div>
+                </dl>
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
+
+          <p
+            v-if="preview && !hasPlannedChanges"
+            class="bg-muted/40 mt-2 rounded-lg border px-4 py-5 text-sm"
+            role="status"
+          >
+            Everything is already up to date. No operation is needed.
+          </p>
+        </section>
+
         <div
-          class="bg-muted/40 flex min-w-0 flex-col items-stretch gap-2 rounded-md border px-3 py-2 sm:flex-row sm:items-center"
+          v-if="previewError"
+          class="border-destructive/30 bg-destructive/5 rounded-lg border p-4"
+          role="alert"
         >
-          <Lock
-            v-if="app.installPath"
-            class="text-muted-foreground size-4 shrink-0"
-            aria-hidden="true"
-          />
-          <FolderOpen
-            v-else
-            class="text-muted-foreground size-4 shrink-0"
-            aria-hidden="true"
-          />
-          <span
-            v-if="selectedPath"
-            class="min-w-0 flex-1 truncate font-mono text-xs"
-            :aria-label="`Install path: ${selectedPath}`"
-            >{{ selectedPath }}</span
-          >
-          <span v-else class="text-muted-foreground min-w-0 flex-1 text-sm"
-            >No directory selected</span
-          >
+          <p class="text-destructive text-sm font-medium">
+            Couldn’t calculate changes
+          </p>
+          <p class="text-muted-foreground mt-1 text-sm">{{ previewError }}</p>
           <Button
-            v-if="!app.installPath"
             type="button"
             size="sm"
             variant="outline"
-            :disabled="choosingPath"
-            @click="chooseDirectory"
+            class="mt-3"
+            @click="requestPreview"
           >
-            {{ choosingPath ? 'Choosing…' : 'Choose' }}
+            Retry
           </Button>
         </div>
-        <p v-if="pathError" class="text-destructive text-xs" role="alert">
-          {{ pathError }}
+        <p v-if="startError" class="text-destructive text-sm" role="alert">
+          {{ startError }}
         </p>
-
-        <div
-          class="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-2 pt-1 text-xs tabular-nums"
-          aria-label="Operation preview summary"
-        >
-          <template v-if="previewLoading">
-            <Skeleton v-for="index in 6" :key="index" class="h-5 w-12" />
-          </template>
-          <template v-else-if="preview">
-            <Tooltip>
-              <TooltipTrigger as-child
-                ><span
-                  class="text-primary flex items-center gap-1 font-semibold"
-                  :aria-label="`${preview.counts.install} depots to install`"
-                  ><Plus class="size-5 stroke-[2.5]" />{{
-                    preview.counts.install
-                  }}</span
-                ></TooltipTrigger
-              >
-              <TooltipContent>Depots to install</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger as-child
-                ><span
-                  class="text-destructive flex items-center gap-1 font-semibold"
-                  :aria-label="`${preview.counts.remove} depots to remove`"
-                  ><Minus class="size-5 stroke-[2.5]" />{{
-                    preview.counts.remove
-                  }}</span
-                ></TooltipTrigger
-              >
-              <TooltipContent>Depots to remove</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger as-child
-                ><span
-                  class="text-info flex items-center gap-1 font-semibold"
-                  :aria-label="`${preview.counts.update} depots to update`"
-                  ><RefreshCw class="size-5 stroke-[2.5]" />{{
-                    preview.counts.update
-                  }}</span
-                ></TooltipTrigger
-              >
-              <TooltipContent>Depots to update</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger as-child
-                ><span
-                  class="text-primary flex items-center gap-1 font-semibold"
-                  :aria-label="`Logical size change ${formattedSignedBytes(preview.logicalSizeDeltaBytes)}`"
-                  ><HardDrive class="size-5 stroke-[2.5]" />{{
-                    formattedSignedBytes(preview.logicalSizeDeltaBytes)
-                  }}</span
-                ></TooltipTrigger
-              >
-              <TooltipContent>Signed logical size change</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger as-child
-                ><span
-                  class="flex items-center gap-1"
-                  :aria-label="`Estimated download ${formatBytes(preview.estimatedDownloadBytes)}`"
-                  ><Download class="size-4" />{{
-                    formatBytes(preview.estimatedDownloadBytes)
-                  }}</span
-                ></TooltipTrigger
-              >
-              <TooltipContent>
-                Estimated download after reusing local content. Maximum
-                {{ formattedBytes(preview.networkPayloadUpperBoundBytes) }}.
-              </TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger as-child
-                ><span
-                  class="text-primary flex items-center gap-1 font-semibold"
-                  :aria-label="`Maximum temporary disk space ${formatBytes(preview.stagingLogicalUpperBoundBytes)}`"
-                  ><Layers3 class="size-5 stroke-[2.5]" />{{
-                    formatBytes(preview.stagingLogicalUpperBoundBytes)
-                  }}</span
-                ></TooltipTrigger
-              >
-              <TooltipContent>Maximum temporary disk space</TooltipContent>
-            </Tooltip>
-          </template>
-        </div>
-      </section>
-
-      <section class="min-w-0" aria-labelledby="selected-depots-title">
-        <header class="flex flex-wrap items-center justify-between gap-3">
-          <h3 id="selected-depots-title" class="text-sm font-medium">Depots</h3>
-          <DepotSummary :summary="depotSummary" :show-missing="false" />
-        </header>
-
-        <Accordion type="multiple" class="mt-2 space-y-2">
-          <AccordionItem
-            v-for="group in depotGroups"
-            :key="group.name"
-            :value="group.name"
-            class="border-border overflow-hidden rounded-lg border last:border-b"
-          >
-            <AccordionTrigger
-              class="hover:bg-accent/50 rounded-none px-3 py-2.5 hover:no-underline"
-            >
-              <span
-                class="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-3 pr-2"
-              >
-                <span>{{ group.name }}</span>
-                <DepotSummary :summary="group.summary" />
-              </span>
-            </AccordionTrigger>
-            <AccordionContent class="pb-0">
-              <ul :aria-label="`Selected ${group.name} depots`">
-                <li
-                  v-for="depot in group.depots"
-                  :key="depot.depotId"
-                  class="border-border border-t px-3 py-3"
-                >
-                  <div class="flex flex-wrap items-start justify-between gap-3">
-                    <p class="flex items-center gap-2 font-medium tabular-nums">
-                      <span>
-                        <span class="text-muted-foreground">ID</span>
-                        {{ depot.depotId }}
-                      </span>
-                      <Badge
-                        variant="outline"
-                        class="size-5 p-0"
-                        :class="{
-                          'border-primary/40 bg-primary/15 text-primary':
-                            actionByDepotId.get(depot.depotId)?.action ===
-                            'install',
-                          'border-destructive/40 bg-destructive/10 text-destructive':
-                            actionByDepotId.get(depot.depotId)?.action ===
-                            'remove',
-                          'border-info/40 bg-info/10 text-info':
-                            actionByDepotId.get(depot.depotId)?.action ===
-                            'update',
-                        }"
-                        :aria-label="`${actionByDepotId.get(depot.depotId)?.action} depot ${depot.depotId}`"
-                      >
-                        <Plus
-                          v-if="
-                            actionByDepotId.get(depot.depotId)?.action ===
-                            'install'
-                          "
-                          class="size-3.5 stroke-[2.5]"
-                          aria-hidden="true"
-                        />
-                        <Minus
-                          v-else-if="
-                            actionByDepotId.get(depot.depotId)?.action ===
-                            'remove'
-                          "
-                          class="size-3.5 stroke-[2.5]"
-                          aria-hidden="true"
-                        />
-                        <RefreshCw
-                          v-else
-                          class="size-3.5 stroke-[2.5]"
-                          aria-hidden="true"
-                        />
-                      </Badge>
-                    </p>
-                    <DepotBadges :depot="depot" />
-                  </div>
-                  <dl class="mt-3 grid gap-3 text-xs sm:grid-cols-2">
-                    <div
-                      v-if="customManifestTargets.has(depot.depotId)"
-                      class="min-w-0 sm:col-span-2"
-                    >
-                      <dt class="text-muted-foreground">Target Manifest</dt>
-                      <dd class="mt-1 font-mono break-all tabular-nums">
-                        {{ customManifestTargets.get(depot.depotId) }}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt class="text-muted-foreground">Download Size</dt>
-                      <dd class="mt-1 font-medium tabular-nums">
-                        {{ formattedBytes(depot.downloadBytes) }}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt class="text-muted-foreground">Size on Disk</dt>
-                      <dd class="mt-1 font-medium tabular-nums">
-                        {{ formattedBytes(depot.sizeBytes) }}
-                      </dd>
-                    </div>
-                  </dl>
-                </li>
-              </ul>
-            </AccordionContent>
-          </AccordionItem>
-        </Accordion>
-
-        <ul
-          v-if="unrepresentedActions.length"
-          class="border-border mt-2 overflow-hidden rounded-lg border"
-          aria-label="Unavailable touched depots"
-        >
-          <li
-            v-for="item in unrepresentedActions"
-            :key="item.depotId"
-            class="border-border flex items-center gap-2 border-b px-3 py-3 font-medium tabular-nums last:border-b-0"
-          >
-            <span class="text-muted-foreground">ID</span> {{ item.depotId }}
-            <Badge
-              variant="outline"
-              class="size-5 p-0"
-              :aria-label="`${item.action} depot ${item.depotId}`"
-            >
-              <Minus
-                v-if="item.action === 'remove'"
-                class="text-destructive size-3.5 stroke-[2.5]"
-                aria-hidden="true"
-              />
-              <RefreshCw
-                v-else-if="item.action === 'update'"
-                class="text-info size-3.5 stroke-[2.5]"
-                aria-hidden="true"
-              />
-              <Plus
-                v-else
-                class="text-primary size-3.5 stroke-[2.5]"
-                aria-hidden="true"
-              />
-            </Badge>
-          </li>
-        </ul>
-
-        <p
-          v-if="
-            !previewLoading &&
-            !previewError &&
-            !touchedDepots.length &&
-            !unrepresentedActions.length
-          "
-          class="text-muted-foreground mt-2 text-sm"
-        >
-          No depot changes.
-        </p>
-      </section>
-
-      <p v-if="previewError" class="text-destructive text-sm" role="alert">
-        {{ previewError }}
-      </p>
-      <p v-if="startError" class="text-destructive text-sm" role="alert">
-        {{ startError }}
-      </p>
-      <DialogFooter class="min-w-0">
+      </div>
+      <DialogFooter class="bg-background min-w-0 border-t px-5 py-4 sm:px-6">
         <Button
           type="button"
           variant="outline"
-          @click="emit('update:open', false)"
-          >Cancel</Button
+          :disabled="starting"
+          @click="handleOpenChange(false)"
+          >{{ preview && !hasPlannedChanges ? 'Close' : 'Cancel' }}</Button
         >
-        <Button type="button" :disabled="!canStart" @click="submit">
+        <Button
+          v-if="!preview || hasPlannedChanges"
+          type="button"
+          :disabled="!canStart"
+          @click="submit"
+        >
           {{
             starting
               ? `${confirmationLabel === 'Uninstall' ? 'Uninstalling' : confirmationLabel === 'Update' ? 'Updating' : 'Installing'}…`

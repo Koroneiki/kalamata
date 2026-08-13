@@ -43,9 +43,33 @@ test('classifies install, remove, and update depots with a signed delta', () => 
   )
 
   expect(preview.depots).toEqual([
-    { depotId: 2, action: 'update' },
-    { depotId: 3, action: 'install' },
-    { depotId: 1, action: 'remove' },
+    {
+      depotId: 2,
+      action: 'update',
+      currentManifestId: 'same',
+      targetManifestId: 'new',
+      currentSizeBytes: '2',
+      targetSizeBytes: '4',
+      targetDownloadBytes: '4',
+    },
+    {
+      depotId: 3,
+      action: 'install',
+      currentManifestId: null,
+      targetManifestId: 'new',
+      currentSizeBytes: '0',
+      targetSizeBytes: '3',
+      targetDownloadBytes: '3',
+    },
+    {
+      depotId: 1,
+      action: 'remove',
+      currentManifestId: 'old',
+      targetManifestId: null,
+      currentSizeBytes: '3',
+      targetSizeBytes: '0',
+      targetDownloadBytes: '0',
+    },
   ])
   expect(preview.counts).toEqual({ install: 1, remove: 1, update: 1 })
   expect(preview.logicalSizeDeltaBytes).toBe('2')
@@ -162,6 +186,11 @@ queueTest(
               depots: plan.desiredDepots.map(({ depotId }) => ({
                 depotId,
                 action: 'install' as const,
+                currentManifestId: null,
+                targetManifestId: 'target',
+                currentSizeBytes: '0',
+                targetSizeBytes: '0',
+                targetDownloadBytes: '0',
               })),
               counts: {
                 install: plan.desiredDepots.length,
@@ -185,7 +214,15 @@ queueTest(
       })
 
       expect(preview.depots).toEqual([
-        { depotId: DEPOTS[0].depotId, action: 'install' },
+        {
+          depotId: DEPOTS[0].depotId,
+          action: 'install',
+          currentManifestId: null,
+          targetManifestId: 'target',
+          currentSizeBytes: '0',
+          targetSizeBytes: '0',
+          targetDownloadBytes: '0',
+        },
       ])
       expect(previewPath).toBe(fixture.installPath)
       expect(fixture.database.getLibraryEntry(APP_ID)?.installPath).toBeNull()

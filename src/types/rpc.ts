@@ -102,6 +102,11 @@ export interface ApplicationOperationPreview {
   depots: Array<{
     depotId: number
     action: 'install' | 'remove' | 'update'
+    currentManifestId: string | null
+    targetManifestId: string | null
+    currentSizeBytes: string
+    targetSizeBytes: string
+    targetDownloadBytes: string
   }>
   counts: {
     install: number

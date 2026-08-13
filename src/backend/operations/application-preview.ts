@@ -63,13 +63,38 @@ export function compareApplicationManifests(
 
   for (const depot of desired) {
     const previous = installedById.get(depot.depotId)
-    if (!previous) depots.push({ depotId: depot.depotId, action: 'install' })
+    if (!previous)
+      depots.push({
+        depotId: depot.depotId,
+        action: 'install',
+        currentManifestId: null,
+        targetManifestId: depot.manifest.gid_manifest,
+        currentSizeBytes: '0',
+        targetSizeBytes: depot.manifest.cb_disk_original,
+        targetDownloadBytes: depot.manifest.cb_disk_compressed,
+      })
     else if (previous.manifest.gid_manifest !== depot.manifest.gid_manifest)
-      depots.push({ depotId: depot.depotId, action: 'update' })
+      depots.push({
+        depotId: depot.depotId,
+        action: 'update',
+        currentManifestId: previous.manifest.gid_manifest,
+        targetManifestId: depot.manifest.gid_manifest,
+        currentSizeBytes: previous.manifest.cb_disk_original,
+        targetSizeBytes: depot.manifest.cb_disk_original,
+        targetDownloadBytes: depot.manifest.cb_disk_compressed,
+      })
   }
   for (const depot of installed)
     if (!desiredById.has(depot.depotId))
-      depots.push({ depotId: depot.depotId, action: 'remove' })
+      depots.push({
+        depotId: depot.depotId,
+        action: 'remove',
+        currentManifestId: depot.manifest.gid_manifest,
+        targetManifestId: null,
+        currentSizeBytes: depot.manifest.cb_disk_original,
+        targetSizeBytes: '0',
+        targetDownloadBytes: '0',
+      })
 
   const source = buildProjection(installed, appId)
   const target = buildProjection(desired, appId)
