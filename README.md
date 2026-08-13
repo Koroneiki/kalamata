@@ -56,10 +56,10 @@ Kalamata without disabling Gatekeeper globally:
 4. Scroll to the Security section and click **Open Anyway** for Kalamata.
 5. Confirm by clicking **Open**.
 
-The macOS bundle has a local ad-hoc signature to preserve its integrity, but it
-is not signed with an Apple Developer ID or notarized. Only bypass the warning
-when the package came directly from the project's private GitHub release. Users
-must be authenticated with GitHub to download release assets.
+The downloadable macOS wrapper has a local ad-hoc signature, but the installed
+application is not signed with an Apple Developer ID or notarized. Only bypass
+the warning when the package came directly from the project's private GitHub
+release. Users must be authenticated with GitHub to download release assets.
 
 ## Local Data And Depot Keys
 

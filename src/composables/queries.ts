@@ -1,7 +1,7 @@
 import { defineQueryOptions, useQuery } from '@pinia/colada'
 import { toValue, type MaybeRefOrGetter } from 'vue'
 
-import { getAppDetails, getAppSummary } from '@/api/apps'
+import { getAppSummary } from '@/api/apps'
 import { getLibrary } from '@/api/library'
 import { getSettings } from '@/api/settings'
 
@@ -18,11 +18,6 @@ export const appSummaryQuery = defineQueryOptions((appId: number) => ({
   query: () => getAppSummary(appId),
 }))
 
-export const appDetailsQuery = defineQueryOptions((appId: number) => ({
-  key: appQueryKeys.details(appId),
-  query: () => getAppDetails(appId),
-}))
-
 export const libraryQuery = defineQueryOptions({
   key: libraryQueryKey,
   query: getLibrary,
@@ -35,10 +30,6 @@ export const settingsQuery = defineQueryOptions({
 
 export function useAppSummaryQuery(appId: MaybeRefOrGetter<number>) {
   return useQuery(() => appSummaryQuery(toValue(appId)))
-}
-
-export function useAppDetailsQuery(appId: MaybeRefOrGetter<number>) {
-  return useQuery(() => appDetailsQuery(toValue(appId)))
 }
 
 export function useLibraryQuery() {
