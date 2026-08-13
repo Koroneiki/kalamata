@@ -4,6 +4,10 @@ import type { AppRpc, OperationState } from '@/types/rpc'
 import { operationStateSchema, rpcResponseSchemas } from '@/types/rpc-schemas'
 
 type Requests = AppRpc['bun']['requests']
+type AppRequest = <K extends keyof Requests>(
+  method: K,
+  params: Requests[K]['params'],
+) => Promise<Requests[K]['response']>
 
 type OperationStateListener = (
   state: OperationState,
@@ -36,11 +40,11 @@ export async function request<K extends keyof Requests>(
   method: K,
   params: Requests[K]['params'],
 ): Promise<Requests[K]['response']> {
-  const rawRequest = electroview.rpc!.request as unknown as (
-    method: keyof Requests,
-    params: unknown,
-  ) => Promise<unknown>
-  const response = await rawRequest(method, params)
+  // SAFETY: every Kalamata RPC request declares required `params`; this removes
+  // Electrobun's conditional rest tuple while preserving each method's pairing.
+  const appRequest = electroview.rpc!.request as AppRequest
+  const response = await appRequest(method, params)
+  // SAFETY: `method` selects both the RPC response contract and its matching schema.
   return rpcResponseSchemas[method].parse(response) as Requests[K]['response']
 }
 

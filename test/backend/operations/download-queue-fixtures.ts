@@ -175,7 +175,7 @@ export async function waitForTerminal(
 
 export function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void
-  let reject!: (reason?: unknown) => void
+  let reject!: (reason?: Error) => void
   const promise = new Promise<T>((resolvePromise, rejectPromise) => {
     resolve = resolvePromise
     reject = rejectPromise
@@ -185,16 +185,18 @@ export function deferred<T>() {
 
 function product(
   appId: number,
-  depotEntries: Record<string, unknown>,
+  appInfoId: `${number}`,
+  depotEntries: NonNullable<SteamUser.AppInfoContentGame['depots']>,
 ): ProductInfo {
   return {
     appId,
     changenumber: 1,
     missingToken: false,
     appinfo: {
-      common: { name: 'Queue Test' },
+      appid: appInfoId,
+      common: { name: 'Queue Test', type: 'game', gameid: appInfoId },
       depots: depotEntries,
-    } as unknown as SteamUser.AppInfoContent,
+    },
   }
 }
 
@@ -202,11 +204,11 @@ export function products(
   dlcManifestId: string = DEPOTS[1].manifestId,
 ): ProductInfoResult {
   return {
-    baseProduct: product(APP_ID, {
+    baseProduct: product(APP_ID, `${APP_ID}`, {
       [DEPOTS[0].depotId]: depotMetadata(DEPOTS[0].manifestId),
     }),
     dlcProducts: [
-      product(DLC_APP_ID, {
+      product(DLC_APP_ID, `${DLC_APP_ID}`, {
         [DEPOTS[1].depotId]: depotMetadata(dlcManifestId),
       }),
     ],

@@ -4,6 +4,9 @@ import type {
   ManifestChunk,
   ManifestFile,
 } from '../../manifests/types.ts'
+import { z } from 'zod'
+
+const filesystemErrorSchema = z.object({ code: z.string() })
 
 export type ApplicationTransactionErrorKind =
   | 'planning'
@@ -232,51 +235,56 @@ export function throwIfAborted(signal?: AbortSignal): void {
   )
 }
 
-export function isAbort(error: unknown, signal?: AbortSignal): boolean {
+export function isAbort(cause: unknown, signal?: AbortSignal): boolean {
   return (
     signal?.aborted === true ||
-    (error instanceof ApplicationTransactionError &&
-      error.kind === 'cancellation') ||
-    (error instanceof DOMException && error.name === 'AbortError') ||
-    (error instanceof Error && error.name === 'AbortError')
+    (cause instanceof ApplicationTransactionError &&
+      cause.kind === 'cancellation') ||
+    (cause instanceof DOMException && cause.name === 'AbortError') ||
+    (cause instanceof Error && cause.name === 'AbortError')
   )
 }
 
-export function isPause(error: unknown, signal?: AbortSignal): boolean {
+export function isPause(cause: unknown, signal?: AbortSignal): boolean {
   return (
     signal?.reason instanceof Error &&
     signal.reason.name === 'PauseError' &&
-    (error === signal.reason || isAbort(error, signal))
+    (cause === signal.reason || isAbort(cause, signal))
   )
 }
 
-export function isShutdown(error: unknown, signal?: AbortSignal): boolean {
+export function isShutdown(cause: unknown, signal?: AbortSignal): boolean {
   return (
     signal?.reason instanceof Error &&
     signal.reason.name === 'ShutdownError' &&
-    (error === signal.reason || isAbort(error, signal))
+    (cause === signal.reason || isAbort(cause, signal))
   )
 }
 
-export function isFilesystemError(error: unknown): boolean {
-  return typeof (error as NodeJS.ErrnoException)?.code === 'string'
+export function filesystemErrorCode(cause: unknown): string | undefined {
+  const parsed = filesystemErrorSchema.safeParse(cause)
+  return parsed.success ? parsed.data.code : undefined
+}
+
+export function isFilesystemError(cause: unknown): boolean {
+  return filesystemErrorCode(cause) !== undefined
 }
 
 export function classify(
-  error: unknown,
+  cause: unknown,
   kind: ApplicationTransactionErrorKind,
   message: string,
 ): ApplicationTransactionError {
-  if (error instanceof ApplicationTransactionError) return error
-  if (isAbort(error))
+  if (cause instanceof ApplicationTransactionError) return cause
+  if (isAbort(cause))
     return new ApplicationTransactionError(
       'cancellation',
       'Transaction cancelled',
-      { cause: error },
+      { cause },
     )
-  if ((error as NodeJS.ErrnoException)?.code === 'ENOSPC')
+  if (filesystemErrorCode(cause) === 'ENOSPC')
     return new ApplicationTransactionError('insufficient-space', message, {
-      cause: error,
+      cause,
     })
-  return new ApplicationTransactionError(kind, message, { cause: error })
+  return new ApplicationTransactionError(kind, message, { cause })
 }

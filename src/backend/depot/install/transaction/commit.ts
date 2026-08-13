@@ -21,6 +21,7 @@ import {
 } from './projection.ts'
 import {
   ApplicationTransactionError,
+  filesystemErrorCode,
   type InstallAction,
   type ProjectionEntry,
   type RunApplicationTransactionOptions,
@@ -127,23 +128,23 @@ export async function planCommitActions(
       (left, right) =>
         pathDepth(left.file.filename) - pathDepth(right.file.filename),
     )
-    .map((entry) => {
+    .map((entry): InstallAction => {
       const item = stagedByKey.get(entry.key)
-      return {
+      const directory = isDirectory(entry.file)
+      const action: InstallAction = {
         path: normalizeManifestSeparators(entry.file.filename),
         staging: item
           ? normalizeManifestSeparators(
               relative(resolve(dirname(backupRoot)), item.stagingPath),
             )
           : undefined,
-        directory: isDirectory(entry.file),
-        ...(!isDirectory(entry.file)
-          ? {
-              expectedSize: entry.file.size,
-              expectedSha1: entry.file.sha_content.toLowerCase(),
-            }
-          : {}),
+        directory,
       }
+      if (!directory) {
+        action.expectedSize = entry.file.size
+        action.expectedSha1 = entry.file.sha_content.toLowerCase()
+      }
+      return action
     })
   const obsoleteDirectories = [...source.values()]
     .filter((entry) => isDirectory(entry.file) && !target.has(entry.key))
@@ -212,7 +213,7 @@ export async function rollForward(
     for (const path of journal.obsoleteDirectories) {
       await revalidateDestructivePath(outputDirectory, path)
       await rmdir(resolveOutputPath(outputDirectory, path)).catch((error) => {
-        const code = (error as NodeJS.ErrnoException).code
+        const code = filesystemErrorCode(error)
         if (!['ENOENT', 'ENOTEMPTY', 'EEXIST'].includes(code ?? '')) throw error
       })
     }

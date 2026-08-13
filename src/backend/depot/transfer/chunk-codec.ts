@@ -7,10 +7,21 @@ const _require = createRequire(import.meta.url)
 const _symmetricDecrypt: (data: Buffer, key: Buffer) => Buffer = _require(
   '@doctormckay/steam-crypto',
 ).symmetricDecrypt
-const AdmZip = _require('adm-zip') as new (data: Buffer) => {
-  getEntries(): Array<{ header?: { size?: number } }>
-  readFile(entry: unknown): Buffer | null
+
+interface ZipEntry {
+  header?: { size?: number }
 }
+
+interface ZipArchive {
+  getEntries(): ZipEntry[]
+  readFile(entry: ZipEntry): Buffer | null
+}
+
+interface ZipArchiveConstructor {
+  new (data: Buffer): ZipArchive
+}
+
+const AdmZip: ZipArchiveConstructor = _require('adm-zip')
 
 export async function processChunkData(
   encryptedData: Buffer,
@@ -73,7 +84,7 @@ function decompressZip(data: Buffer, expectedSize?: number): Buffer {
   const archive = new AdmZip(data)
   const entry = archive.getEntries()[0]
   if (!entry) throw new Error('ZIP chunk contains no entries')
-  if (typeof entry.header?.size === 'number')
+  if (entry.header?.size !== undefined)
     validateDeclaredSize('ZIP', entry.header.size, expectedSize)
   const result = archive.readFile(entry)
   if (!result) throw new Error('ZIP chunk could not be decompressed')

@@ -14,6 +14,9 @@ type RequestSchemas = {
 type ResponseSchemas = {
   [K in keyof Requests]: z.ZodType<Requests[K]['response']>
 }
+type RpcRequestInput = z.input<
+  (typeof rpcRequestSchemas)[keyof typeof rpcRequestSchemas]
+>
 type RequestHandlers = {
   [K in keyof Requests]: (
     params: Requests[K]['params'],
@@ -283,23 +286,35 @@ export const rpcResponseSchemas = {
 
 export function parseRpcRequest<K extends keyof Requests>(
   method: K,
-  value: unknown,
+  value: RpcRequestInput,
 ): Requests[K]['params'] {
+  // SAFETY: `method` indexes a schema declared against the same request contract.
   return rpcRequestSchemas[method].parse(value) as Requests[K]['params']
 }
 
 export function validatedRpcHandlers(
   handlers: RequestHandlers,
 ): RequestHandlers {
+  // SAFETY: every key is required by `RequestHandlers`; only the correlated key/value
+  // relationship is erased here so the wrappers can be generated uniformly.
   const untypedHandlers = handlers as Record<
     keyof Requests,
-    (params: never) => unknown
+    (
+      params: Requests[keyof Requests]['params'],
+    ) =>
+      | Requests[keyof Requests]['response']
+      | Promise<Requests[keyof Requests]['response']>
   >
+  // SAFETY: each entry retains its original method and handler as a pair, and the
+  // wrapper validates parameters with that method's schema before dispatching.
   return Object.fromEntries(
     Object.entries(untypedHandlers).map(([method, handler]) => [
       method,
-      (value: unknown) =>
-        handler(parseRpcRequest(method as keyof Requests, value) as never),
+      (value: Requests[keyof Requests]['params']) => {
+        // SAFETY: `method` originates from the complete keyed handler record above.
+        const requestMethod = method as keyof Requests
+        return handler(parseRpcRequest(requestMethod, value))
+      },
     ]),
   ) as RequestHandlers
 }

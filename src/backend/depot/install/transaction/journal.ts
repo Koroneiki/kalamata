@@ -21,6 +21,7 @@ import {
 import { safeLstat } from './projection.ts'
 import {
   ApplicationTransactionError,
+  filesystemErrorCode,
   type ApplicationDepotRecord,
   type CompletionRecord,
   type JournalContext,
@@ -236,7 +237,7 @@ export async function loadResumableJournal(
   try {
     entries = await readdir(root, { withFileTypes: true })
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+    if (filesystemErrorCode(error) === 'ENOENT') return undefined
     throw error
   }
   // OS metadata files beside the journals are not transaction candidates.

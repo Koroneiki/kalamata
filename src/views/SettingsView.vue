@@ -16,11 +16,11 @@ const { data: settings, error, isPending } = useSettingsQuery()
 const updateMutation = useMutation({ mutation: updateSettings })
 const mutationError = ref('')
 
-const platformLabels: Record<DepotPlatform, string> = {
+const platformLabels = {
   windows: 'Windows',
   macos: 'macOS',
   linux: 'Linux',
-}
+} satisfies Record<DepotPlatform, string>
 
 async function persist(next: AppSettings, optimistic = true) {
   const previous = settings.value
@@ -48,12 +48,12 @@ function setPlatform(platform: DepotPlatform, active: boolean) {
 }
 
 function setHideRedistributables(value: boolean | 'indeterminate') {
-  if (!settings.value || typeof value !== 'boolean') return
+  if (!settings.value || value === 'indeterminate') return
   void persist({ ...settings.value, hideRedistributables: value })
 }
 
 function setAutomaticManifestAcquisition(value: boolean | 'indeterminate') {
-  if (!settings.value || typeof value !== 'boolean') return
+  if (!settings.value || value === 'indeterminate') return
   // Cache updates trigger acquisition, so publish this only after persistence succeeds.
   void persist(
     { ...settings.value, automaticManifestAcquisition: value },
@@ -62,12 +62,12 @@ function setAutomaticManifestAcquisition(value: boolean | 'indeterminate') {
 }
 
 function setHideUnknownDepots(value: boolean | 'indeterminate') {
-  if (!settings.value || typeof value !== 'boolean') return
+  if (!settings.value || value === 'indeterminate') return
   void persist({ ...settings.value, hideUnknownDepots: value })
 }
 
 function setHideUnusedDepots(value: boolean | 'indeterminate') {
-  if (!settings.value || typeof value !== 'boolean') return
+  if (!settings.value || value === 'indeterminate') return
   void persist({ ...settings.value, hideUnusedDepots: value })
 }
 </script>

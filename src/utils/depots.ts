@@ -26,6 +26,10 @@ export const installableDepotGroups: InstallableDepotGroup[] = [
 ]
 export const depotPlatforms: DepotPlatform[] = ['windows', 'macos', 'linux']
 
+function isDepotPlatform(value: string): value is DepotPlatform {
+  return value === 'windows' || value === 'macos' || value === 'linux'
+}
+
 export function filterDepots(
   depots: AppDepot[],
   hideRedistributables: boolean,
@@ -60,11 +64,10 @@ export function matchesDepotPlatform(
   if (!depot.platform) return true
   const visiblePlatforms =
     platforms instanceof Set ? platforms : new Set(platforms)
-  return depot.platform
-    .split(',')
-    .some((platform) =>
-      visiblePlatforms.has(platform.trim().toLowerCase() as DepotPlatform),
-    )
+  return depot.platform.split(',').some((platform) => {
+    const normalized = platform.trim().toLowerCase()
+    return isDepotPlatform(normalized) && visiblePlatforms.has(normalized)
+  })
 }
 
 export function installableDepots(depots: AppDepot[]): EligibleAppDepot[] {

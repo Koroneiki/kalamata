@@ -39,6 +39,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@oxlint/plugins": "1.78.0",
     "@tailwindcss/vite": "^4.3.3",
     "@tsconfig/node22": "^22.0.5",
     "@types/bun": "latest",

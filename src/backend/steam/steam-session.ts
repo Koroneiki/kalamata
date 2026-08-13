@@ -1,4 +1,5 @@
 import { once } from 'node:events'
+import type SteamUser from 'steam-user'
 import type { SteamContentUser } from './types.ts'
 
 export type { SteamContentUser } from './types.ts'
@@ -100,20 +101,24 @@ async function createSteamUser(): Promise<SteamContentUser> {
   const { default: SteamUser } = await import('steam-user').finally(() => {
     globalThis.onmessage = previousOnMessage
   })
-  const constructor = SteamUser as unknown as {
-    new (options: {
-      dataDirectory: null
-      autoRelogin: boolean
-      protocol: number
-    }): SteamContentUser
-    EConnectionProtocol: { TCP: number }
-  }
   // Force TCP because Bun integration runs have repeatedly observed WebSocket timeouts.
-  return new constructor({
+  const client = new SteamUser({
     dataDirectory: null,
     autoRelogin: false,
-    protocol: constructor.EConnectionProtocol.TCP,
+    protocol: SteamUser.EConnectionProtocol.TCP,
   })
+  if (!isSteamContentUser(client))
+    throw new Error('steam-user does not provide content server methods')
+  return client
+}
+
+function isSteamContentUser(client: SteamUser): client is SteamContentUser {
+  return (
+    'getContentServers' in client &&
+    client.getContentServers instanceof Function &&
+    'getCDNAuthToken' in client &&
+    client.getCDNAuthToken instanceof Function
+  )
 }
 
 async function logOnAnonymously(

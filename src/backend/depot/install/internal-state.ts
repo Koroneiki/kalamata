@@ -1,6 +1,7 @@
 import { lstat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { CONFIG_DIRECTORY } from './internal-paths.ts'
+import { filesystemErrorCode } from './transaction/types.ts'
 
 export async function assertSafeInternalStatePaths(
   outputDirectory: string,
@@ -18,7 +19,7 @@ export async function assertSafeInternalStatePaths(
           `Internal state path must not be a symbolic link: ${path}`,
         )
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      if (filesystemErrorCode(error) !== 'ENOENT') throw error
     }
   }
 }

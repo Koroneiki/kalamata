@@ -34,6 +34,7 @@ import {
   isOperationCancellation,
   isOperationShutdown,
   isRecoverableOperationError,
+  operationError,
   repairRequiredState,
   serializeOperationError,
   validateDepotIds,
@@ -212,18 +213,16 @@ export class DownloadQueueCoordinator {
         request.appId,
         entry.installPath,
       )
-      return this.begin(
-        {
-          kind: 'repair',
-          appId: request.appId,
-          installPath,
-          desiredDepotIds: this.database
-            .getInstalls(request.appId)
-            .map(({ depotId }) => depotId),
-          ...(fixedDesired ? { fixedDesired } : {}),
-        },
-        true,
-      )
+      const repairRequest: ApplicationPlanRequest = {
+        kind: 'repair',
+        appId: request.appId,
+        installPath,
+        desiredDepotIds: this.database
+          .getInstalls(request.appId)
+          .map(({ depotId }) => depotId),
+      }
+      if (fixedDesired) repairRequest.fixedDesired = fixedDesired
+      return this.begin(repairRequest, true)
     } finally {
       this.releaseAcceptance()
     }
@@ -323,10 +322,9 @@ export class DownloadQueueCoordinator {
         installPath: resumable.installPath,
         desiredDepotIds: resumable.desiredDepotIds,
         fixedDesired: resumable.desired,
-        ...(resumable.kind === 'download'
-          ? { requestedDepotIds: resumable.desiredDepotIds }
-          : {}),
       }
+      if (resumable.kind === 'download')
+        request.requestedDepotIds = resumable.desiredDepotIds
       this.#currentRequest = request
       if (!resumable.paused) {
         this.begin(request)
@@ -491,8 +489,9 @@ export class DownloadQueueCoordinator {
       this.#currentRequest = undefined
       this.#state = completedState
     } catch (error) {
-      const serialized = serializeOperationError(error)
-      const shuttingDown = isOperationShutdown(error, signal)
+      const failure = operationError(error)
+      const serialized = serializeOperationError(failure)
+      const shuttingDown = isOperationShutdown(failure, signal)
       const resumable = await getResumableApplicationTransaction(
         request.installPath,
         request.appId,
@@ -509,15 +508,18 @@ export class DownloadQueueCoordinator {
         !shuttingDown &&
         (this.#cancelRequested ||
           (!pauseRequested &&
-            (signal.aborted || isOperationCancellation(error))))
+            (signal.aborted || isOperationCancellation(failure))))
       if (cancelled && !commitReady) {
         await discardPrecommitApplicationTransaction(request.installPath)
         this.#currentRequest = undefined
         this.database.clearUnusedInstallPath(request.appId)
       }
+      if (this.#state.status !== 'active')
+        throw new Error('Operation left active state before completion')
+      const activeState = this.#state
       const nextState: OperationState = paused
         ? {
-            ...(this.#state as ActiveOperationState),
+            ...activeState,
             status: 'paused',
           }
         : cancelled
@@ -528,7 +530,7 @@ export class DownloadQueueCoordinator {
               installPath: request.installPath,
               desiredDepotIds:
                 this.#state.status === 'active'
-                  ? this.#state.desiredDepotIds
+                  ? activeState.desiredDepotIds
                   : [],
               error: {
                 kind: 'cancellation',
@@ -548,7 +550,7 @@ export class DownloadQueueCoordinator {
               }
             : recoverable
               ? {
-                  ...(this.#state as ActiveOperationState),
+                  ...activeState,
                   status: 'resumable',
                   error: serialized,
                 }
@@ -559,7 +561,7 @@ export class DownloadQueueCoordinator {
                   installPath: request.installPath,
                   desiredDepotIds:
                     this.#state.status === 'active'
-                      ? this.#state.desiredDepotIds
+                      ? activeState.desiredDepotIds
                       : [],
                   error: serialized,
                 }

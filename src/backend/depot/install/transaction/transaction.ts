@@ -35,6 +35,7 @@ import {
   classify,
   emitProgress,
   isAbort,
+  filesystemErrorCode,
   isFilesystemError,
   isPause,
   isShutdown,
@@ -43,6 +44,7 @@ import {
   type JournalContext,
   type ProgressState,
   type ProjectionEntry,
+  type RecoverApplicationTransactionCallbacks,
   type RunApplicationTransactionOptions,
   type TransactionJournal,
 } from './types.ts'
@@ -80,11 +82,12 @@ export async function recoverAndRunApplicationTransaction(
   let result: ApplicationTransactionResult
   let releaseError: unknown
   try {
-    await recoverUnlocked(options.outputDirectory, {
+    const recoveryOptions: RecoverApplicationTransactionCallbacks = {
       appId: options.appId,
       reconcile: options.reconcile,
-      ...(options.testCrashAt ? { testCrashAt: options.testCrashAt } : {}),
-    })
+    }
+    if (options.testCrashAt) recoveryOptions.testCrashAt = options.testCrashAt
+    await recoverUnlocked(options.outputDirectory, recoveryOptions)
     result = await runUnlocked(options)
   } finally {
     try {
@@ -301,7 +304,7 @@ async function runUnlocked(
         'Transaction cancelled',
         { cause: error },
       )
-    if ((error as NodeJS.ErrnoException).code === 'ENOSPC')
+    if (filesystemErrorCode(error) === 'ENOSPC')
       throw new ApplicationTransactionError(
         'insufficient-space',
         'Insufficient space while staging application',

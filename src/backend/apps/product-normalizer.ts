@@ -12,6 +12,9 @@ import { depotKeyFromHex } from '../../db/validation.ts'
 import type { ProductInfo, ProductInfoResult } from '../steam/types.ts'
 import { manifestIdSchema, steamIdStringSchema } from '../../types/schemas.ts'
 
+type SteamValue = z.infer<typeof steamValueSchema>
+type SteamRecord = z.infer<typeof recordSchema>
+
 export interface PublicDepot {
   depotId: number
   ownerAppId: number
@@ -285,7 +288,7 @@ function classifyDepot(
   ownedByBase: boolean,
   hasDlcOwner: boolean,
   ownerKnown: boolean,
-  publicManifest: Record<string, unknown>,
+  publicManifest: SteamRecord,
 ): DepotGroup {
   if (isSteamworksDepot(depotId)) return 'Steamworks Common Redistributables'
   if (
@@ -311,21 +314,21 @@ function isSteamworksDepot(depotId: number): boolean {
   )
 }
 
-function rawEmpty(value: unknown): boolean {
+function rawEmpty(value: SteamValue | undefined): boolean {
   return value === undefined || value === null || value === ''
 }
 
-function asRecord(value: unknown): Record<string, unknown> {
-  const result = recordSchema.safeParse(value)
+function asRecord(cause: unknown): SteamRecord {
+  const result = recordSchema.safeParse(cause)
   return result.success ? result.data : {}
 }
 
-function stringValue(value: unknown): string | null {
+function stringValue(value: SteamValue | undefined): string | null {
   return stringValueSchema.parse(value)
 }
 
 function associationNames(
-  associations: unknown[],
+  associations: SteamValue[],
   type: 'developer' | 'publisher',
 ): string[] {
   return associations.flatMap((association) => {
@@ -343,19 +346,20 @@ function steamCommunityImageUrl(
   return `https://cdn.akamai.steamstatic.com/steamcommunity/public/images/apps/${appId}/${hash}.${extension}`
 }
 
-function decimalString(value: unknown): string | null {
+function decimalString(value: SteamValue | undefined): string | null {
   return decimalStringSchema.parse(value)
 }
 
-function positiveId(value: unknown): number | null {
+function positiveId(value: SteamValue | undefined): number | null {
   return positiveIdSchema.parse(value)
 }
 
-function restriction(value: unknown): string | null {
+function restriction(value: SteamValue | undefined): string | null {
   return restrictionSchema.parse(value)
 }
 
-const recordSchema = z.record(z.string(), z.unknown())
+const steamValueSchema = z.json()
+const recordSchema = z.record(z.string(), steamValueSchema)
 const stringValueSchema = z.string().min(1).nullable().catch(null)
 const associationSchema = z.object({ type: z.string(), name: z.string() })
 const decimalStringSchema = manifestIdSchema.nullable().catch(null)

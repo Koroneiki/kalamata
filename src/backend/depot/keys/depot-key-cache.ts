@@ -10,6 +10,8 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import { depotKeyHexSchema } from '../../../types/schemas.ts'
 
+type DepotKeyObject = z.infer<typeof depotKeyObjectSchema>
+
 const DEPOT_KEYS_URL =
   'https://raw.githubusercontent.com/dvahana2424-web/sojogamesdatabase1/main/depotkeys.json'
 
@@ -24,7 +26,7 @@ export class DepotKeyCache {
   readonly #metadataPath: string
   readonly #temporaryPath: string
   #initialization: Promise<void> | undefined
-  #contents: Record<string, unknown> | undefined
+  #contents: DepotKeyObject | undefined
 
   constructor(
     dataRoot: string,
@@ -49,7 +51,7 @@ export class DepotKeyCache {
 
   async getKeys(depotIds: Iterable<number>): Promise<Map<number, string>> {
     await this.initialize()
-    let contents: Record<string, unknown>
+    let contents: DepotKeyObject
     try {
       contents = await this.loadContents()
     } catch (error) {
@@ -127,7 +129,7 @@ export class DepotKeyCache {
     }
   }
 
-  private async loadContents(): Promise<Record<string, unknown>> {
+  private async loadContents(): Promise<DepotKeyObject> {
     if (!this.#contents) {
       this.#contents = parseDepotKeyObject(
         await readFile(this.#path, { encoding: 'utf8', signal: this.signal }),
@@ -142,11 +144,11 @@ interface CacheMetadata {
   lastModified?: string
 }
 
-function parseDepotKeyObject(source: string): Record<string, unknown> {
+function parseDepotKeyObject(source: string): DepotKeyObject {
   return depotKeyObjectSchema.parse(JSON.parse(source))
 }
 
-const depotKeyObjectSchema = z.record(z.string(), z.unknown())
+const depotKeyObjectSchema = z.record(z.string(), z.json())
 const optionalMetadataString = z
   .union([z.string(), z.undefined()])
   .catch(undefined)

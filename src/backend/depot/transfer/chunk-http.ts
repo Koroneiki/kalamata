@@ -11,6 +11,11 @@ export interface ChunkDownloadAgents {
   https: https.Agent
 }
 
+export interface ChunkLocation {
+  url: string
+  vhost: string
+}
+
 export class HttpStatusError extends Error {
   constructor(
     readonly statusCode: number,
@@ -34,14 +39,14 @@ export function downloadChunkData(
     let settled = false
     let response: http.IncomingMessage | undefined
     const cleanup = () => signal?.removeEventListener('abort', onAbort)
-    const fail = (error: unknown) => {
+    const fail = (cause: unknown) => {
       if (settled) return
       settled = true
       cleanup()
-      reject(error)
+      reject(cause)
     }
-    const cancel = (error: unknown) => {
-      fail(error)
+    const cancel = (cause: unknown) => {
+      fail(cause)
       response?.destroy()
       req.destroy()
     }
@@ -128,7 +133,7 @@ export function buildChunkUrl(
   depotId: number,
   chunkSha1: string,
   token?: string,
-): { url: string; vhost: string } {
+): ChunkLocation {
   const protocol = server.https_support === 'mandatory' ? 'https://' : 'http://'
   const host = server.Host
   const vhost = contentServerVhost(server)

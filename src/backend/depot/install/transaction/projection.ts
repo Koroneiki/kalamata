@@ -7,12 +7,13 @@ import {
   withImpliedDirectories,
 } from '../../manifests/manifest-utils.ts'
 import type { ManifestChunk, ManifestFile } from '../../manifests/types.ts'
-import type {
-  ApplicationDepotRecord,
-  DesiredApplicationDepot,
-  InstalledApplicationDepot,
-  ProjectionEntry,
-  StagedFileLayout,
+import {
+  filesystemErrorCode,
+  type ApplicationDepotRecord,
+  type DesiredApplicationDepot,
+  type InstalledApplicationDepot,
+  type ProjectionEntry,
+  type StagedFileLayout,
 } from './types.ts'
 
 const EXECUTABLE = 32
@@ -203,11 +204,7 @@ export async function safeLstat(path: string) {
   try {
     return await lstat(path)
   } catch (error) {
-    if (
-      ['ENOENT', 'ENOTDIR'].includes(
-        (error as NodeJS.ErrnoException).code ?? '',
-      )
-    )
+    if (['ENOENT', 'ENOTDIR'].includes(filesystemErrorCode(error) ?? ''))
       return undefined
     throw error
   }

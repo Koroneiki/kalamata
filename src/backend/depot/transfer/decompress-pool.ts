@@ -4,6 +4,7 @@ import {
   exactArrayBuffer,
   workerResponseSchema,
   type WorkerRequest,
+  type WorkerResponse,
 } from './decompress-protocol.ts'
 
 interface Pending {
@@ -100,8 +101,17 @@ export class DecompressPool {
     })
     const slot: WorkerSlot = { index, worker, current: undefined }
 
-    worker.onmessage = (event: MessageEvent<unknown>) =>
-      this.#handleMessage(slot, event.data)
+    worker.onmessage = (event: MessageEvent<unknown>) => {
+      const result = workerResponseSchema.safeParse(event.data)
+      if (!result.success) {
+        this.#handleWorkerFailure(
+          slot,
+          new Error('Worker returned an invalid response'),
+        )
+        return
+      }
+      this.#handleMessage(slot, result.data)
+    }
     worker.onerror = (event) => {
       event.preventDefault()
       this.#handleWorkerFailure(
@@ -121,17 +131,8 @@ export class DecompressPool {
     return slot
   }
 
-  #handleMessage(slot: WorkerSlot, value: unknown): void {
+  #handleMessage(slot: WorkerSlot, message: WorkerResponse): void {
     if (this.#disposed || this.#workers[slot.index] !== slot) return
-    const result = workerResponseSchema.safeParse(value)
-    if (!result.success) {
-      this.#handleWorkerFailure(
-        slot,
-        new Error('Worker returned an invalid response'),
-      )
-      return
-    }
-    const message = result.data
     const pending = slot.current
     if (!pending || message.id !== pending.id) {
       this.#handleWorkerFailure(
@@ -193,10 +194,9 @@ export class DecompressPool {
           id: pending.id,
           encrypted: pending.encrypted,
           expectedSha1: pending.expectedSha1,
-          ...(pending.expectedSize === undefined
-            ? {}
-            : { expectedSize: pending.expectedSize }),
         }
+        if (pending.expectedSize !== undefined)
+          request.expectedSize = pending.expectedSize
         slot.worker.postMessage(request, [pending.encrypted])
       } catch (error) {
         this.#handleWorkerFailure(slot, toError(error))
@@ -229,6 +229,6 @@ function cleanupPending(pending: Pending): void {
   pending.onAbort = undefined
 }
 
-function toError(error: unknown): Error {
-  return error instanceof Error ? error : new Error(String(error))
+function toError(cause: unknown): Error {
+  return cause instanceof Error ? cause : new Error(String(cause))
 }

@@ -51,14 +51,15 @@ export function exactArrayBuffer(data: Uint8Array): ArrayBuffer {
   return Uint8Array.from(data).buffer
 }
 
-export function serializeError(error: unknown): SerializedError {
-  if (!(error instanceof Error))
-    return { name: 'Error', message: String(error) }
-  return {
-    name: error.name,
-    message: error.message,
-    ...(error.stack ? { stack: error.stack } : {}),
+export function serializeError(cause: unknown): SerializedError {
+  if (!(cause instanceof Error))
+    return { name: 'Error', message: String(cause) }
+  const serialized: SerializedError = {
+    name: cause.name,
+    message: cause.message,
   }
+  if (cause.stack) serialized.stack = cause.stack
+  return serialized
 }
 
 export function deserializeError(serialized: SerializedError): Error {

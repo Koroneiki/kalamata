@@ -9,6 +9,7 @@ import {
   type ApplicationTransactionResult,
   type DesiredApplicationDepot,
   type InstalledApplicationDepot,
+  type RunApplicationTransactionOptions,
 } from './install/transaction/types.ts'
 import { recoverAndRunApplicationTransaction } from './install/transaction/transaction.ts'
 import { parseManifest, validateManifest } from './manifests/manifest-codec.ts'
@@ -123,7 +124,7 @@ export class DepotDownloadService {
             return { ...depot, client }
           },
         )
-        result = await recoverAndRunApplicationTransaction({
+        const transactionOptions: RunApplicationTransactionOptions = {
           kind: options.kind,
           appId: options.appId,
           outputDirectory: options.outputDirectory,
@@ -131,8 +132,9 @@ export class DepotDownloadService {
           desiredDepots,
           signal: controller.signal,
           reconcile: options.reconcile,
-          ...(options.onEvent ? { onEvent: options.onEvent } : {}),
-        })
+        }
+        if (options.onEvent) transactionOptions.onEvent = options.onEvent
+        result = await recoverAndRunApplicationTransaction(transactionOptions)
       } finally {
         removeDisconnectListener()
         options.signal?.removeEventListener('abort', onAbort)

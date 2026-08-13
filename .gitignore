@@ -12,6 +12,7 @@ test/helpers/*.integration.ts
 test/fixtures/
 /plan/
 /.opencode/
+/.agents/
 /.playwright-mcp/
 
 # impeccable-ignore-start

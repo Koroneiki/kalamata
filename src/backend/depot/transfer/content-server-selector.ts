@@ -34,7 +34,5 @@ export class ContentServerSelector {
 }
 
 function serverLoad(server: ContentServer): number {
-  return typeof server.weightedload === 'number'
-    ? server.weightedload
-    : Number.POSITIVE_INFINITY
+  return server.weightedload ?? Number.POSITIVE_INFINITY
 }

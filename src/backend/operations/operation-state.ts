@@ -2,6 +2,11 @@ import { ApplicationTransactionError } from '../depot/install/transaction/types.
 import type { OperationErrorKind, OperationState } from '../../types/rpc.ts'
 import { uniqueSteamIdsSchema } from '../../types/schemas.ts'
 
+interface SerializedOperationError {
+  kind: OperationErrorKind
+  message: string
+}
+
 export function validateDepotIds(
   depotIds: number[],
   allowEmpty: boolean,
@@ -11,13 +16,16 @@ export function validateDepotIds(
   uniqueSteamIdsSchema.parse(depotIds)
 }
 
-export function serializeOperationError(error: unknown): {
-  kind: OperationErrorKind
-  message: string
-} {
+export function operationError(cause: unknown): Error {
+  return cause instanceof Error ? cause : new Error('Unknown operation failure')
+}
+
+export function serializeOperationError(
+  error: Error,
+): SerializedOperationError {
   const kind =
     error instanceof ApplicationTransactionError ? error.kind : 'planning'
-  const messages: Record<OperationErrorKind, string> = {
+  const messages = {
     planning: 'The installation plan is invalid.',
     'unavailable-resource': 'A required manifest or depot key is unavailable.',
     'insufficient-space':
@@ -30,11 +38,11 @@ export function serializeOperationError(error: unknown): {
     cancellation: 'The operation was cancelled.',
     recovery: 'The interrupted installation could not be recovered safely.',
     persistence: 'Installation metadata could not be finalized.',
-  }
+  } satisfies Record<OperationErrorKind, string>
   return { kind, message: messages[kind] }
 }
 
-export function isOperationCancellation(error: unknown): boolean {
+export function isOperationCancellation(error: Error): boolean {
   return (
     (error instanceof ApplicationTransactionError &&
       error.kind === 'cancellation') ||
@@ -43,7 +51,7 @@ export function isOperationCancellation(error: unknown): boolean {
 }
 
 export function isOperationShutdown(
-  error: unknown,
+  error: Error,
   signal: AbortSignal,
 ): boolean {
   return (

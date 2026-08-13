@@ -19,6 +19,7 @@ import { chunkKey, fileSize, isDirectory } from './projection.ts'
 import {
   ApplicationTransactionError,
   emitProgress,
+  filesystemErrorCode,
   isAbort,
   isFilesystemError,
   throwIfAborted,
@@ -48,6 +49,7 @@ export async function prepareStagedFiles(
     const stagingPath = resolveManifestPath(stagingRoot, relativePath)
     if (!journal.resumed) await preallocate(stagingPath, fileSize(entry.file))
     staged.push({ entry, relativePath, stagingPath })
+    // SAFETY: changedFiles comes from the desired projection, whose depots include a ChunkClient.
     const depot = entry.depot as ChunkDestination['depot']
     for (const chunk of entry.file.chunks) {
       const key = chunkKey(chunk)
@@ -217,7 +219,7 @@ async function fetchChunk(
   signal: AbortSignal,
   serverPools: Map<string, Promise<ContentServerSelector | null>>,
 ): Promise<{ chunk: Buffer; networkBytes: number }> {
-  let lastError: unknown
+  let lastError: Error | undefined
   let foundServers = false
   const resources = uniqueResources(destinations)
   for (const resource of resources) {
@@ -296,13 +298,16 @@ async function fetchChunk(
         }
       } catch (error) {
         if (isAbort(error, signal)) throw error
-        if ((error as NodeJS.ErrnoException).code === 'ENOSPC')
+        if (filesystemErrorCode(error) === 'ENOSPC')
           throw new ApplicationTransactionError(
             'insufficient-space',
             'Insufficient space while transferring staged content',
             { cause: error },
           )
-        lastError = error
+        lastError =
+          error instanceof Error
+            ? error
+            : new Error('Content server failed', { cause: error })
         pool.returnBrokenConnection(server)
       }
     }
@@ -376,7 +381,7 @@ async function reusableChunk(
       if (
         isFilesystemError(error) &&
         !['ENOENT', 'ENOTDIR', 'EISDIR'].includes(
-          (error as NodeJS.ErrnoException).code ?? '',
+          filesystemErrorCode(error) ?? '',
         )
       )
         throw error

@@ -77,7 +77,7 @@ export function validateManifest(
     }
     if (file.flags & DIRECTORY) continue
 
-    const size = parseSafeInteger(file.size, `size for ${file.filename}`)
+    const size = parseSafeIntegerText(file.size, `size for ${file.filename}`)
     if (!sha1Schema.safeParse(file.sha_content).success) {
       throw new Error(
         `Manifest contains an invalid file hash for ${file.filename}`,
@@ -91,15 +91,15 @@ export function validateManifest(
         throw new Error(
           `Manifest contains an invalid chunk hash for ${file.filename}`,
         )
-      const offset = parseSafeInteger(
+      const offset = parseSafeIntegerText(
         chunk.offset,
         `chunk offset for ${file.filename}`,
       )
-      const originalSize = parseSafeInteger(
+      const originalSize = validateSafeInteger(
         chunk.cb_original,
         `chunk size for ${file.filename}`,
       )
-      const compressedSize = parseSafeInteger(
+      const compressedSize = validateSafeInteger(
         chunk.cb_compressed,
         `compressed chunk size for ${file.filename}`,
       )
@@ -145,14 +145,17 @@ export function validateManifest(
   }
 }
 
-function parseSafeInteger(value: string | number, label: string): number {
-  if (typeof value === 'string' && !/^(0|[1-9]\d*)$/u.test(value)) {
+function parseSafeIntegerText(value: string, label: string): number {
+  if (!/^(0|[1-9]\d*)$/u.test(value)) {
     throw new Error(`Manifest contains an invalid ${label}`)
   }
-  const parsed = typeof value === 'number' ? value : Number(value)
-  if (!Number.isSafeInteger(parsed) || parsed < 0)
+  return validateSafeInteger(Number(value), label)
+}
+
+function validateSafeInteger(value: number, label: string): number {
+  if (!Number.isSafeInteger(value) || value < 0)
     throw new Error(`Manifest contains an invalid ${label}`)
-  return parsed
+  return value
 }
 
 function assertCompleteManifest(contents: Buffer): void {

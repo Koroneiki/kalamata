@@ -224,7 +224,7 @@ async function fetchManifestRequestCode(
 
 function selectContentServer(servers: ContentServer[]): ContentServer {
   const server = [...servers]
-    .filter(({ Host }) => typeof Host === 'string' && Host.length > 0)
+    .filter(({ Host }) => Host.length > 0)
     .sort(
       (left, right) =>
         (left.weightedload ?? Number.POSITIVE_INFINITY) -

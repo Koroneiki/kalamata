@@ -111,8 +111,7 @@ export function enospcClient(): ChunkClient {
   return {
     getContentServers: async () => ({ servers: [server] }),
     downloadChunk: mock(async () => {
-      const error = new Error('disk full') as NodeJS.ErrnoException
-      error.code = 'ENOSPC'
+      const error = Object.assign(new Error('disk full'), { code: 'ENOSPC' })
       throw error
     }),
   }

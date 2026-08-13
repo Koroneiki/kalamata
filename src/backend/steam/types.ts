@@ -7,7 +7,6 @@ export interface ContentServer {
   usetokenauth?: number
   weightedload?: number
   NumEntriesInClientList?: number
-  [key: string]: unknown
 }
 
 export interface SteamContentUser extends SteamUser {

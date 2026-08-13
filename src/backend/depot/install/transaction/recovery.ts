@@ -8,6 +8,7 @@ import { pathExists } from './projection.ts'
 import {
   ApplicationTransactionError,
   classify,
+  filesystemErrorCode,
   type ApplicationDepotRecord,
   type RecoverApplicationTransactionCallbacks,
   type ResumableApplicationTransaction,
@@ -49,7 +50,7 @@ export async function recoverUnlocked(
   try {
     entries = await readdir(root, { withFileTypes: true })
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+    if (filesystemErrorCode(error) === 'ENOENT') return
     throw classify(
       error,
       'recovery',
@@ -110,7 +111,7 @@ export async function getResumableApplicationTransaction(
   try {
     entries = await readdir(root, { withFileTypes: true })
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+    if (filesystemErrorCode(error) === 'ENOENT') return null
     throw error
   }
   entries = entries.filter((entry) => entry.isDirectory())
@@ -160,7 +161,7 @@ export async function hasCommitReadyApplicationTransaction(
   try {
     entries = await readdir(root, { withFileTypes: true })
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
+    if (filesystemErrorCode(error) === 'ENOENT') return false
     throw error
   }
   for (const entry of entries) {
@@ -197,7 +198,7 @@ async function archiveUnresolvedApplicationTransactionUnlocked(
   try {
     entries = await readdir(root, { withFileTypes: true })
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT')
+    if (filesystemErrorCode(error) === 'ENOENT')
       return readRepairFallbackDesired(outputDirectory)
     throw error
   }
@@ -227,7 +228,7 @@ async function readRepairFallbackDesired(
   try {
     entries = await readdir(root, { withFileTypes: true })
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+    if (filesystemErrorCode(error) === 'ENOENT') return null
     throw error
   }
   const entry = entries.find((candidate) => candidate.isDirectory())
@@ -260,7 +261,7 @@ export async function hasRepairFallback(
     )
     return entries.some((entry) => entry.isDirectory())
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
+    if (filesystemErrorCode(error) === 'ENOENT') return false
     throw error
   }
 }
@@ -281,7 +282,7 @@ async function discardPrecommitApplicationTransactionUnlocked(
   try {
     entries = await readdir(root, { withFileTypes: true })
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+    if (filesystemErrorCode(error) === 'ENOENT') return
     throw error
   }
   for (const entry of entries) {

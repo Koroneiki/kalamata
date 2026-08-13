@@ -43,14 +43,14 @@ const pausedForCancel = ref(false)
 const actionPending = ref(false)
 const actionError = ref('')
 
-const steamPhaseLabels: Record<OperationPhase, string> = {
+const steamPhaseLabels = {
   planning: 'CALCULATING',
   staging: 'RESERVING SPACE',
   downloading: 'DOWNLOADING',
   verifying: 'VERIFYING',
   committing: 'INSTALLING',
   reconciling: 'FINALIZING',
-}
+} satisfies Record<OperationPhase, string>
 
 type ProgressOperation =
   | ActiveOperationState

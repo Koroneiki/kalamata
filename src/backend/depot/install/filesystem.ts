@@ -5,6 +5,7 @@ import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { CONFIG_DIRECTORY } from './internal-paths.ts'
 import { canonicalManifestPath } from '../manifests/manifest-utils.ts'
 import type { ManifestChunk, ManifestFile } from '../manifests/types.ts'
+import { filesystemErrorCode } from './transaction/types.ts'
 
 const EXECUTABLE = 32
 
@@ -51,7 +52,7 @@ export async function assertNoSymlinkTraversal(
         throw new Error(`Manifest path traverses a symbolic link: ${filename}`)
       }
     } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code
+      const code = filesystemErrorCode(error)
       if (code === 'ENOENT' || code === 'ENOTDIR') return
       throw error
     }
