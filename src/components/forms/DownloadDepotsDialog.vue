@@ -155,15 +155,6 @@ const canStart = computed(
 )
 
 watch(
-  [() => props.open, () => props.selectedDepotIds, manifestTargets],
-  ([open]) => {
-    if (!open) return
-    void requestPreview()
-  },
-  { deep: true },
-)
-
-watch(
   () => props.open,
   (open) => {
     if (!open) return
@@ -173,6 +164,21 @@ watch(
     previewError.value = ''
     downloadStarted.value = false
   },
+)
+
+// The selected directory affects reusable content and therefore the estimate.
+watch(
+  [
+    () => props.open,
+    () => props.selectedDepotIds,
+    manifestTargets,
+    selectedPath,
+  ],
+  ([open]) => {
+    if (!open) return
+    void requestPreview()
+  },
+  { deep: true },
 )
 
 async function requestPreview() {
@@ -186,6 +192,9 @@ async function requestPreview() {
       appId: props.app.appId,
       desiredDepotIds: props.selectedDepotIds,
       manifestTargets: manifestTargets.value,
+      installPath: isFirstInstall.value
+        ? selectedPath.value || undefined
+        : undefined,
     })
     if (request === previewRequest) preview.value = result
   } catch (error) {
@@ -373,15 +382,16 @@ async function submit() {
               <TooltipTrigger as-child
                 ><span
                   class="flex items-center gap-1"
-                  :aria-label="`Network payload upper bound ${preview.networkPayloadUpperBoundBytes === null ? 'unavailable' : formatBytes(preview.networkPayloadUpperBoundBytes)}`"
+                  :aria-label="`Estimated download ${formatBytes(preview.estimatedDownloadBytes)}`"
                   ><Download class="size-4" />{{
-                    preview.networkPayloadUpperBoundBytes === null
-                      ? '—'
-                      : formatBytes(preview.networkPayloadUpperBoundBytes)
+                    formatBytes(preview.estimatedDownloadBytes)
                   }}</span
                 ></TooltipTrigger
               >
-              <TooltipContent>Network payload upper bound</TooltipContent>
+              <TooltipContent>
+                Estimated download after reusing local content. Maximum
+                {{ formattedBytes(preview.networkPayloadUpperBoundBytes) }}.
+              </TooltipContent>
             </Tooltip>
             <Tooltip>
               <TooltipTrigger as-child

@@ -53,8 +53,14 @@ export class SteamService {
   previewApplicationOperation(
     appId: number,
     plan: ApplicationPlan,
+    outputDirectory?: string,
   ): Promise<ApplicationOperationPreview> {
-    return previewApplicationOperation(appId, plan, this.#downloads)
+    return previewApplicationOperation(
+      appId,
+      plan,
+      this.#downloads,
+      outputDirectory,
+    )
   }
 
   getProductInfo(appId: number): Promise<ProductInfo> {

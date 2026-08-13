@@ -3,7 +3,7 @@ import { mkdir, rm, statfs, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { CONFIG_DIRECTORY } from '../internal-paths.ts'
 import { acquireOutputLock } from '../output-lock.ts'
-import { resolveOutputPath, verifyFileSha1 } from '../filesystem.ts'
+import { resolveOutputPath } from '../filesystem.ts'
 import {
   planCommitActions,
   rollForward,
@@ -20,17 +20,14 @@ import {
 import {
   buildProjection,
   desiredRecords,
-  executableModeMatches,
   filesystemChangesNeeded,
-  isConfigFile,
   isDirectory,
-  isUserConfig,
-  safeLstat,
   sameManifestOwner,
   stagedFileLayout,
   sumProjectionFiles,
   validateDesiredDepots,
 } from './projection.ts'
+import { projectionEntryNeedsStaging } from './local-state.ts'
 import { recoverUnlocked } from './recovery.ts'
 import { prepareStagedFiles } from './staging.ts'
 import {
@@ -131,54 +128,16 @@ async function runUnlocked(
 
   const changed: ProjectionEntry[] = []
   for (const entry of target.values()) {
-    throwIfAborted(options.signal)
-    const wantsDirectory = isDirectory(entry.file)
-    const path = resolveOutputPath(options.outputDirectory, entry.file.filename)
-    const info = await safeLstat(path)
     const previous = source.get(entry.key)
-    if (info?.isSymbolicLink())
-      throw new ApplicationTransactionError(
-        'planning',
-        `Managed path became a symbolic link: ${entry.file.filename}`,
-      )
-    if (
-      !wantsDirectory &&
-      info?.isFile() &&
-      isConfigFile(entry.file) &&
-      (isUserConfig(entry.file) || sameManifestOwner(previous, entry))
-    ) {
-      const size = BigInt(entry.file.size)
-      progress.logicalInstalledCompleted += size
-      progress.reusedLocal += size
-      emitProgress(options, progress)
-      continue
-    }
-    if (options.kind !== 'repair' && sameManifestOwner(previous, entry)) {
-      const size = BigInt(entry.file.size)
-      progress.logicalInstalledCompleted += size
-      progress.reusedLocal += size
-      emitProgress(options, progress)
-      continue
-    }
-    if (wantsDirectory) {
-      if (info?.isDirectory() && !info.isSymbolicLink()) continue
-      changed.push(entry)
-      continue
-    }
-    if (!info?.isFile() || info.isSymbolicLink()) {
-      changed.push(entry)
-      continue
-    }
+    let needsStaging: boolean
     try {
-      await verifyFileSha1(path, entry.file.sha_content, options.signal)
-      if (!executableModeMatches(info.mode, entry.file)) {
-        changed.push(entry)
-        continue
-      }
-      const size = BigInt(entry.file.size)
-      progress.logicalInstalledCompleted += size
-      progress.reusedLocal += size
-      emitProgress(options, progress)
+      needsStaging = await projectionEntryNeedsStaging(
+        entry,
+        previous,
+        options.outputDirectory,
+        options.kind,
+        options.signal,
+      )
     } catch (error) {
       if (isFilesystemError(error))
         throw classify(
@@ -186,7 +145,17 @@ async function runUnlocked(
           'filesystem',
           `Could not verify ${entry.file.filename}`,
         )
+      throw error
+    }
+    if (needsStaging) {
       changed.push(entry)
+      continue
+    }
+    if (!isDirectory(entry.file) || sameManifestOwner(previous, entry)) {
+      const size = BigInt(entry.file.size)
+      progress.logicalInstalledCompleted += size
+      progress.reusedLocal += size
+      emitProgress(options, progress)
     }
   }
 

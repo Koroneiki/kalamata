@@ -90,6 +90,7 @@ export interface PreviewApplicationOperationRequest {
   appId: number
   desiredDepotIds: number[]
   manifestTargets?: DepotManifestTarget[]
+  installPath?: string
 }
 
 export interface DepotManifestTarget {
@@ -108,6 +109,7 @@ export interface ApplicationOperationPreview {
     update: number
   }
   logicalSizeDeltaBytes: string
+  estimatedDownloadBytes: string
   networkPayloadUpperBoundBytes: string | null
   stagingLogicalUpperBoundBytes: string
 }

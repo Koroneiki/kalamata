@@ -47,6 +47,7 @@ interface QueueSteamService {
   previewApplicationOperation?(
     appId: number,
     plan: Awaited<ReturnType<typeof planApplication>>,
+    outputDirectory?: string,
   ): Promise<ApplicationOperationPreview>
 }
 
@@ -157,6 +158,7 @@ export class DownloadQueueCoordinator {
     validateManifestTargets(request.manifestTargets, request.desiredDepotIds)
     const entry = this.database.getLibraryEntry(request.appId)
     const installed = this.database.getInstalls(request.appId).length > 0
+    const controller = new AbortController()
     const plan = await planApplication(
       installed
         ? {
@@ -169,18 +171,22 @@ export class DownloadQueueCoordinator {
         : {
             kind: 'download',
             appId: request.appId,
-            installPath: entry?.installPath ?? '',
+            installPath: request.installPath ?? '',
             requestedDepotIds: request.desiredDepotIds,
             manifestTargets: request.manifestTargets,
           },
       this.steam,
       this.database,
-      new AbortController().signal,
+      controller.signal,
       () => {},
     )
     if (!this.steam.previewApplicationOperation)
       throw new Error('Application operation preview is unavailable')
-    return this.steam.previewApplicationOperation(request.appId, plan)
+    return this.steam.previewApplicationOperation(
+      request.appId,
+      plan,
+      installed ? (entry?.installPath ?? undefined) : request.installPath,
+    )
   }
 
   async repairApplication(

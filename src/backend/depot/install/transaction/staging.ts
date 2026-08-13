@@ -119,6 +119,28 @@ export async function prepareStagedFiles(
   return staged
 }
 
+export async function estimateDownloadPayload(
+  source: Map<string, ProjectionEntry>,
+  changedFiles: ProjectionEntry[],
+  outputDirectory: string,
+): Promise<bigint> {
+  // Match staging: only installed-source chunks can be copied for partial reuse.
+  const candidates = buildChunkCandidates(source, outputDirectory)
+  const chunks = new Map<string, number>()
+  for (const { file } of changedFiles)
+    for (const chunk of file.chunks) {
+      const key = chunkKey(chunk)
+      chunks.set(key, Math.max(chunks.get(key) ?? 0, chunk.cb_compressed))
+    }
+
+  let total = 0n
+  for (const [key, size] of chunks) {
+    if (await reusableChunk(candidates.get(key) ?? [])) continue
+    total += BigInt(size)
+  }
+  return total
+}
+
 async function downloadChunks(
   options: RunApplicationTransactionOptions,
   downloads: Map<string, ChunkDestination[]>,

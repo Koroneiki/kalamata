@@ -44,7 +44,7 @@ The live filesystem commits before installed-depot metadata is replaced atomical
 
 ## Operation Preview
 
-Preview is advisory: it occupies no queue slot, reserves no install path, and persists no selection. Logical size change is target size minus source size. Maximum temporary disk space totals changed effective file sizes, while the network upper bound totals unique compressed chunks before local reuse is considered.
+Preview is advisory: it occupies no queue slot, reserves no install path, and persists no selection. Logical size change is target size minus source size. Maximum temporary disk space totals changed effective file sizes. The network upper bound totals unique compressed chunks before local reuse. With a concrete install directory, the estimated download also applies execution's staging rules, omits complete matching target files, and subtracts SHA-1-valid chunks reusable from installed source manifests. Without a directory, the estimate equals the network upper bound. Arbitrary partial files outside the installed source projection are not chunk-reuse candidates.
 
 ## Progress Counters
 
@@ -55,7 +55,7 @@ Preview is advisory: it occupies no queue slot, reserves no install path, and pe
 | Reused local            | Trusted retained bytes plus locally validated copied chunks.     |
 | Network payload         | Successful encrypted response payload accepted for installation. |
 
-Network payload excludes headers, failed responses, and transport overhead. Kalamata does not estimate ETA or speed.
+Payload estimates and counters exclude headers, failed responses, retries, and transport overhead. Kalamata does not estimate ETA or speed.
 
 ## Durability Boundary
 
