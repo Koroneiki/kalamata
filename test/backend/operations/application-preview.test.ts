@@ -118,10 +118,11 @@ test('does not report a depot as fully overridden when it retains a directory', 
     sha_content: '',
     chunks: [],
   })
-  const preview = compareApplicationManifests(100, [], [
-    first,
-    depot(2, 'second', { shared: 'second' }),
-  ])
+  const preview = compareApplicationManifests(
+    100,
+    [],
+    [first, depot(2, 'second', { shared: 'second' })],
+  )
 
   expect(preview.overlaps).toEqual([
     { depotId: 1, overriddenByDepotIds: [2], complete: false },
