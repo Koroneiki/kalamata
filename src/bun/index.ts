@@ -16,6 +16,7 @@ import {
 import { openKalamataDatabase } from '../db/index.ts'
 import { canonicalizeInstallDirectory } from '../db/validation.ts'
 import type { AppRpc, AppSettings, DepotPlatform } from '../types/rpc.ts'
+import { validatedRpcHandlers } from '../types/rpc-schemas.ts'
 
 const DEV_SERVER_URL = 'http://localhost:5173'
 
@@ -56,7 +57,7 @@ const defaultSettings: AppSettings = {
 const rpc = BrowserView.defineRPC<AppRpc>({
   maxRequestTime: 30_000,
   handlers: {
-    requests: {
+    requests: validatedRpcHandlers({
       async getAppSummary({ appId }) {
         return appService.getAppSummary(appId)
       },
@@ -130,7 +131,7 @@ const rpc = BrowserView.defineRPC<AppRpc>({
       getOperationState() {
         return queue.getOperationState()
       },
-    },
+    }),
   },
 })
 

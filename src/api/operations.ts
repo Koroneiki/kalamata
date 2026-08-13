@@ -1,4 +1,4 @@
-import { electroview } from '@/api/transport'
+import { request as rpcRequest } from '@/api/transport'
 
 import type {
   QueueDepotUpdateRequest,
@@ -7,31 +7,31 @@ import type {
 } from '@/types/rpc'
 
 export function getOperationState() {
-  return electroview.rpc!.request.getOperationState({})
+  return rpcRequest('getOperationState', {})
 }
 
 export function queueDepotUpdate(request: QueueDepotUpdateRequest) {
-  return electroview.rpc!.request.queueDepotUpdate(request)
+  return rpcRequest('queueDepotUpdate', request)
 }
 
 export function previewApplicationOperation(
   request: PreviewApplicationOperationRequest,
 ) {
-  return electroview.rpc!.request.previewApplicationOperation(request)
+  return rpcRequest('previewApplicationOperation', request)
 }
 
 export function repairApplication(request: RepairApplicationRequest) {
-  return electroview.rpc!.request.repairApplication(request)
+  return rpcRequest('repairApplication', request)
 }
 
 export function cancelOperation() {
-  return electroview.rpc!.request.cancelOperation({})
+  return rpcRequest('cancelOperation', {})
 }
 
 export function pauseOperation() {
-  return electroview.rpc!.request.pauseOperation({})
+  return rpcRequest('pauseOperation', {})
 }
 
 export function resumeOperation() {
-  return electroview.rpc!.request.resumeOperation({})
+  return rpcRequest('resumeOperation', {})
 }

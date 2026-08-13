@@ -1,5 +1,7 @@
 import type { SteamSession } from './steam-session.ts'
 import type { ProductInfo, ProductInfoResult } from './types.ts'
+import { z } from 'zod'
+import { steamIdSchema, steamIdStringSchema } from '../../types/schemas.ts'
 
 export class ProductInfoService {
   constructor(private readonly session: Pick<SteamSession, 'getClient'>) {}
@@ -39,24 +41,30 @@ export class ProductInfoService {
 }
 
 function directDlcAppIds(product: ProductInfo): number[] {
-  const listOfDlc = (
-    product.appinfo as unknown as { extended?: { listofdlc?: unknown } }
-  ).extended?.listofdlc
-  if (typeof listOfDlc !== 'string') return []
+  const parsed = dlcListSchema.safeParse(product.appinfo)
+  if (!parsed.success || !parsed.data.extended?.listofdlc) return []
+  const listOfDlc = parsed.data.extended.listofdlc
 
   const result: number[] = []
   const seen = new Set<number>()
   for (const value of listOfDlc.split(',')) {
     const trimmed = value.trim()
-    if (!/^[1-9]\d*$/u.test(trimmed)) continue
-    const appId = Number(trimmed)
-    if (!Number.isInteger(appId) || appId > 0xffffffff || seen.has(appId))
-      continue
+    const parsedAppId = steamIdStringSchema.safeParse(trimmed)
+    if (!parsedAppId.success || seen.has(parsedAppId.data)) continue
+    const appId = parsedAppId.data
     seen.add(appId)
     result.push(appId)
   }
   return result
 }
+
+const dlcListSchema = z.looseObject({
+  extended: z
+    .looseObject({
+      listofdlc: z.string().optional(),
+    })
+    .optional(),
+})
 
 function productInfo(
   appId: number,
@@ -75,7 +83,7 @@ function productInfo(
 }
 
 function validateAppId(appId: number): void {
-  if (!Number.isInteger(appId) || appId <= 0 || appId > 0xffffffff) {
+  if (!steamIdSchema.safeParse(appId).success) {
     throw new Error('appId must be a positive 32-bit integer')
   }
 }

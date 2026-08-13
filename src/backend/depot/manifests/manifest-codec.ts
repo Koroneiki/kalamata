@@ -5,7 +5,8 @@ import {
   SYMLINK,
   manifestPathKey,
 } from './manifest-utils.ts'
-import type { DepotManifest } from './types.ts'
+import { depotManifestSchema, type DepotManifest } from './types.ts'
+import { manifestIdSchema, sha1Schema } from '../../../types/schemas.ts'
 
 const END_OF_MANIFEST_MAGIC = 0x32c415ab
 
@@ -14,7 +15,7 @@ export function parseManifest(contents: Buffer, key: Buffer): DepotManifest {
     throw new Error('Depot key must be a 32-byte Buffer')
   }
   assertCompleteManifest(contents)
-  const manifest = ContentManifest.parse(contents)
+  const manifest = depotManifestSchema.parse(ContentManifest.parse(contents))
   if (manifest.filenames_encrypted) {
     ContentManifest.decryptFilenames(manifest, key)
   }
@@ -23,7 +24,7 @@ export function parseManifest(contents: Buffer, key: Buffer): DepotManifest {
 
 export function parseManifestEnvelope(contents: Buffer): DepotManifest {
   assertCompleteManifest(contents)
-  return ContentManifest.parse(contents)
+  return depotManifestSchema.parse(ContentManifest.parse(contents))
 }
 
 export function validateManifestEnvelope(
@@ -36,10 +37,10 @@ export function validateManifestEnvelope(
       `Manifest belongs to depot ${manifest.depot_id}, expected ${depotId}`,
     )
   }
-  if (!manifest.gid_manifest || !Array.isArray(manifest.files)) {
+  if (!manifest.gid_manifest) {
     throw new Error('Manifest is missing required metadata or files')
   }
-  if (!/^\d+$/u.test(manifest.gid_manifest)) {
+  if (!manifestIdSchema.safeParse(manifest.gid_manifest).success) {
     throw new Error('Manifest has an invalid manifest ID')
   }
   if (manifestId !== undefined && manifest.gid_manifest !== manifestId) {
@@ -58,10 +59,10 @@ export function validateManifest(
 
   const filenames = new Map<string, { filename: string; directory: boolean }>()
   for (const file of manifest.files) {
-    if (!file || typeof file.filename !== 'string' || !file.filename) {
+    if (!file.filename) {
       throw new Error('Manifest contains a file with no filename')
     }
-    if (!Number.isInteger(file.flags) || !Array.isArray(file.chunks)) {
+    if (!Number.isInteger(file.flags)) {
       throw new Error(`Manifest contains invalid metadata for ${file.filename}`)
     }
     const filenameKey = manifestPathKey(file.filename)
@@ -77,7 +78,7 @@ export function validateManifest(
     if (file.flags & DIRECTORY) continue
 
     const size = parseSafeInteger(file.size, `size for ${file.filename}`)
-    if (!/^[0-9a-f]{40}$/iu.test(file.sha_content)) {
+    if (!sha1Schema.safeParse(file.sha_content).success) {
       throw new Error(
         `Manifest contains an invalid file hash for ${file.filename}`,
       )
@@ -86,7 +87,7 @@ export function validateManifest(
     for (const chunk of [...file.chunks].sort(
       (left, right) => Number(left.offset) - Number(right.offset),
     )) {
-      if (!/^[0-9a-f]{40}$/iu.test(chunk.sha))
+      if (!sha1Schema.safeParse(chunk.sha).success)
         throw new Error(
           `Manifest contains an invalid chunk hash for ${file.filename}`,
         )

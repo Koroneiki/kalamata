@@ -48,6 +48,24 @@ describe('DepotKeyAcquisitionService', () => {
     ).toEqual({ 10: JSON_KEY, 11: JSON_KEY, 12: JSON_KEY })
   })
 
+  test('uses valid requested cache keys without rejecting malformed entries', async () => {
+    const fetcher = mock(async (input: string | URL | Request) => {
+      if (String(input).endsWith('/100/100.lua'))
+        return new Response(null, { status: 404 })
+      return new Response(
+        JSON.stringify({ 10: JSON_KEY.toUpperCase(), 11: 'invalid' }),
+      )
+    })
+    const service = new DepotKeyAcquisitionService(
+      await openDatabase(),
+      fetcher,
+    )
+
+    await expect(
+      service.acquire({ appId: 100, depotIds: [10, 11] }),
+    ).resolves.toEqual({ acquiredDepotIds: [10], missingDepotIds: [11] })
+  })
+
   test('preserves existing keys without network access', async () => {
     const db = await openDatabase()
     db.setDepotKey(10, LUA_KEY)

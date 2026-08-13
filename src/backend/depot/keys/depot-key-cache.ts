@@ -7,7 +7,8 @@ import {
   writeFile,
 } from 'node:fs/promises'
 import { join } from 'node:path'
-import { depotKeyFromHex } from '../../../db/validation.ts'
+import { z } from 'zod'
+import { depotKeyHexSchema } from '../../../types/schemas.ts'
 
 const DEPOT_KEYS_URL =
   'https://raw.githubusercontent.com/dvahana2424-web/sojogamesdatabase1/main/depotkeys.json'
@@ -63,12 +64,8 @@ export class DepotKeyCache {
     const keys = new Map<number, string>()
     for (const depotId of depotIds) {
       const value = contents[String(depotId)]
-      if (typeof value !== 'string') continue
-      try {
-        keys.set(depotId, depotKeyFromHex(value).toString('hex'))
-      } catch {
-        // A malformed unrelated entry must not make the complete source unusable.
-      }
+      const result = depotKeyHexSchema.safeParse(value)
+      if (result.success) keys.set(depotId, result.data)
     }
     return keys
   }
@@ -123,13 +120,8 @@ export class DepotKeyCache {
       const value: unknown = JSON.parse(
         await readFile(this.#metadataPath, 'utf8'),
       )
-      if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
-      const { etag, lastModified } = value as Record<string, unknown>
-      return {
-        etag: typeof etag === 'string' ? etag : undefined,
-        lastModified:
-          typeof lastModified === 'string' ? lastModified : undefined,
-      }
+      const result = cacheMetadataSchema.safeParse(value)
+      return result.success ? result.data : {}
     } catch {
       return {}
     }
@@ -151,9 +143,14 @@ interface CacheMetadata {
 }
 
 function parseDepotKeyObject(source: string): Record<string, unknown> {
-  const value: unknown = JSON.parse(source)
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error('Depot key cache must contain a JSON object')
-  }
-  return value as Record<string, unknown>
+  return depotKeyObjectSchema.parse(JSON.parse(source))
 }
+
+const depotKeyObjectSchema = z.record(z.string(), z.unknown())
+const optionalMetadataString = z
+  .union([z.string(), z.undefined()])
+  .catch(undefined)
+const cacheMetadataSchema: z.ZodType<CacheMetadata> = z.object({
+  etag: optionalMetadataString,
+  lastModified: optionalMetadataString,
+})

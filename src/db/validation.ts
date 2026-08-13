@@ -1,24 +1,26 @@
 import { access, realpath, stat } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { isAbsolute } from 'node:path'
+import {
+  depotKeyHexSchema,
+  manifestIdSchema,
+  steamIdSchema,
+} from '../types/schemas.ts'
 
 export function validateId(value: number, name: string): void {
-  if (!Number.isInteger(value) || value <= 0 || value > 0xffffffff) {
+  if (!steamIdSchema.safeParse(value).success) {
     throw new Error(`${name} must be a positive 32-bit integer`)
   }
 }
 
 export function validateManifestId(value: string): void {
-  if (!/^\d+$/u.test(value)) {
+  if (!manifestIdSchema.safeParse(value).success) {
     throw new Error('manifestId must be a decimal string')
   }
 }
 
 export function depotKeyFromHex(value: string): Buffer {
-  if (!/^[0-9a-f]{64}$/iu.test(value)) {
-    throw new Error('Depot key must contain exactly 64 hexadecimal characters')
-  }
-  return Buffer.from(value.toLowerCase(), 'hex')
+  return Buffer.from(depotKeyHexSchema.parse(value), 'hex')
 }
 
 export async function canonicalizeInstallDirectory(path: string): Promise<{

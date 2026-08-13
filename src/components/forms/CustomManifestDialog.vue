@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { manifestIdSchema } from '@/types/schemas'
 
 const props = defineProps<{
   open: boolean
@@ -39,7 +40,7 @@ watch(
 
 function submit() {
   const value = manifestId.value.trim()
-  if (!/^\d+$/u.test(value)) {
+  if (!manifestIdSchema.safeParse(value).success) {
     validationError.value = 'Enter a decimal manifest GID.'
     return
   }

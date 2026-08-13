@@ -1,5 +1,5 @@
-import { electroview } from '@/api/transport'
+import { request } from '@/api/transport'
 
 export function selectInstallDirectory(startingPath?: string) {
-  return electroview.rpc!.request.selectInstallDirectory({ startingPath })
+  return request('selectInstallDirectory', { startingPath })
 }

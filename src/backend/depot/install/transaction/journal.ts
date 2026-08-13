@@ -9,22 +9,126 @@ import {
   rm,
 } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
+import { z } from 'zod'
 import { CONFIG_DIRECTORY } from '../internal-paths.ts'
 import { resolveManifestPath } from '../filesystem.ts'
 import { normalizeManifestSeparators } from '../../manifests/manifest-utils.ts'
+import {
+  lowercaseSha1Schema,
+  manifestIdSchema,
+  steamIdSchema,
+} from '../../../../types/schemas.ts'
 import { safeLstat } from './projection.ts'
 import {
   ApplicationTransactionError,
   type ApplicationDepotRecord,
   type CompletionRecord,
   type JournalContext,
-  type JournalPhase,
   type RunApplicationTransactionOptions,
-  type StagedFileLayout,
   type TransactionJournal,
 } from './types.ts'
 
 export const TRANSACTION_VERSION = 2
+
+const journalPathSchema = z.string().refine(safeJournalPath)
+const depotRecordSchema = z.object({
+  depotId: steamIdSchema,
+  manifestId: manifestIdSchema,
+  pinned: z.boolean().default(false),
+  mountIndex: z.number().int().nonnegative(),
+  ownerAppId: steamIdSchema.optional(),
+})
+const depotRecordsSchema = z
+  .array(depotRecordSchema)
+  .superRefine((records, ctx) => {
+    const depotIds = new Set<number>()
+    const mountIndexes = new Set<number>()
+    for (const [index, record] of records.entries()) {
+      if (depotIds.has(record.depotId))
+        ctx.addIssue({
+          code: 'custom',
+          message: 'Depot IDs must be unique',
+          path: [index, 'depotId'],
+        })
+      if (mountIndexes.has(record.mountIndex))
+        ctx.addIssue({
+          code: 'custom',
+          message: 'Mount indexes must be unique',
+          path: [index, 'mountIndex'],
+        })
+      depotIds.add(record.depotId)
+      mountIndexes.add(record.mountIndex)
+    }
+  })
+const directoryInstallSchema = z.object({
+  path: journalPathSchema,
+  directory: z.literal(true),
+})
+const fileInstallSchema = z.object({
+  path: journalPathSchema,
+  staging: journalPathSchema.refine((path) =>
+    inJournalDirectory(path, 'staging'),
+  ),
+  directory: z.literal(false),
+  expectedSize: manifestIdSchema,
+  expectedSha1: lowercaseSha1Schema,
+})
+const transactionJournalSchema: z.ZodType<TransactionJournal> = z.object({
+  version: z.literal(TRANSACTION_VERSION),
+  id: z.string(),
+  generation: z.string(),
+  appId: steamIdSchema,
+  kind: z.enum(['download', 'reconcile', 'repair']),
+  installPath: z.string(),
+  paused: z.boolean(),
+  phase: z.enum([
+    'staging',
+    'ready',
+    'filesystem-committed',
+    'sqlite-committed',
+    'completed',
+  ]),
+  source: depotRecordsSchema,
+  desired: depotRecordsSchema,
+  stagedFiles: z.array(
+    z.object({
+      path: journalPathSchema,
+      size: manifestIdSchema,
+      sha1: lowercaseSha1Schema,
+      chunks: z.array(
+        z.object({
+          key: z.string(),
+          offset: manifestIdSchema,
+          size: z.number().int().nonnegative(),
+        }),
+      ),
+    }),
+  ),
+  completedChunks: z.record(
+    z.string(),
+    z.object({
+      source: z.enum(['local', 'network']),
+      networkBytes: manifestIdSchema,
+    }),
+  ),
+  logicalInstalledTotal: manifestIdSchema,
+  retainedBytes: manifestIdSchema,
+  oldMoves: z.array(
+    z.object({
+      path: journalPathSchema,
+      backup: journalPathSchema.refine((path) =>
+        inJournalDirectory(path, 'backup'),
+      ),
+    }),
+  ),
+  installs: z.array(
+    z.discriminatedUnion('directory', [
+      directoryInstallSchema,
+      fileInstallSchema,
+    ]),
+  ),
+  obsoleteDirectories: z.array(journalPathSchema),
+})
 
 export async function checkpointJournal(
   context: JournalContext,
@@ -89,130 +193,13 @@ export async function readJournal(path: string): Promise<TransactionJournal> {
       { cause: error },
     )
   }
-  if (!isJournal(parsed))
+  const result = transactionJournalSchema.safeParse(parsed)
+  if (!result.success)
     throw new ApplicationTransactionError(
       'recovery',
       `Malformed journal ${path}`,
     )
-  return {
-    ...parsed,
-    source: parsed.source.map((record) => ({
-      depotId: record.depotId,
-      manifestId: record.manifestId,
-      pinned: record.pinned ?? false,
-      mountIndex: record.mountIndex,
-      ...(record.ownerAppId === undefined
-        ? {}
-        : { ownerAppId: record.ownerAppId }),
-    })),
-    desired: parsed.desired.map((record) => ({
-      depotId: record.depotId,
-      manifestId: record.manifestId,
-      pinned: record.pinned ?? false,
-      mountIndex: record.mountIndex,
-      ...(record.ownerAppId === undefined
-        ? {}
-        : { ownerAppId: record.ownerAppId }),
-    })),
-  }
-}
-
-function isJournal(value: unknown): value is TransactionJournal {
-  if (!value || typeof value !== 'object') return false
-  const item = value as Partial<TransactionJournal>
-  const phases: JournalPhase[] = [
-    'staging',
-    'ready',
-    'filesystem-committed',
-    'sqlite-committed',
-    'completed',
-  ]
-  return (
-    item.version === TRANSACTION_VERSION &&
-    typeof item.id === 'string' &&
-    typeof item.generation === 'string' &&
-    Number.isSafeInteger(item.appId) &&
-    ['download', 'reconcile', 'repair'].includes(item.kind ?? '') &&
-    typeof item.installPath === 'string' &&
-    typeof item.paused === 'boolean' &&
-    phases.includes(item.phase as JournalPhase) &&
-    Array.isArray(item.source) &&
-    item.source.every(isDepotRecord) &&
-    Array.isArray(item.desired) &&
-    item.desired.every(isDepotRecord) &&
-    Array.isArray(item.stagedFiles) &&
-    item.stagedFiles.every(isStagedFileLayout) &&
-    Boolean(item.completedChunks) &&
-    typeof item.completedChunks === 'object' &&
-    !Array.isArray(item.completedChunks) &&
-    Object.values(item.completedChunks ?? {}).every(isCompletionRecord) &&
-    typeof item.logicalInstalledTotal === 'string' &&
-    /^\d+$/u.test(item.logicalInstalledTotal) &&
-    typeof item.retainedBytes === 'string' &&
-    /^\d+$/u.test(item.retainedBytes) &&
-    Array.isArray(item.oldMoves) &&
-    item.oldMoves.every(
-      (action) =>
-        action &&
-        typeof action.path === 'string' &&
-        typeof action.backup === 'string' &&
-        safeJournalPath(action.path) &&
-        safeJournalPath(action.backup),
-    ) &&
-    Array.isArray(item.installs) &&
-    item.installs.every(
-      (action) =>
-        action &&
-        typeof action.path === 'string' &&
-        typeof action.directory === 'boolean' &&
-        (action.staging === undefined || typeof action.staging === 'string') &&
-        (action.expectedSize === undefined ||
-          (typeof action.expectedSize === 'string' &&
-            /^\d+$/u.test(action.expectedSize))) &&
-        (action.expectedSha1 === undefined ||
-          (typeof action.expectedSha1 === 'string' &&
-            /^[0-9a-f]{40}$/u.test(action.expectedSha1))) &&
-        safeJournalPath(action.path) &&
-        (action.staging === undefined || safeJournalPath(action.staging)),
-    ) &&
-    Array.isArray(item.obsoleteDirectories) &&
-    item.obsoleteDirectories.every(
-      (path) => typeof path === 'string' && safeJournalPath(path),
-    )
-  )
-}
-
-function isStagedFileLayout(value: unknown): value is StagedFileLayout {
-  if (!value || typeof value !== 'object') return false
-  const item = value as Partial<StagedFileLayout>
-  return (
-    typeof item.path === 'string' &&
-    safeJournalPath(item.path) &&
-    typeof item.size === 'string' &&
-    /^\d+$/u.test(item.size) &&
-    typeof item.sha1 === 'string' &&
-    /^[0-9a-f]{40}$/u.test(item.sha1) &&
-    Array.isArray(item.chunks) &&
-    item.chunks.every(
-      (chunk) =>
-        chunk &&
-        typeof chunk.key === 'string' &&
-        typeof chunk.offset === 'string' &&
-        /^\d+$/u.test(chunk.offset) &&
-        Number.isSafeInteger(chunk.size) &&
-        chunk.size >= 0,
-    )
-  )
-}
-
-function isCompletionRecord(value: unknown): value is CompletionRecord {
-  if (!value || typeof value !== 'object') return false
-  const item = value as Partial<CompletionRecord>
-  return (
-    (item.source === 'local' || item.source === 'network') &&
-    typeof item.networkBytes === 'string' &&
-    /^\d+$/u.test(item.networkBytes)
-  )
+  return result.data
 }
 
 function safeJournalPath(path: string): boolean {
@@ -221,18 +208,8 @@ function safeJournalPath(path: string): boolean {
   return !normalized.startsWith('/') && !normalized.split('/').includes('..')
 }
 
-function isDepotRecord(value: unknown): value is ApplicationDepotRecord {
-  if (!value || typeof value !== 'object') return false
-  const item = value as Partial<ApplicationDepotRecord>
-  return (
-    Number.isSafeInteger(item.depotId) &&
-    typeof item.manifestId === 'string' &&
-    /^\d+$/u.test(item.manifestId) &&
-    (item.pinned === undefined || typeof item.pinned === 'boolean') &&
-    Number.isSafeInteger(item.mountIndex) &&
-    (item.mountIndex ?? -1) >= 0 &&
-    (item.ownerAppId === undefined || Number.isSafeInteger(item.ownerAppId))
-  )
+function inJournalDirectory(path: string, directory: string): boolean {
+  return normalizeManifestSeparators(path).startsWith(`${directory}/`)
 }
 
 export function assertJournalIdentity(

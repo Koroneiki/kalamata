@@ -35,19 +35,20 @@ import { filterDepots, matchesDepotPlatform } from '@/utils/depots'
 
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { steamIdStringSchema } from '@/types/schemas'
 
 const route = useRoute()
 const operation = useOperationStore()
 const manifestQueue = useManifestQueueStore()
 const queryCache = useQueryCache()
 const { data: settings } = useSettingsQuery()
-const appId = computed(() => Number(route.params.appId))
-const validAppId = computed(
-  () =>
-    Number.isInteger(appId.value) &&
-    appId.value > 0 &&
-    appId.value <= 0xffffffff,
+const parsedAppId = computed(() =>
+  steamIdStringSchema.safeParse(String(route.params.appId)),
 )
+const appId = computed(() =>
+  parsedAppId.value.success ? parsedAppId.value.data : 0,
+)
+const validAppId = computed(() => parsedAppId.value.success)
 
 const { data, error, isPending, refetch } = useQuery(() => ({
   key: appQueryKeys.details(appId.value),

@@ -415,6 +415,24 @@ describe('foundation database', () => {
     })
   })
 
+  test('rejects malformed settings and persisted boolean values', async () => {
+    const db = await openDatabase()
+    const settings = {
+      automaticManifestAcquisition: true,
+      hideRedistributables: true,
+      hideUnknownDepots: true,
+      hideUnusedDepots: true,
+      platforms: ['windows', 'windows'],
+    }
+    expect(() => db.updateSettings(settings as never)).toThrow()
+
+    db.getSettings({ ...settings, platforms: ['windows'] })
+    db.sqlite.query('UPDATE settings SET show_windows = 2 WHERE id = 1').run()
+    expect(() =>
+      db.getSettings({ ...settings, platforms: ['windows'] }),
+    ).toThrow()
+  })
+
   test('enables the unknown depot filter when upgrading existing settings', async () => {
     let db = await openDatabaseAtMigration(5)
     db.sqlite

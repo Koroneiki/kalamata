@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { steamIdStringSchema } from '@/types/schemas'
 
 const router = useRouter()
 const emit = defineEmits<{ navigated: [] }>()
@@ -23,14 +24,14 @@ const appId = ref('')
 const searchError = ref('')
 
 async function search() {
-  const value = Number(appId.value)
-  if (!/^\d+$/.test(appId.value) || value <= 0 || value > 0xffffffff) {
+  const result = steamIdStringSchema.safeParse(appId.value)
+  if (!result.success) {
     searchError.value = 'Enter an App ID from 1 to 4294967295.'
     return
   }
 
   searchError.value = ''
-  await router.push({ name: 'app-details', params: { appId: value } })
+  await router.push({ name: 'app-details', params: { appId: result.data } })
   emit('navigated')
   open.value = false
   appId.value = ''

@@ -1,11 +1,11 @@
-import { electroview } from '@/api/transport'
+import { request } from '@/api/transport'
 
 export function getAppSummary(appId: number) {
-  return electroview.rpc!.request.getAppSummary({ appId })
+  return request('getAppSummary', { appId })
 }
 
 export function getAppDetails(appId: number) {
-  return electroview.rpc!.request.getAppDetails({ appId })
+  return request('getAppDetails', { appId })
 }
 
 export function acquireManifest(
@@ -13,7 +13,7 @@ export function acquireManifest(
   depotId: number,
   manifestId: string,
 ) {
-  return electroview.rpc!.request.acquireManifest({
+  return request('acquireManifest', {
     appId,
     depotId,
     manifestId,
@@ -21,5 +21,5 @@ export function acquireManifest(
 }
 
 export function acquireDepotKeys(appId: number, depotIds: number[]) {
-  return electroview.rpc!.request.acquireDepotKeys({ appId, depotIds })
+  return request('acquireDepotKeys', { appId, depotIds })
 }

@@ -6,9 +6,11 @@ import type {
   EligibleAppDepot,
 } from '../../types/rpc.ts'
 import type { KalamataDatabase } from '../../db/database.ts'
+import { z } from 'zod'
 import { validateManagedManifest } from '../../db/manifest-files.ts'
 import { depotKeyFromHex } from '../../db/validation.ts'
 import type { ProductInfo, ProductInfoResult } from '../steam/types.ts'
+import { manifestIdSchema, steamIdStringSchema } from '../../types/schemas.ts'
 
 export interface PublicDepot {
   depotId: number
@@ -33,9 +35,9 @@ export function normalizeAppSummary(product: ProductInfo): AppSummary {
   const headerImages = asRecord(common.header_image)
   const header =
     stringValue(headerImages.english) ??
-    Object.values(headerImages).find(
-      (value): value is string => typeof value === 'string' && value.length > 0,
-    ) ??
+    Object.values(headerImages)
+      .map(stringValue)
+      .find((value) => value !== null) ??
     null
   const clientIcon = stringValue(common.clienticon)
   const icon = stringValue(common.icon)
@@ -73,11 +75,8 @@ export function extractPublicDepots(
     const depots = asRecord(asRecord(product.appinfo).depots)
     const entries = Object.entries(depots)
       .flatMap(([rawDepotId, rawDepot]) => {
-        if (!/^[1-9]\d*$/u.test(rawDepotId)) return []
-        const depotId = Number(rawDepotId)
-        return Number.isInteger(depotId) && depotId <= 0xffffffff
-          ? [{ depotId, rawDepot }]
-          : []
+        const result = steamIdStringSchema.safeParse(rawDepotId)
+        return result.success ? [{ depotId: result.data, rawDepot }] : []
       })
       .sort((left, right) => left.depotId - right.depotId)
     for (const { depotId, rawDepot } of entries) {
@@ -317,13 +316,12 @@ function rawEmpty(value: unknown): boolean {
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object'
-    ? (value as Record<string, unknown>)
-    : {}
+  const result = recordSchema.safeParse(value)
+  return result.success ? result.data : {}
 }
 
 function stringValue(value: unknown): string | null {
-  return typeof value === 'string' && value.length > 0 ? value : null
+  return stringValueSchema.parse(value)
 }
 
 function associationNames(
@@ -332,9 +330,8 @@ function associationNames(
 ): string[] {
   return associations.flatMap((association) => {
     const value = asRecord(association)
-    return value.type === type && typeof value.name === 'string'
-      ? [value.name]
-      : []
+    const result = associationSchema.safeParse(value)
+    return result.success && result.data.type === type ? [result.data.name] : []
   })
 }
 
@@ -347,21 +344,30 @@ function steamCommunityImageUrl(
 }
 
 function decimalString(value: unknown): string | null {
-  return typeof value === 'string' && /^\d+$/u.test(value) ? value : null
+  return decimalStringSchema.parse(value)
 }
 
 function positiveId(value: unknown): number | null {
-  if (typeof value !== 'string' || !/^[1-9]\d*$/u.test(value)) return null
-  const id = Number(value)
-  return Number.isInteger(id) && id <= 0xffffffff ? id : null
+  return positiveIdSchema.parse(value)
 }
 
 function restriction(value: unknown): string | null {
-  if (typeof value !== 'string') return null
-  const normalized = value
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .join(', ')
-  return normalized || null
+  return restrictionSchema.parse(value)
 }
+
+const recordSchema = z.record(z.string(), z.unknown())
+const stringValueSchema = z.string().min(1).nullable().catch(null)
+const associationSchema = z.object({ type: z.string(), name: z.string() })
+const decimalStringSchema = manifestIdSchema.nullable().catch(null)
+const positiveIdSchema = steamIdStringSchema.nullable().catch(null)
+const restrictionSchema = z
+  .string()
+  .transform((value) =>
+    value
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .join(', '),
+  )
+  .transform((value) => value || null)
+  .catch(null)

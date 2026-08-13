@@ -1,6 +1,9 @@
 import { Electroview } from 'electrobun/view'
 
 import type { AppRpc, OperationState } from '@/types/rpc'
+import { operationStateSchema, rpcResponseSchemas } from '@/types/rpc-schemas'
+
+type Requests = AppRpc['bun']['requests']
 
 type OperationStateListener = (
   state: OperationState,
@@ -16,16 +19,30 @@ const rpc = Electroview.defineRPC<AppRpc>({
   handlers: {
     messages: {
       operationStateChanged: (state) => {
-        latestOperationState = state
+        const result = operationStateSchema.safeParse(state)
+        if (!result.success) return
+        latestOperationState = result.data
         operationStateMessageSequence += 1
         for (const listener of operationStateListeners)
-          listener(state, operationStateMessageSequence)
+          listener(result.data, operationStateMessageSequence)
       },
     },
   },
 })
 
-export const electroview = new Electroview({ rpc })
+const electroview = new Electroview({ rpc })
+
+export async function request<K extends keyof Requests>(
+  method: K,
+  params: Requests[K]['params'],
+): Promise<Requests[K]['response']> {
+  const rawRequest = electroview.rpc!.request as unknown as (
+    method: keyof Requests,
+    params: unknown,
+  ) => Promise<unknown>
+  const response = await rawRequest(method, params)
+  return rpcResponseSchemas[method].parse(response) as Requests[K]['response']
+}
 
 export function subscribeToOperationState(
   listener: OperationStateListener,

@@ -1,3 +1,5 @@
+import { z } from 'zod'
+
 export interface SerializedError {
   name: string
   message: string
@@ -17,6 +19,27 @@ export type WorkerRequest =
 export type WorkerResponse =
   | { id: number; data: ArrayBuffer; error?: never }
   | { id: number; data?: never; error: SerializedError }
+
+export const workerRequestSchema: z.ZodType<WorkerRequest> =
+  z.discriminatedUnion('type', [
+    z.strictObject({ type: z.literal('init'), key: z.instanceof(Uint8Array) }),
+    z.strictObject({
+      type: z.literal('process'),
+      id: z.number().int(),
+      encrypted: z.instanceof(ArrayBuffer),
+      expectedSha1: z.string(),
+      expectedSize: z.number().optional(),
+    }),
+  ])
+const serializedErrorSchema: z.ZodType<SerializedError> = z.strictObject({
+  name: z.string(),
+  message: z.string(),
+  stack: z.string().optional(),
+})
+export const workerResponseSchema: z.ZodType<WorkerResponse> = z.union([
+  z.strictObject({ id: z.number().int(), data: z.instanceof(ArrayBuffer) }),
+  z.strictObject({ id: z.number().int(), error: serializedErrorSchema }),
+])
 
 export function exactArrayBuffer(data: Uint8Array): ArrayBuffer {
   // Transfer only visible bytes because Buffers may be views into a larger shared slab.

@@ -4,6 +4,8 @@ import { Database } from 'bun:sqlite'
 import { drizzle } from 'drizzle-orm/bun-sqlite'
 import { migrate } from 'drizzle-orm/bun-sqlite/migrator'
 import type { AppSettings, DepotPlatform, LibraryEntry } from '../types/rpc.ts'
+import { appSettingsSchema } from '../types/schemas.ts'
+import { z } from 'zod'
 import {
   canonicalizeInstallDirectory,
   depotKeyFromHex,
@@ -37,6 +39,29 @@ interface SettingsRow {
 }
 
 const depotPlatforms: DepotPlatform[] = ['windows', 'macos', 'linux']
+const settingsRowSchema = z
+  .object({
+    automaticManifestAcquisition: z.union([z.literal(0), z.literal(1)]),
+    hideRedistributables: z.union([z.literal(0), z.literal(1)]),
+    hideUnknownDepots: z.union([z.literal(0), z.literal(1)]),
+    hideUnusedDepots: z.union([z.literal(0), z.literal(1)]),
+    showWindows: z.union([z.literal(0), z.literal(1)]),
+    showMacos: z.union([z.literal(0), z.literal(1)]),
+    showLinux: z.union([z.literal(0), z.literal(1)]),
+  })
+  .transform(
+    (row): AppSettings => ({
+      automaticManifestAcquisition: Boolean(row.automaticManifestAcquisition),
+      hideRedistributables: Boolean(row.hideRedistributables),
+      hideUnknownDepots: Boolean(row.hideUnknownDepots),
+      hideUnusedDepots: Boolean(row.hideUnusedDepots),
+      platforms: depotPlatforms.filter((platform) => {
+        if (platform === 'windows') return Boolean(row.showWindows)
+        if (platform === 'macos') return Boolean(row.showMacos)
+        return Boolean(row.showLinux)
+      }),
+    }),
+  )
 
 export class KalamataDatabase {
   readonly sqlite: Database
@@ -141,36 +166,11 @@ export class KalamataDatabase {
         'SELECT automatic_manifest_acquisition AS automaticManifestAcquisition, hide_redistributables AS hideRedistributables, hide_unknown_depots AS hideUnknownDepots, hide_unused_depots AS hideUnusedDepots, show_windows AS showWindows, show_macos AS showMacos, show_linux AS showLinux FROM settings WHERE id = 1',
       )
       .get()!
-    return {
-      automaticManifestAcquisition: Boolean(row.automaticManifestAcquisition),
-      hideRedistributables: Boolean(row.hideRedistributables),
-      hideUnknownDepots: Boolean(row.hideUnknownDepots),
-      hideUnusedDepots: Boolean(row.hideUnusedDepots),
-      platforms: depotPlatforms.filter((platform) => {
-        if (platform === 'windows') return Boolean(row.showWindows)
-        if (platform === 'macos') return Boolean(row.showMacos)
-        return Boolean(row.showLinux)
-      }),
-    }
+    return settingsRowSchema.parse(row)
   }
 
   private validateSettings(settings: AppSettings): void {
-    if (typeof settings.automaticManifestAcquisition !== 'boolean')
-      throw new Error('automaticManifestAcquisition must be a boolean')
-    if (typeof settings.hideRedistributables !== 'boolean')
-      throw new Error('hideRedistributables must be a boolean')
-    if (typeof settings.hideUnknownDepots !== 'boolean')
-      throw new Error('hideUnknownDepots must be a boolean')
-    if (typeof settings.hideUnusedDepots !== 'boolean')
-      throw new Error('hideUnusedDepots must be a boolean')
-    if (!Array.isArray(settings.platforms))
-      throw new Error('platforms must be an array')
-    const unique = new Set(settings.platforms)
-    if (
-      unique.size !== settings.platforms.length ||
-      settings.platforms.some((platform) => !depotPlatforms.includes(platform))
-    )
-      throw new Error('platforms must contain unique supported platforms')
+    appSettingsSchema.parse(settings)
   }
 
   getSelectedDepotIds(appId: number): number[] {

@@ -2,14 +2,14 @@ import { processChunkData } from './chunk-codec.ts'
 import {
   exactArrayBuffer,
   serializeError,
-  type WorkerRequest,
+  workerRequestSchema,
   type WorkerResponse,
 } from './decompress-protocol.ts'
 
 let key: Buffer | undefined
 
-onmessage = async (event: MessageEvent<WorkerRequest>) => {
-  const message = event.data
+onmessage = async (event: MessageEvent<unknown>) => {
+  const message = workerRequestSchema.parse(event.data)
   if (message.type === 'init') {
     key = Buffer.from(message.key)
     return

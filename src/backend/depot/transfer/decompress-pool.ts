@@ -2,8 +2,8 @@ import { availableParallelism } from 'node:os'
 import {
   deserializeError,
   exactArrayBuffer,
+  workerResponseSchema,
   type WorkerRequest,
-  type WorkerResponse,
 } from './decompress-protocol.ts'
 
 interface Pending {
@@ -100,7 +100,7 @@ export class DecompressPool {
     })
     const slot: WorkerSlot = { index, worker, current: undefined }
 
-    worker.onmessage = (event: MessageEvent<WorkerResponse>) =>
+    worker.onmessage = (event: MessageEvent<unknown>) =>
       this.#handleMessage(slot, event.data)
     worker.onerror = (event) => {
       event.preventDefault()
@@ -121,8 +121,17 @@ export class DecompressPool {
     return slot
   }
 
-  #handleMessage(slot: WorkerSlot, message: WorkerResponse): void {
+  #handleMessage(slot: WorkerSlot, value: unknown): void {
     if (this.#disposed || this.#workers[slot.index] !== slot) return
+    const result = workerResponseSchema.safeParse(value)
+    if (!result.success) {
+      this.#handleWorkerFailure(
+        slot,
+        new Error('Worker returned an invalid response'),
+      )
+      return
+    }
+    const message = result.data
     const pending = slot.current
     if (!pending || message.id !== pending.id) {
       this.#handleWorkerFailure(

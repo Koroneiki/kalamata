@@ -1,0 +1,305 @@
+import { z } from 'zod'
+import type { AppRpc } from './rpc.ts'
+import {
+  appSettingsSchema,
+  manifestIdSchema,
+  steamIdSchema,
+  uniqueSteamIdsSchema,
+} from './schemas.ts'
+
+type Requests = AppRpc['bun']['requests']
+type RequestSchemas = {
+  [K in keyof Requests]: z.ZodType<Requests[K]['params']>
+}
+type ResponseSchemas = {
+  [K in keyof Requests]: z.ZodType<Requests[K]['response']>
+}
+type RequestHandlers = {
+  [K in keyof Requests]: (
+    params: Requests[K]['params'],
+  ) => Requests[K]['response'] | Promise<Requests[K]['response']>
+}
+
+const strict = z.strictObject
+const emptySchema = strict({})
+const idRequestSchema = strict({ appId: steamIdSchema })
+const manifestTargetSchema = strict({
+  depotId: steamIdSchema,
+  manifestId: manifestIdSchema,
+})
+const operationRequestFields = {
+  appId: steamIdSchema,
+  desiredDepotIds: uniqueSteamIdsSchema,
+  manifestTargets: z.array(manifestTargetSchema).optional(),
+}
+const operationKindSchema = z.enum(['download', 'reconcile', 'repair'])
+const operationPhaseSchema = z.enum([
+  'planning',
+  'staging',
+  'downloading',
+  'verifying',
+  'committing',
+  'reconciling',
+])
+const operationErrorKindSchema = z.enum([
+  'planning',
+  'unavailable-resource',
+  'insufficient-space',
+  'steam',
+  'unavailable-content',
+  'transfer-exhausted',
+  'integrity',
+  'filesystem',
+  'cancellation',
+  'recovery',
+  'persistence',
+])
+const activeOperationFields = {
+  kind: operationKindSchema,
+  phase: operationPhaseSchema,
+  appId: steamIdSchema,
+  installPath: z.string(),
+  desiredDepotIds: z.array(steamIdSchema),
+  installedBytesCompleted: manifestIdSchema,
+  installedBytesTotal: manifestIdSchema,
+  reusedLocalBytes: manifestIdSchema,
+  networkBytes: manifestIdSchema,
+}
+export const activeOperationStateSchema = strict({
+  status: z.literal('active'),
+  ...activeOperationFields,
+})
+const operationErrorSchema = strict({
+  kind: operationErrorKindSchema,
+  message: z.string(),
+})
+export const operationStateSchema = z.discriminatedUnion('status', [
+  strict({ status: z.literal('idle') }),
+  activeOperationStateSchema,
+  strict({ status: z.literal('paused'), ...activeOperationFields }),
+  strict({
+    status: z.literal('resumable'),
+    ...activeOperationFields,
+    error: operationErrorSchema,
+  }),
+  strict({
+    status: z.literal('completed'),
+    kind: operationKindSchema,
+    appId: steamIdSchema,
+    installPath: z.string(),
+    desiredDepotIds: z.array(steamIdSchema),
+    installedBytes: manifestIdSchema,
+    reusedLocalBytes: manifestIdSchema,
+    networkBytes: manifestIdSchema,
+  }),
+  strict({
+    status: z.literal('cancelled'),
+    kind: operationKindSchema,
+    appId: steamIdSchema,
+    installPath: z.string(),
+    desiredDepotIds: z.array(steamIdSchema),
+    error: strict({ kind: z.literal('cancellation'), message: z.string() }),
+  }),
+  strict({
+    status: z.literal('failed'),
+    kind: operationKindSchema,
+    appId: steamIdSchema,
+    installPath: z.string(),
+    desiredDepotIds: z.array(steamIdSchema),
+    error: operationErrorSchema,
+  }),
+  strict({
+    status: z.literal('repair-required'),
+    appId: steamIdSchema,
+    installPath: z.string(),
+    error: strict({ kind: z.literal('recovery'), message: z.string() }),
+  }),
+])
+const summaryFields = {
+  appId: steamIdSchema,
+  name: z.string(),
+  developers: z.array(z.string()),
+  publishers: z.array(z.string()),
+  releaseDate: z.number().int().nullable(),
+  iconUrls: z.array(z.string()),
+  artworkUrl: z.string().nullable(),
+}
+const depotBaseFields = {
+  depotId: steamIdSchema,
+  mountIndex: z.number().int().nonnegative(),
+  ownerAppId: steamIdSchema,
+  ownerAppName: z.string().nullable(),
+  platform: z.string().nullable(),
+  language: z.string().nullable(),
+  manifestId: manifestIdSchema.nullable(),
+  installedManifestId: manifestIdSchema.nullable().optional(),
+  pinned: z.boolean().optional(),
+  sizeBytes: manifestIdSchema.nullable(),
+  downloadBytes: manifestIdSchema.nullable(),
+}
+const appDepotSchema = z.discriminatedUnion('eligible', [
+  strict({
+    ...depotBaseFields,
+    eligible: z.literal(true),
+    group: z.enum(['Base Game', 'DLC']),
+    manifestStatus: z.enum(['ready', 'missing', 'outdated', 'invalid']),
+    keyStatus: z.enum(['present', 'missing', 'invalid']),
+    installStatus: z.enum(['not-installed', 'current', 'outdated']),
+    selectable: z.boolean(),
+  }),
+  strict({
+    ...depotBaseFields,
+    eligible: z.literal(false),
+    group: z.enum(['Unknown', 'Steamworks Common Redistributables', 'Unused']),
+    manifestStatus: z.null(),
+    keyStatus: z.null(),
+    installStatus: z.null(),
+    selectable: z.literal(false),
+  }),
+])
+const appSummarySchema = strict(summaryFields)
+const appDetailsSchema = strict({
+  ...summaryFields,
+  inLibrary: z.boolean(),
+  installPath: z.string().nullable(),
+  selectedDepotIds: z.array(steamIdSchema),
+  depots: z.array(appDepotSchema),
+})
+const libraryEntrySchema = strict({
+  appId: steamIdSchema,
+  installPath: z.string().nullable(),
+  createdAt: z.number().int(),
+})
+const acceptedResultSchema = strict({ accepted: z.literal(true) })
+
+export const rpcRequestSchemas = {
+  getAppSummary: idRequestSchema,
+  getAppDetails: idRequestSchema,
+  getLibrary: emptySchema,
+  getSettings: emptySchema,
+  updateSettings: appSettingsSchema,
+  addLibraryEntry: idRequestSchema,
+  removeLibraryEntry: idRequestSchema,
+  setSelectedDepots: strict({
+    appId: steamIdSchema,
+    depotIds: uniqueSteamIdsSchema,
+  }),
+  setDepotPinned: strict({
+    appId: steamIdSchema,
+    depotId: steamIdSchema,
+    pinned: z.boolean(),
+  }),
+  selectInstallDirectory: strict({ startingPath: z.string().optional() }),
+  startDownload: strict({
+    appId: steamIdSchema,
+    installPath: z.string(),
+    depotIds: uniqueSteamIdsSchema.min(1),
+    manifestTargets: z.array(manifestTargetSchema).optional(),
+  }),
+  queueDepotUpdate: strict(operationRequestFields),
+  previewApplicationOperation: strict({
+    ...operationRequestFields,
+    installPath: z.string().optional(),
+  }),
+  repairApplication: idRequestSchema,
+  acquireManifest: strict({
+    appId: steamIdSchema,
+    depotId: steamIdSchema,
+    manifestId: manifestIdSchema,
+  }),
+  acquireDepotKeys: strict({
+    appId: steamIdSchema,
+    depotIds: uniqueSteamIdsSchema,
+  }),
+  cancelOperation: emptySchema,
+  pauseOperation: emptySchema,
+  resumeOperation: emptySchema,
+  getOperationState: emptySchema,
+} satisfies RequestSchemas
+
+export const rpcResponseSchemas = {
+  getAppSummary: appSummarySchema,
+  getAppDetails: appDetailsSchema,
+  getLibrary: z.array(libraryEntrySchema),
+  getSettings: appSettingsSchema,
+  updateSettings: appSettingsSchema,
+  addLibraryEntry: libraryEntrySchema,
+  removeLibraryEntry: z.void(),
+  setSelectedDepots: z.array(steamIdSchema),
+  setDepotPinned: z.void(),
+  selectInstallDirectory: z.string().nullable(),
+  startDownload: activeOperationStateSchema,
+  queueDepotUpdate: activeOperationStateSchema,
+  previewApplicationOperation: strict({
+    depots: z.array(
+      strict({
+        depotId: steamIdSchema,
+        action: z.enum(['install', 'remove', 'update']),
+      }),
+    ),
+    counts: strict({
+      install: z.number().int(),
+      remove: z.number().int(),
+      update: z.number().int(),
+    }),
+    logicalSizeDeltaBytes: z.string().regex(/^-?\d+$/u),
+    estimatedDownloadBytes: manifestIdSchema,
+    networkPayloadUpperBoundBytes: manifestIdSchema.nullable(),
+    stagingLogicalUpperBoundBytes: manifestIdSchema,
+  }),
+  repairApplication: activeOperationStateSchema,
+  acquireManifest: strict({
+    depotId: steamIdSchema,
+    manifestId: manifestIdSchema,
+    relativePath: z.string(),
+  }),
+  acquireDepotKeys: strict({
+    acquiredDepotIds: z.array(steamIdSchema),
+    missingDepotIds: z.array(steamIdSchema),
+  }),
+  cancelOperation: z.discriminatedUnion('accepted', [
+    acceptedResultSchema,
+    strict({
+      accepted: z.literal(false),
+      reason: z.enum(['no-active-operation', 'commit-in-progress']),
+    }),
+  ]),
+  pauseOperation: z.discriminatedUnion('accepted', [
+    acceptedResultSchema,
+    strict({
+      accepted: z.literal(false),
+      reason: z.enum(['no-active-operation', 'invalid-phase']),
+    }),
+  ]),
+  resumeOperation: z.discriminatedUnion('accepted', [
+    acceptedResultSchema,
+    strict({
+      accepted: z.literal(false),
+      reason: z.literal('no-resumable-operation'),
+    }),
+  ]),
+  getOperationState: operationStateSchema,
+} satisfies ResponseSchemas
+
+export function parseRpcRequest<K extends keyof Requests>(
+  method: K,
+  value: unknown,
+): Requests[K]['params'] {
+  return rpcRequestSchemas[method].parse(value) as Requests[K]['params']
+}
+
+export function validatedRpcHandlers(
+  handlers: RequestHandlers,
+): RequestHandlers {
+  const untypedHandlers = handlers as Record<
+    keyof Requests,
+    (params: never) => unknown
+  >
+  return Object.fromEntries(
+    Object.entries(untypedHandlers).map(([method, handler]) => [
+      method,
+      (value: unknown) =>
+        handler(parseRpcRequest(method as keyof Requests, value) as never),
+    ]),
+  ) as RequestHandlers
+}

@@ -1,19 +1,19 @@
-import { electroview } from '@/api/transport'
+import { request } from '@/api/transport'
 
 export function getLibrary() {
-  return electroview.rpc!.request.getLibrary({})
+  return request('getLibrary', {})
 }
 
 export function addLibraryEntry(appId: number) {
-  return electroview.rpc!.request.addLibraryEntry({ appId })
+  return request('addLibraryEntry', { appId })
 }
 
 export function removeLibraryEntry(appId: number) {
-  return electroview.rpc!.request.removeLibraryEntry({ appId })
+  return request('removeLibraryEntry', { appId })
 }
 
 export function setSelectedDepots(appId: number, depotIds: number[]) {
-  return electroview.rpc!.request.setSelectedDepots({ appId, depotIds })
+  return request('setSelectedDepots', { appId, depotIds })
 }
 
 export function setDepotPinned(
@@ -21,5 +21,5 @@ export function setDepotPinned(
   depotId: number,
   pinned: boolean,
 ) {
-  return electroview.rpc!.request.setDepotPinned({ appId, depotId, pinned })
+  return request('setDepotPinned', { appId, depotId, pinned })
 }

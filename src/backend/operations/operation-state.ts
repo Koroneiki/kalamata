@@ -1,6 +1,6 @@
 import { ApplicationTransactionError } from '../depot/install/transaction/types.ts'
-import { validateId } from '../../db/validation.ts'
 import type { OperationErrorKind, OperationState } from '../../types/rpc.ts'
+import { uniqueSteamIdsSchema } from '../../types/schemas.ts'
 
 export function validateDepotIds(
   depotIds: number[],
@@ -8,9 +8,7 @@ export function validateDepotIds(
 ): void {
   if (!allowEmpty && depotIds.length === 0)
     throw new Error('At least one depot must be selected')
-  if (new Set(depotIds).size !== depotIds.length)
-    throw new Error('Depot IDs must not contain duplicates')
-  for (const depotId of depotIds) validateId(depotId, 'depotId')
+  uniqueSteamIdsSchema.parse(depotIds)
 }
 
 export function serializeOperationError(error: unknown): {
