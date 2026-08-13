@@ -30,6 +30,7 @@ export function useOperationToasts() {
     () => operation.state,
     async (state, previous) => {
       if (
+        !operation.initialized ||
         state.status !== 'completed' ||
         (previous.status === 'completed' &&
           'appId' in previous &&
