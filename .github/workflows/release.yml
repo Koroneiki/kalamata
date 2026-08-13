@@ -83,7 +83,9 @@ jobs:
 
       - name: Test Windows runtime
         if: matrix.platform == 'windows-x64'
-        run: bun test
+        run: |
+          bun test --path-ignore-patterns="**/decompress-pool.test.ts"
+          bun test ./test/decompress-pool.test.ts
 
       - name: Build release
         run: bun run build
