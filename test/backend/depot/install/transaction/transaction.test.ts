@@ -546,9 +546,9 @@ describe('application filesystem transactions', () => {
 
     expect(await archiveUnresolvedApplicationTransaction(directory)).toBeNull()
     expect(await transactionEntries()).toEqual([])
-    expect(await readdir(join(directory, '.Kalamata/repair-fallback'))).toEqual(
-      ['other', 'resume-test'],
-    )
+    expect(
+      (await readdir(join(directory, '.Kalamata/repair-fallback'))).sort(),
+    ).toEqual(['other', 'resume-test'])
   })
 
   test('malformed recovery journal leaves live files and backups untouched', async () => {
@@ -661,7 +661,7 @@ async function exists(path: string): Promise<boolean> {
 
 async function transactionEntries(): Promise<string[]> {
   try {
-    return await readdir(join(directory!, '.Kalamata/transactions'))
+    return (await readdir(join(directory!, '.Kalamata/transactions'))).sort()
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
     throw error
