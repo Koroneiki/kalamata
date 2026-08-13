@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DepotKeyAcquisitionService } from '../src/backend/depot/keys/depot-key-acquisition-service.ts'
 import { KalamataDatabase } from '../src/db/database.ts'
+import { removeTemporaryDirectory } from './helpers/filesystem.ts'
 
 const LUA_KEY = 'a'.repeat(64)
 const JSON_KEY = 'b'.repeat(64)
@@ -14,7 +15,7 @@ let database: KalamataDatabase | undefined
 afterEach(async () => {
   database?.close()
   database = undefined
-  if (root) await rm(root, { recursive: true, force: true })
+  if (root) await removeTemporaryDirectory(root)
   root = undefined
 })
 

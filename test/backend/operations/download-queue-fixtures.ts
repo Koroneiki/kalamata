@@ -1,7 +1,7 @@
 import { test } from 'bun:test'
 import { createHash } from 'node:crypto'
 import { createRequire } from 'node:module'
-import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, realpath, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type SteamUser from 'steam-user'
@@ -17,6 +17,7 @@ import type {
 import type { DownloadQueueCoordinator } from '../../../src/backend/operations/download-queue.ts'
 import type { DepotManifest } from '../../../src/backend/depot/manifests/types.ts'
 import { KalamataDatabase } from '../../../src/db/database.ts'
+import { removeTemporaryDirectory } from '../../helpers/filesystem.ts'
 
 export const APP_ID = 10
 export const DLC_APP_ID = 20
@@ -64,7 +65,7 @@ export async function setupDownloadQueue(): Promise<DownloadQueueFixture> {
     root,
     async cleanup() {
       database.close()
-      await rm(root, { recursive: true, force: true })
+      await removeTemporaryDirectory(root)
     },
   }
 }

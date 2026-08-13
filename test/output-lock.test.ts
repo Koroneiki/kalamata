@@ -1,13 +1,14 @@
 import { afterEach, expect, test } from 'bun:test'
-import { mkdir, mkdtemp, rm, symlink } from 'node:fs/promises'
+import { mkdir, mkdtemp, symlink, unlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { acquireOutputLock } from '../src/backend/depot/install/output-lock.ts'
+import { removeTemporaryDirectory } from './helpers/filesystem.ts'
 
 let directory: string | undefined
 
 afterEach(async () => {
-  if (directory) await rm(directory, { recursive: true, force: true })
+  if (directory) await removeTemporaryDirectory(directory)
   directory = undefined
 })
 
@@ -55,6 +56,6 @@ test('rejects symlinked transaction, repair-fallback, and lock paths', async () 
     const path = join(configDirectory, name)
     await symlink(outside, path)
     await expect(acquireOutputLock(directory)).rejects.toThrow('symbolic link')
-    await rm(path)
+    await unlink(path)
   }
 })

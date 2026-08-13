@@ -6,7 +6,6 @@ import {
   readFile,
   readdir,
   realpath,
-  rm,
   symlink,
   writeFile,
 } from 'node:fs/promises'
@@ -20,6 +19,7 @@ import {
   resolveManagedManifest,
 } from '../src/db/manifest-files.ts'
 import { depotKeyFromHex } from '../src/db/validation.ts'
+import { removeTemporaryDirectory } from './helpers/filesystem.ts'
 
 let root: string | undefined
 let database: KalamataDatabase | undefined
@@ -36,7 +36,7 @@ const hasIngestManifestFixture = await Bun.file(
 afterEach(async () => {
   database?.close()
   database = undefined
-  if (root) await rm(root, { recursive: true, force: true })
+  if (root) await removeTemporaryDirectory(root)
   root = undefined
 })
 

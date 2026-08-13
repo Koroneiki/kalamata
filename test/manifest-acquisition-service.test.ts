@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test'
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ManifestAcquisitionService } from '../src/backend/depot/manifests/manifest-acquisition-service.ts'
 import type { SteamContentUser } from '../src/backend/steam/types.ts'
 import { KalamataDatabase } from '../src/db/database.ts'
+import { removeTemporaryDirectory } from './helpers/filesystem.ts'
 
 const MANIFESTS = [
   { appId: 2379780, depotId: 2379781, manifestId: '3512319404653808464' },
@@ -27,7 +28,7 @@ let database: KalamataDatabase | undefined
 afterEach(async () => {
   database?.close()
   database = undefined
-  if (root) await rm(root, { recursive: true, force: true })
+  if (root) await removeTemporaryDirectory(root)
   root = undefined
 })
 

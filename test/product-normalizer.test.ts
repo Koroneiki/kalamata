@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from 'bun:test'
-import { copyFile, mkdtemp, rm } from 'node:fs/promises'
+import { copyFile, mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type SteamUser from 'steam-user'
@@ -14,6 +14,7 @@ import type {
 } from '../src/backend/steam/types.ts'
 import { KalamataDatabase } from '../src/db/database.ts'
 import { AppService } from '../src/backend/apps/app-service.ts'
+import { removeTemporaryDirectory } from './helpers/filesystem.ts'
 
 const DEPOT_ID = 2379781
 const MANIFEST_ID = '3512319404653808464'
@@ -28,7 +29,7 @@ let database: KalamataDatabase | undefined
 
 afterEach(async () => {
   database?.close()
-  if (root) await rm(root, { recursive: true, force: true })
+  if (root) await removeTemporaryDirectory(root)
   database = undefined
   root = undefined
 })
