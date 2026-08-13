@@ -8,6 +8,7 @@ import {
   previewApplicationOperation,
 } from '../../../src/backend/operations/application-preview.ts'
 import { DownloadQueueCoordinator } from '../../../src/backend/operations/download-queue.ts'
+import { DIRECTORY } from '../../../src/backend/depot/manifests/manifest-utils.ts'
 import { depot } from '../depot/install/transaction/transaction-fixtures.ts'
 import type { ApplicationDepotInput } from '../../../src/backend/depot/depot-download-service.ts'
 import {
@@ -42,6 +43,7 @@ test('classifies install, remove, and update depots with a signed delta', () => 
     [depot(2, 'new', { same: '1234' }), depot(3, 'new', { added: '123' })],
   )
 
+  expect(preview.overlaps).toEqual([])
   expect(preview.depots).toEqual([
     {
       depotId: 2,
@@ -87,6 +89,43 @@ test('uses final projection precedence for logical and staging sizes', () => {
   expect(preview.logicalSizeDeltaBytes).toBe('-4')
   expect(preview.stagingLogicalUpperBoundBytes).toBe('2')
   expect(preview.networkPayloadUpperBoundBytes).toBe('2')
+  expect(preview.overlaps).toEqual([
+    { depotId: 1, overriddenByDepotIds: [2], complete: true },
+  ])
+})
+
+test('reports partial cross-depot file overlap', () => {
+  const preview = compareApplicationManifests(
+    100,
+    [],
+    [
+      depot(1, 'first', { shared: 'first', unique: 'kept' }),
+      depot(2, 'second', { shared: 'second' }),
+    ],
+  )
+
+  expect(preview.overlaps).toEqual([
+    { depotId: 1, overriddenByDepotIds: [2], complete: false },
+  ])
+})
+
+test('does not report a depot as fully overridden when it retains a directory', () => {
+  const first = depot(1, 'first', { shared: 'first' })
+  first.manifest.files.push({
+    filename: 'empty',
+    size: '0',
+    flags: DIRECTORY,
+    sha_content: '',
+    chunks: [],
+  })
+  const preview = compareApplicationManifests(100, [], [
+    first,
+    depot(2, 'second', { shared: 'second' }),
+  ])
+
+  expect(preview.overlaps).toEqual([
+    { depotId: 1, overriddenByDepotIds: [2], complete: false },
+  ])
 })
 
 test('deduplicates identical chunks in network upper bounds', () => {
@@ -183,6 +222,7 @@ queueTest(
           ) => {
             previewPath = outputDirectory
             return {
+              overlaps: [],
               depots: plan.desiredDepots.map(({ depotId }) => ({
                 depotId,
                 action: 'install' as const,

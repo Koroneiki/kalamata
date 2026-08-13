@@ -426,6 +426,13 @@ async function updateSelectedDepots(depotIds: number[]) {
   }
 }
 
+function correctSelectedDepots(depotIds: number[]) {
+  // Preview corrections remain drafts until the confirmed operation persists them.
+  selectedDepotIds.value = depotIds
+  draftDirty.value = true
+  mutationError.value = ''
+}
+
 async function removeFromLibrary() {
   const targetAppId = appId.value
   removeError.value = ''
@@ -930,6 +937,7 @@ async function verifyGameFiles() {
         :selected-depot-ids="selectedDepotIds"
         :custom-manifest-targets="customManifestTargets"
         @update:open="setDownloadDialogOpen"
+        @update:selected-depot-ids="correctSelectedDepots"
         @download-started="focusDownloadQueue"
       />
 

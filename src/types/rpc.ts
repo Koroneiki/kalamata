@@ -99,6 +99,11 @@ export interface DepotManifestTarget {
 }
 
 export interface ApplicationOperationPreview {
+  overlaps: Array<{
+    depotId: number
+    overriddenByDepotIds: number[]
+    complete: boolean
+  }>
   depots: Array<{
     depotId: number
     action: 'install' | 'remove' | 'update'

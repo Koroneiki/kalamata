@@ -234,6 +234,13 @@ export const rpcResponseSchemas = {
   startDownload: activeOperationStateSchema,
   queueDepotUpdate: activeOperationStateSchema,
   previewApplicationOperation: strict({
+    overlaps: z.array(
+      strict({
+        depotId: steamIdSchema,
+        overriddenByDepotIds: z.array(steamIdSchema),
+        complete: z.boolean(),
+      }),
+    ),
     depots: z.array(
       strict({
         depotId: steamIdSchema,
