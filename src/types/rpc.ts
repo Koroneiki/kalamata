@@ -118,6 +118,11 @@ export interface ApplicationOperationPreview {
     remove: number
     update: number
   }
+  fileCounts: {
+    added: number
+    removed: number
+    changed: number
+  }
   logicalSizeDeltaBytes: string
   estimatedDownloadBytes: string
   networkPayloadUpperBoundBytes: string | null

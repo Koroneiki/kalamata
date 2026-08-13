@@ -100,6 +100,25 @@ export function compareApplicationManifests(
   const source = buildProjection(installed, appId)
   const target = buildProjection(desired, appId)
   const changedFiles = changedProjectionFiles(source, target)
+  const fileCounts = { added: 0, removed: 0, changed: 0 }
+  for (const [key, { file }] of target) {
+    const previous = source.get(key)?.file
+    if (!previous || isDirectory(previous) !== isDirectory(file))
+      fileCounts.added += 1
+    else if (
+      !isDirectory(file) &&
+      (previous.sha_content.toLowerCase() !== file.sha_content.toLowerCase() ||
+        previous.size !== file.size ||
+        previous.flags !== file.flags)
+    )
+      fileCounts.changed += 1
+  }
+  for (const [key, { file }] of source)
+    if (
+      !target.has(key) ||
+      isDirectory(target.get(key)!.file) !== isDirectory(file)
+    )
+      fileCounts.removed += 1
   // A depot is fully overridden only when it owns no final file or directory.
   const projectedDepotIds = new Set(
     [...target.values()].map(({ depot }) => depot.depotId),
@@ -135,6 +154,7 @@ export function compareApplicationManifests(
     overlaps,
     depots,
     counts,
+    fileCounts,
     logicalSizeDeltaBytes: (
       sumProjectionFiles(target) - sumProjectionFiles(source)
     ).toString(),

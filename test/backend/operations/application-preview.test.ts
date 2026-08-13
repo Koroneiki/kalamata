@@ -74,6 +74,7 @@ test('classifies install, remove, and update depots with a signed delta', () => 
     },
   ])
   expect(preview.counts).toEqual({ install: 1, remove: 1, update: 1 })
+  expect(preview.fileCounts).toEqual({ added: 1, removed: 1, changed: 1 })
   expect(preview.logicalSizeDeltaBytes).toBe('2')
   expect(preview.estimatedDownloadBytes).toBe('7')
   expect(preview.networkPayloadUpperBoundBytes).toBe('7')
@@ -159,6 +160,27 @@ test('does not stage files whose winning manifest is unchanged', () => {
   expect(preview.logicalSizeDeltaBytes).toBe('0')
   expect(preview.stagingLogicalUpperBoundBytes).toBe('0')
   expect(preview.networkPayloadUpperBoundBytes).toBe('0')
+  expect(preview.fileCounts).toEqual({ added: 0, removed: 0, changed: 0 })
+})
+
+test('does not count unchanged file content in a new manifest as changed', () => {
+  const preview = compareApplicationManifests(
+    100,
+    [depot(1, 'old', { stable: 'same' })],
+    [depot(1, 'new', { stable: 'same' })],
+  )
+
+  expect(preview.fileCounts).toEqual({ added: 0, removed: 0, changed: 0 })
+})
+
+test('includes directory paths in added and removed counts', () => {
+  const preview = compareApplicationManifests(
+    100,
+    [depot(1, 'old', { 'removed/file': 'old' })],
+    [depot(1, 'new', { 'added/file': 'new' })],
+  )
+
+  expect(preview.fileCounts).toEqual({ added: 2, removed: 2, changed: 0 })
 })
 
 test('subtracts reusable installed chunks from the download estimate', async () => {
@@ -238,6 +260,7 @@ queueTest(
                 remove: 0,
                 update: 0,
               },
+              fileCounts: { added: 0, removed: 0, changed: 0 },
               logicalSizeDeltaBytes: '0',
               estimatedDownloadBytes: '0',
               networkPayloadUpperBoundBytes: '0',

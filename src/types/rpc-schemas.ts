@@ -257,6 +257,11 @@ export const rpcResponseSchemas = {
       remove: z.number().int(),
       update: z.number().int(),
     }),
+    fileCounts: strict({
+      added: z.number().int().nonnegative(),
+      removed: z.number().int().nonnegative(),
+      changed: z.number().int().nonnegative(),
+    }),
     logicalSizeDeltaBytes: z.string().regex(/^-?\d+$/u),
     estimatedDownloadBytes: manifestIdSchema,
     networkPayloadUpperBoundBytes: manifestIdSchema.nullable(),
