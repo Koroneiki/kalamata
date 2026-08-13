@@ -7,6 +7,10 @@ import {
   validateManifest,
 } from '../src/backend/depot/manifests/manifest-codec.ts'
 import type { DepotManifest } from '../src/backend/depot/manifests/types.ts'
+import {
+  canonicalManifestPath,
+  manifestPathKey,
+} from '../src/backend/depot/manifests/manifest-utils.ts'
 
 const fixturePath = join(
   import.meta.dir,
@@ -97,6 +101,32 @@ test('rejects entries nested beneath a regular file', () => {
   manifest.files.push({ ...manifest.files[0]!, filename: 'file/nested.bin' })
 
   expect(() => validateManifest(manifest, 20)).toThrow('nested beneath file')
+})
+
+test('rejects Windows path aliases and reserved components', () => {
+  for (const filename of [
+    'file.',
+    'file ',
+    'folder/file:stream',
+    'CON',
+    'aux.txt',
+    'COM1/config',
+    'name?.bin',
+  ]) {
+    expect(() => canonicalManifestPath(filename, 'win32')).toThrow(
+      'Unsafe Windows manifest path',
+    )
+  }
+
+  expect(manifestPathKey('Folder/File.bin', 'win32')).toBe(
+    manifestPathKey('folder/file.BIN', 'win32'),
+  )
+})
+
+test('detects macOS Unicode normalization aliases', () => {
+  expect(manifestPathKey('café/file.bin', 'darwin')).toBe(
+    manifestPathKey('cafe\u0301/file.bin', 'darwin'),
+  )
 })
 
 test.skipIf(!(await Bun.file(fixturePath).exists()))(

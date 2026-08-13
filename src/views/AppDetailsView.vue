@@ -103,8 +103,15 @@ const depotKeysMutation = useMutation({
     acquireDepotKeys(appId, depotIds),
 })
 const pinMutation = useMutation({
-  mutation: ({ depotId, pinned }: { depotId: number; pinned: boolean }) =>
-    setDepotPinned(appId.value, depotId, pinned),
+  mutation: ({
+    appId,
+    depotId,
+    pinned,
+  }: {
+    appId: number
+    depotId: number
+    pinned: boolean
+  }) => setDepotPinned(appId, depotId, pinned),
 })
 
 watch(
@@ -114,8 +121,13 @@ watch(
       const appChanged = loadedAppId.value !== app.appId
       loadedAppId.value = app.appId
       if (appChanged) {
+        draftDirty.value = false
         selectedPath.value = app.installPath ?? ''
         manifestError.value = ''
+        customManifestDialogOpen.value = false
+        customManifestDepot.value = null
+        customManifestError.value = ''
+        customManifestAcquiring.value = false
         attemptedManifests.clear()
         attemptedDepotKeys.clear()
         customManifestTargets.clear()
@@ -434,10 +446,10 @@ async function getManifest(
   depot: AppDepot,
   queueId?: number,
   precedingError = '',
+  targetAppId = appId.value,
 ) {
   if (!depot.manifestId) return
   const manifestQueueId = queueId ?? manifestQueue.begin(1)
-  const targetAppId = appId.value
   const targetManifestId = depot.manifestId
   const key = manifestKey(targetAppId, depot)
   manifestError.value = precedingError
@@ -473,14 +485,15 @@ async function getManifest(
 }
 
 async function getDepotResources(depot: AppDepot) {
-  const key = manifestKey(appId.value, depot)
+  const targetAppId = appId.value
+  const key = manifestKey(targetAppId, depot)
   let keyError = ''
   acquiringManifests.add(key)
   try {
     if (depot.eligible && depot.keyStatus !== 'present') {
       try {
         const result = await depotKeysMutation.mutateAsync({
-          appId: appId.value,
+          appId: targetAppId,
           depotIds: [depot.depotId],
         })
         if (result.missingDepotIds.includes(depot.depotId)) {
@@ -495,11 +508,11 @@ async function getDepotResources(depot: AppDepot) {
     if (!depot.eligible || depot.manifestStatus !== 'ready') {
       // Manifest acquisition does not require a key; encrypted filenames can
       // be validated after the key becomes available.
-      await getManifest(depot, undefined, keyError)
+      await getManifest(depot, undefined, keyError, targetAppId)
     } else {
-      manifestError.value = keyError
+      if (appId.value === targetAppId) manifestError.value = keyError
       await queryCache.invalidateQueries({
-        key: appQueryKeys.details(appId.value),
+        key: appQueryKeys.details(targetAppId),
         exact: true,
       })
     }
@@ -521,6 +534,7 @@ function clearCustomManifest(depot: EligibleAppDepot) {
 async function removeCustomManifest() {
   const depot = customManifestDepot.value
   if (!depot) return
+  const targetAppId = appId.value
   if (customManifestTargets.has(depot.depotId)) {
     clearCustomManifest(depot)
     customManifestDialogOpen.value = false
@@ -530,31 +544,37 @@ async function removeCustomManifest() {
   customManifestError.value = ''
   customManifestAcquiring.value = true
   try {
-    await pinMutation.mutateAsync({ depotId: depot.depotId, pinned: false })
+    await pinMutation.mutateAsync({
+      appId: targetAppId,
+      depotId: depot.depotId,
+      pinned: false,
+    })
     await queryCache.invalidateQueries({
-      key: appQueryKeys.details(appId.value),
+      key: appQueryKeys.details(targetAppId),
       exact: true,
     })
-    customManifestDialogOpen.value = false
+    if (appId.value === targetAppId) customManifestDialogOpen.value = false
   } catch (error) {
-    customManifestError.value =
-      error instanceof Error ? error.message : String(error)
+    if (appId.value === targetAppId)
+      customManifestError.value =
+        error instanceof Error ? error.message : String(error)
   } finally {
-    customManifestAcquiring.value = false
+    if (appId.value === targetAppId) customManifestAcquiring.value = false
   }
 }
 
 async function setCustomManifest(manifestId: string) {
   const depot = customManifestDepot.value
   if (!depot) return
+  const targetAppId = appId.value
   customManifestError.value = ''
   customManifestAcquiring.value = true
-  const key = `${appId.value}:${depot.depotId}:${manifestId}`
+  const key = `${targetAppId}:${depot.depotId}:${manifestId}`
   acquiringManifests.add(key)
   try {
     if (depot.keyStatus !== 'present') {
       const result = await depotKeysMutation.mutateAsync({
-        appId: appId.value,
+        appId: targetAppId,
         depotIds: [depot.depotId],
       })
       if (result.missingDepotIds.includes(depot.depotId))
@@ -567,26 +587,33 @@ async function setCustomManifest(manifestId: string) {
     })
     if (manifestId === depot.installedManifestId) {
       if (!depot.pinned) {
-        await pinMutation.mutateAsync({ depotId: depot.depotId, pinned: true })
+        await pinMutation.mutateAsync({
+          appId: targetAppId,
+          depotId: depot.depotId,
+          pinned: true,
+        })
         await queryCache.invalidateQueries({
-          key: appQueryKeys.details(appId.value),
+          key: appQueryKeys.details(targetAppId),
           exact: true,
         })
       }
+      if (appId.value !== targetAppId) return
       customManifestTargets.delete(depot.depotId)
       customManifestDialogOpen.value = false
       return
     }
+    if (appId.value !== targetAppId) return
     customManifestTargets.set(depot.depotId, manifestId)
     if (!selectedIdSet.value.has(depot.depotId))
       await updateSelectedDepots([...selectedDepotIds.value, depot.depotId])
     customManifestDialogOpen.value = false
   } catch (error) {
-    customManifestError.value =
-      error instanceof Error ? error.message : String(error)
+    if (appId.value === targetAppId)
+      customManifestError.value =
+        error instanceof Error ? error.message : String(error)
   } finally {
     acquiringManifests.delete(key)
-    customManifestAcquiring.value = false
+    if (appId.value === targetAppId) customManifestAcquiring.value = false
   }
 }
 
@@ -617,7 +644,7 @@ watch(
       const key = manifestKey(app.appId, depot)
       // Attempt each manifest version once per app view to avoid reactive refetch loops.
       attemptedManifests.add(key)
-      void getManifest(depot, queueId)
+      void getManifest(depot, queueId, '', app.appId)
     }
   },
   { immediate: true },

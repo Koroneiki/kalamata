@@ -69,18 +69,21 @@ export const useOperationStore = defineStore('operation', () => {
   function initialize() {
     if (initializePromise) return initializePromise
     initializePromise = (async () => {
-      unsubscribe = subscribeToOperationState(applyState)
+      unsubscribe ??= subscribeToOperationState(applyState)
       const sequence = getOperationStateMessageSequence()
+      initializationError.value = null
       try {
         const snapshot = await getOperationState()
         // Do not let an older RPC snapshot overwrite a newer pushed state.
         if (getOperationStateMessageSequence() === sequence)
           applyState(snapshot)
+        initialized.value = true
       } catch (error) {
+        initialized.value = false
         initializationError.value =
           error instanceof Error ? error.message : String(error)
       } finally {
-        initialized.value = true
+        initializePromise = undefined
       }
     })()
     return initializePromise
@@ -137,6 +140,8 @@ export const useOperationStore = defineStore('operation', () => {
   function dispose() {
     unsubscribe?.()
     unsubscribe = undefined
+    initializePromise = undefined
+    initialized.value = false
   }
 
   return {

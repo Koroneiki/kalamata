@@ -10,12 +10,19 @@ export function normalizeManifestSeparators(filename: string): string {
   return filename.replaceAll('\\', '/')
 }
 
-export function manifestPathKey(filename: string): string {
-  const normalized = canonicalManifestPath(filename)
-  return process.platform === 'linux' ? normalized : normalized.toLowerCase()
+export function manifestPathKey(
+  filename: string,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  const normalized = canonicalManifestPath(filename, platform)
+  if (platform === 'darwin') return normalized.normalize('NFD').toLowerCase()
+  return platform === 'win32' ? normalized.toLowerCase() : normalized
 }
 
-export function canonicalManifestPath(filename: string): string {
+export function canonicalManifestPath(
+  filename: string,
+  platform: NodeJS.Platform = process.platform,
+): string {
   const normalized = normalizeManifestSeparators(filename)
   if (
     !normalized ||
@@ -29,12 +36,28 @@ export function canonicalManifestPath(filename: string): string {
   if (canonical === '.' || canonical === '..' || canonical.startsWith('../')) {
     throw new Error(`Manifest path escapes output directory: ${filename}`)
   }
+  if (platform === 'win32') validateWindowsPath(canonical, filename)
   if (
     canonical.split('/', 1)[0]?.toLowerCase() === CONFIG_DIRECTORY.toLowerCase()
   ) {
     throw new Error(`Manifest path conflicts with internal state: ${filename}`)
   }
   return canonical
+}
+
+function validateWindowsPath(canonical: string, original: string): void {
+  for (const component of canonical.split('/')) {
+    if (
+      /[<>:"|?*]/u.test(component) ||
+      Array.from(component).some(
+        (character) => character.codePointAt(0)! < 32,
+      ) ||
+      /[ .]$/u.test(component) ||
+      /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/iu.test(component)
+    ) {
+      throw new Error(`Unsafe Windows manifest path: ${original}`)
+    }
+  }
 }
 
 export function withImpliedDirectories(files: ManifestFile[]): ManifestFile[] {

@@ -102,7 +102,18 @@ export class DepotKeyAcquisitionService {
   private getLuaSource(appId: number): Promise<string | null> {
     let source = this.#luaSources.get(appId)
     if (!source) {
-      source = this.fetchLuaSource(appId)
+      source = this.fetchLuaSource(appId).then(
+        (value) => {
+          if (value === null && this.#luaSources.get(appId) === source)
+            this.#luaSources.delete(appId)
+          return value
+        },
+        (error) => {
+          if (this.#luaSources.get(appId) === source)
+            this.#luaSources.delete(appId)
+          throw error
+        },
+      )
       this.#luaSources.set(appId, source)
     }
     return source

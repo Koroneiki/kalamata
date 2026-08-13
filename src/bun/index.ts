@@ -89,6 +89,10 @@ const rpc = BrowserView.defineRPC<AppRpc>({
         database.removeLibraryEntry(appId)
       },
       setSelectedDepots({ appId, depotIds }) {
+        if (queue.isBusyForApp(appId))
+          throw new Error(
+            'Depot selection cannot change while the game is downloading',
+          )
         return appService.setSelectedDepots(appId, depotIds)
       },
       setDepotPinned({ appId, depotId, pinned }) {

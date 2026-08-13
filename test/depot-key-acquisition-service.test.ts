@@ -66,6 +66,30 @@ describe('DepotKeyAcquisitionService', () => {
     ).resolves.toEqual({ acquiredDepotIds: [10], missingDepotIds: [11] })
   })
 
+  test('retries a transiently unavailable Lua source', async () => {
+    let attempts = 0
+    const fetcher = mock(async (input: string | URL | Request) => {
+      if (String(input).endsWith('/100/100.lua')) {
+        attempts++
+        return attempts === 1
+          ? new Response(null, { status: 503 })
+          : new Response(`addappid(10, 0, "${LUA_KEY}")`)
+      }
+      return new Response('{}')
+    })
+    const service = new DepotKeyAcquisitionService(
+      await openDatabase(),
+      fetcher,
+    )
+
+    await expect(
+      service.acquire({ appId: 100, depotIds: [10] }),
+    ).resolves.toEqual({ acquiredDepotIds: [], missingDepotIds: [10] })
+    await expect(
+      service.acquire({ appId: 100, depotIds: [10] }),
+    ).resolves.toEqual({ acquiredDepotIds: [10], missingDepotIds: [] })
+  })
+
   test('preserves existing keys without network access', async () => {
     const db = await openDatabase()
     db.setDepotKey(10, LUA_KEY)

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Computer, Download, Pause, Play, X } from '@lucide/vue'
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 
 import { useOperationStore } from '@/stores/operation'
 import type {
@@ -42,6 +42,7 @@ const cancelOpen = ref(false)
 const pausedForCancel = ref(false)
 const actionPending = ref(false)
 const actionError = ref('')
+let unmounted = false
 
 const steamPhaseLabels = {
   planning: 'CALCULATING',
@@ -153,9 +154,19 @@ async function runControl(action: () => Promise<ControlResult>) {
 }
 
 async function openCancel() {
+  const targetAppId = props.state.appId
   if (props.state.status === 'active' && props.state.phase !== 'planning') {
     if (!(await runControl(() => operation.pause()))) return
     pausedForCancel.value = true
+    if (unmounted || props.state.appId !== targetAppId) {
+      pausedForCancel.value = false
+      if (
+        operation.state.status === 'paused' &&
+        operation.state.appId === targetAppId
+      )
+        await operation.resume()
+      return
+    }
   }
   cancelOpen.value = true
 }
@@ -173,6 +184,17 @@ async function confirmCancel() {
   pausedForCancel.value = false
   cancelOpen.value = false
 }
+
+onBeforeUnmount(() => {
+  unmounted = true
+  if (!pausedForCancel.value) return
+  pausedForCancel.value = false
+  if (
+    operation.state.status === 'paused' &&
+    operation.state.appId === props.state.appId
+  )
+    void operation.resume()
+})
 
 defineExpose({
   focusHeading() {

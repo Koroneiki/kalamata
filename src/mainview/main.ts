@@ -15,9 +15,5 @@ app.use(pinia)
 app.use(PiniaColada)
 app.use(router)
 
-async function start() {
-  await useOperationStore(pinia).initialize()
-  app.mount('#app')
-}
-
-void start()
+app.mount('#app')
+void useOperationStore(pinia).initialize()
