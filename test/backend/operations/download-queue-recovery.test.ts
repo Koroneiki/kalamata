@@ -98,19 +98,24 @@ test('startup restores an explicitly paused download with its reserved path', as
   })
 })
 
-test('startup automatically restarts a download interrupted while running', async () => {
+test('startup pauses a download interrupted while running until resumed', async () => {
   const fixture = await setup()
   const options = restoreOptions(fixture)
   fixture.database.reserveInstallPath(APP_ID, fixture.installPath)
   await writeQueueStagingJournal(options)
   const finish = deferred<void>()
+  const resumed = deferred<void>()
+  const reconcileApplication = mock(
+    async (reconcileOptions: ReconcileApplicationOptions) => {
+      resumed.resolve()
+      await finish.promise
+      return successfulReconciliation(reconcileOptions)
+    },
+  )
   const queue = new DownloadQueueCoordinator(
     {
       getProductInfoWithDlc: async () => products(),
-      reconcileApplication: async (reconcileOptions) => {
-        await finish.promise
-        return successfulReconciliation(reconcileOptions)
-      },
+      reconcileApplication,
     },
     fixture.database,
   )
@@ -118,10 +123,19 @@ test('startup automatically restarts a download interrupted while running', asyn
   await queue.restoreInterrupted()
 
   expect(queue.getOperationState()).toMatchObject({
-    status: 'active',
+    status: 'paused',
     appId: APP_ID,
     installPath: fixture.installPath,
   })
+  expect(reconcileApplication).not.toHaveBeenCalled()
+
+  expect(queue.resume()).toEqual({ accepted: true })
+  expect(queue.getOperationState()).toMatchObject({
+    status: 'active',
+    appId: APP_ID,
+  })
+  await resumed.promise
+  expect(reconcileApplication).toHaveBeenCalledTimes(1)
   finish.resolve()
   await waitForTerminal(queue)
 })

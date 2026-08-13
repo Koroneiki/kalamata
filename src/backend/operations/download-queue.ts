@@ -326,10 +326,6 @@ export class DownloadQueueCoordinator {
       if (resumable.kind === 'download')
         request.requestedDepotIds = resumable.desiredDepotIds
       this.#currentRequest = request
-      if (!resumable.paused) {
-        this.begin(request)
-        return
-      }
       this.#state = {
         status: 'paused',
         kind: resumable.kind,
