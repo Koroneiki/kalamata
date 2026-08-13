@@ -43,7 +43,7 @@ export function useOperationToasts() {
         componentProps: {
           name: summary?.name ?? `App ${state.appId}`,
           iconUrl: summary?.iconUrls[0] ?? null,
-          message: operationCompletionMessage(state.kind),
+          message: operationCompletionMessage(state.kind, state.desiredDepotIds),
         },
         duration: 6_000,
         class:
