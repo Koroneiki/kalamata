@@ -16,6 +16,8 @@ export default {
     copy: {
       'node_modules/@doctormckay/steam-crypto':
         'node_modules/@doctormckay/steam-crypto',
+      // The bundled decompression worker resolves adm-zip at runtime.
+      'node_modules/adm-zip': 'node_modules/adm-zip',
       // steam-user loads this fallback dynamically, so Bun cannot discover it.
       'node_modules/lzma': 'node_modules/lzma',
       'dist/index.html': 'views/mainview/index.html',
