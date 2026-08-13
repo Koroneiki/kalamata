@@ -53,9 +53,7 @@ jobs:
         run: bun run type-check
 
       - name: Test
-        run: |
-          bun test --path-ignore-patterns="**/decompress-pool.test.ts"
-          bun test ./test/decompress-pool.test.ts
+        run: bun test --path-ignore-patterns="**/decompress-pool.test.ts"
 
   build:
     name: Build ${{ matrix.platform }}
