@@ -53,7 +53,9 @@ function validateWindowsPath(canonical: string, original: string): void {
         (character) => character.codePointAt(0)! < 32,
       ) ||
       /[ .]$/u.test(component) ||
-      /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/iu.test(component)
+      /^(?:con|prn|aux|nul|clock\$|conin\$|conout\$|com[1-9¹²³]|lpt[1-9¹²³])(?:\.|$)/iu.test(
+        component,
+      )
     ) {
       throw new Error(`Unsafe Windows manifest path: ${original}`)
     }

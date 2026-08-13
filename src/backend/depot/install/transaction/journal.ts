@@ -172,11 +172,15 @@ export async function writeJournal(
       await handle.close()
     }
     await rename(temporary, path)
-    const directory = await open(dirname(path), 'r')
-    try {
-      await directory.sync()
-    } finally {
-      await directory.close()
+    // Windows cannot reliably open directories for fsync. The journal file is
+    // still flushed above; sync the directory entry where the OS supports it.
+    if (process.platform !== 'win32') {
+      const directory = await open(dirname(path), 'r')
+      try {
+        await directory.sync()
+      } finally {
+        await directory.close()
+      }
     }
   } finally {
     await rm(temporary, { force: true })

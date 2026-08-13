@@ -111,6 +111,11 @@ test('rejects Windows path aliases and reserved components', () => {
     'CON',
     'aux.txt',
     'COM1/config',
+    'COM¹/config',
+    'LPT².txt',
+    'CLOCK$',
+    'CONIN$',
+    'CONOUT$.txt',
     'name?.bin',
   ]) {
     expect(() => canonicalManifestPath(filename, 'win32')).toThrow(
