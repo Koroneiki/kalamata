@@ -33,6 +33,19 @@ test('returns structured HTTP status errors', async () => {
   expect((error as HttpStatusError).retryAfterMs).toBe(7_000)
 })
 
+test('routes requests with the content server vhost', async () => {
+  let host: string | undefined
+  const url = await listen((request, response) => {
+    host = request.headers.host
+    response.end('chunk')
+  })
+
+  await expect(downloadChunkData(url, 'cdn.example.test')).resolves.toEqual(
+    Buffer.from('chunk'),
+  )
+  expect(host).toBe('cdn.example.test')
+})
+
 test('caps Retry-After at the request timeout before rotating servers', async () => {
   const url = await listen((_request, response) => {
     response.writeHead(503, { 'Retry-After': '999999999999' })

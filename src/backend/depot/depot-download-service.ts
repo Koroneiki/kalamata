@@ -1,6 +1,4 @@
 import { readFile } from 'node:fs/promises'
-import http from 'node:http'
-import https from 'node:https'
 import { abortable } from '../shared/abortable.ts'
 import {
   ApplicationTransactionError,
@@ -90,10 +88,6 @@ export class DepotDownloadService {
       throwIfAborted(options.signal)
 
       const clients: LazySteamContentClient[] = []
-      const agents = {
-        http: new http.Agent({ keepAlive: true }),
-        https: new https.Agent({ keepAlive: true }),
-      }
       const controller = new AbortController()
       const onAbort = () =>
         controller.abort(
@@ -118,7 +112,6 @@ export class DepotDownloadService {
               this.session,
               options.desiredDepots[index]!.depotKey,
               controller.signal,
-              agents,
             )
             clients.push(client)
             return { ...depot, client }
@@ -139,8 +132,6 @@ export class DepotDownloadService {
         removeDisconnectListener()
         options.signal?.removeEventListener('abort', onAbort)
         for (const client of clients) client.dispose()
-        agents.http.destroy()
-        agents.https.destroy()
       }
     }
     return result
@@ -154,7 +145,6 @@ class LazySteamContentClient implements ChunkClient {
     private readonly session: SteamSession,
     private readonly depotKey: Buffer,
     private readonly operationSignal: AbortSignal,
-    private readonly agents: { http: http.Agent; https: https.Agent },
   ) {}
 
   async getContentServers(appId: number) {
@@ -185,7 +175,7 @@ class LazySteamContentClient implements ChunkClient {
 
   private getClient(): Promise<SteamContentClient> {
     this.#client ??= abortable(this.session.getClient(), this.operationSignal)
-      .then((user) => new SteamContentClient(user, this.depotKey, this.agents))
+      .then((user) => new SteamContentClient(user, this.depotKey))
       .catch((error) => {
         if (this.operationSignal.aborted) throw this.operationSignal.reason
         throw new ApplicationTransactionError(
