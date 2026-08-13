@@ -1,12 +1,7 @@
 import { test } from 'bun:test'
-import {
-  copyFile,
-  mkdir,
-  mkdtemp,
-  realpath,
-  rm,
-  writeFile,
-} from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { createRequire } from 'node:module'
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type SteamUser from 'steam-user'
@@ -20,6 +15,7 @@ import type {
   ProductInfoResult,
 } from '../../../src/backend/steam/types.ts'
 import type { DownloadQueueCoordinator } from '../../../src/backend/operations/download-queue.ts'
+import type { DepotManifest } from '../../../src/backend/depot/manifests/types.ts'
 import { KalamataDatabase } from '../../../src/db/database.ts'
 
 export const APP_ID = 10
@@ -28,26 +24,15 @@ export const DEPOTS = [
   {
     depotId: 2379781,
     manifestId: '3512319404653808464',
-    key: '16261e41d3e864018778d4a1d81658521a67d9ffb8543ea7e3e21f0685721af1',
+    key: '01'.repeat(32),
   },
   {
     depotId: 593281,
     manifestId: '7871757316108895128',
-    key: '33130777c4dc3a1691afe38e0202242580e2135bfb239dcd83e50cd18d384687',
+    key: '02'.repeat(32),
   },
 ] as const
-const fixtureDirectory = join(import.meta.dir, '..', '..', 'fixtures')
-const hasManifestFixtures = (
-  await Promise.all(
-    DEPOTS.map(({ depotId, manifestId }) =>
-      Bun.file(
-        join(fixtureDirectory, `${depotId}_${manifestId}.manifest`),
-      ).exists(),
-    ),
-  )
-).every(Boolean)
-
-export const queueTest = test.skipIf(!hasManifestFixtures)
+export const queueTest = test
 
 export interface DownloadQueueFixture {
   database: KalamataDatabase
@@ -67,9 +52,9 @@ export async function setupDownloadQueue(): Promise<DownloadQueueFixture> {
   database.addLibraryEntry(APP_ID)
   for (const depot of DEPOTS) {
     const relativePath = database.addManifest(depot.depotId, depot.manifestId)
-    await copyFile(
-      join(fixtureDirectory, `${depot.depotId}_${depot.manifestId}.manifest`),
+    await writeFile(
       join(root, relativePath),
+      encodeManifest(syntheticManifest(depot.depotId, depot.manifestId)),
     )
     database.setDepotKey(depot.depotId, depot.key)
   }
@@ -82,6 +67,87 @@ export async function setupDownloadQueue(): Promise<DownloadQueueFixture> {
       await rm(root, { recursive: true, force: true })
     },
   }
+}
+
+function syntheticManifest(depotId: number, manifestId: string): DepotManifest {
+  const contents = Buffer.from(`depot-${depotId}`)
+  const sha = createHash('sha1').update(contents).digest('hex')
+  return {
+    depot_id: depotId,
+    gid_manifest: manifestId,
+    filenames_encrypted: false,
+    cb_disk_original: String(contents.length),
+    cb_disk_compressed: String(contents.length),
+    files: [
+      {
+        filename: `depot-${depotId}.bin`,
+        size: String(contents.length),
+        flags: 0,
+        sha_content: sha,
+        chunks: [
+          {
+            sha,
+            crc: 1,
+            offset: '0',
+            cb_original: contents.length,
+            cb_compressed: contents.length,
+          },
+        ],
+      },
+    ],
+  }
+}
+
+function encodeManifest(manifest: DepotManifest): Buffer {
+  const require = createRequire(import.meta.url)
+  // SAFETY: steam-user's generated loader exposes these protobuf types but has no declarations.
+  const schema =
+    require('steam-user/protobufs/generated/_load.js') as ManifestSchema
+  const payload = schema.ContentManifestPayload.encode({
+    mappings: manifest.files.map((file) => ({
+      ...file,
+      sha_content: Buffer.from(file.sha_content, 'hex'),
+      chunks: file.chunks.map((chunk) => ({
+        ...chunk,
+        sha: Buffer.from(chunk.sha, 'hex'),
+      })),
+    })),
+  }).finish()
+  const metadata = schema.ContentManifestMetadata.encode(manifest).finish()
+  return Buffer.concat([
+    manifestSection(0x71f617d0, payload),
+    manifestSection(0x1f4812be, metadata),
+    Buffer.from([0xab, 0x15, 0xc4, 0x32]),
+  ])
+}
+
+function manifestSection(magic: number, contents: Uint8Array): Buffer {
+  const header = Buffer.alloc(8)
+  header.writeUint32LE(magic, 0)
+  header.writeUint32LE(contents.length, 4)
+  return Buffer.concat([header, contents])
+}
+
+interface ManifestSchema {
+  ContentManifestPayload: ProtobufType
+  ContentManifestMetadata: ProtobufType
+}
+
+interface ProtobufType {
+  encode(value: DepotManifest | ManifestPayload): { finish(): Uint8Array }
+}
+
+interface ManifestPayload {
+  mappings: Array<
+    Omit<DepotManifest['files'][number], 'sha_content' | 'chunks'> & {
+      sha_content: Buffer
+      chunks: Array<
+        Omit<DepotManifest['files'][number]['chunks'][number], 'sha'> & {
+          sha: Buffer
+        }
+      >
+    }
+  >
 }
 
 export async function install(
