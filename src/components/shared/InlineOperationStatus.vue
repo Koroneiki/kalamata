@@ -2,6 +2,9 @@
 import { Computer, Download, Pause, Play, X } from '@lucide/vue'
 import { computed, onBeforeUnmount, ref } from 'vue'
 
+import InlineOperationCancelDialog from '@/components/shared/InlineOperationCancelDialog.vue'
+import { Button } from '@/components/ui/button'
+import { Progress } from '@/components/ui/progress'
 import { useOperationStore } from '@/stores/operation'
 import type {
   ActiveOperationState,
@@ -14,17 +17,6 @@ import type {
   ResumableOperationState,
 } from '@/types/rpc'
 import { bytePercentage, formatBytes } from '@/utils/bytes'
-
-import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import { Progress } from '@/components/ui/progress'
 
 defineOptions({ inheritAttrs: false })
 
@@ -332,41 +324,14 @@ defineExpose({
     </div>
   </div>
 
-  <Dialog :open="cancelOpen" @update:open="handleCancelOpenChange">
-    <DialogContent class="sm:max-w-sm">
-      <DialogHeader>
-        <DialogTitle>Cancel operation?</DialogTitle>
-        <DialogDescription>
-          {{
-            pausedForCancel
-              ? 'The operation is paused. Kalamata will discard its staged files.'
-              : 'Kalamata will stop the operation before installation begins.'
-          }}
-        </DialogDescription>
-      </DialogHeader>
-      <p v-if="actionError" class="text-destructive text-sm" role="alert">
-        {{ actionError }}
-      </p>
-      <DialogFooter>
-        <Button
-          type="button"
-          variant="outline"
-          :disabled="actionPending"
-          @click="handleCancelOpenChange(false)"
-        >
-          Keep Running
-        </Button>
-        <Button
-          type="button"
-          variant="destructive"
-          :disabled="actionPending"
-          @click="confirmCancel"
-        >
-          {{ actionPending ? 'Cancelling…' : 'Cancel Operation' }}
-        </Button>
-      </DialogFooter>
-    </DialogContent>
-  </Dialog>
+  <InlineOperationCancelDialog
+    :open="cancelOpen"
+    :paused-for-cancel="pausedForCancel"
+    :action-pending="actionPending"
+    :action-error="actionError"
+    @update:open="handleCancelOpenChange"
+    @confirm="confirmCancel"
+  />
 </template>
 
 <style scoped>
