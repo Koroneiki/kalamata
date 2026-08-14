@@ -8,3 +8,7 @@ export function getSettings() {
 export function updateSettings(settings: AppSettings) {
   return request('updateSettings', settings)
 }
+
+export function openUserDataFolder() {
+  return request('openUserDataFolder', {})
+}

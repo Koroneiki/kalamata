@@ -1,8 +1,13 @@
 <script setup lang="ts">
 import { useMutation, useQueryCache } from '@pinia/colada'
+import { FolderOpen } from '@lucide/vue'
 import { ref } from 'vue'
 
-import { updateSettings } from '@/api/settings'
+import {
+  openUserDataFolder as requestOpenUserDataFolder,
+  updateSettings,
+} from '@/api/settings'
+import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -14,6 +19,7 @@ import { depotPlatforms } from '@/utils/depots'
 const queryCache = useQueryCache()
 const { data: settings, error, isPending } = useSettingsQuery()
 const updateMutation = useMutation({ mutation: updateSettings })
+const openFolderMutation = useMutation({ mutation: requestOpenUserDataFolder })
 const mutationError = ref('')
 
 const platformLabels = {
@@ -69,6 +75,15 @@ function setHideUnknownDepots(value: boolean | 'indeterminate') {
 function setHideUnusedDepots(value: boolean | 'indeterminate') {
   if (!settings.value || value === 'indeterminate') return
   void persist({ ...settings.value, hideUnusedDepots: value })
+}
+
+async function openUserDataFolder() {
+  mutationError.value = ''
+  try {
+    await openFolderMutation.mutateAsync()
+  } catch (error) {
+    mutationError.value = error instanceof Error ? error.message : String(error)
+  }
 }
 </script>
 
@@ -185,6 +200,16 @@ function setHideUnusedDepots(value: boolean | 'indeterminate') {
         />
       </div>
     </section>
+
+    <Button
+      variant="outline"
+      class="mt-4"
+      :disabled="openFolderMutation.isLoading.value"
+      @click="openUserDataFolder"
+    >
+      <FolderOpen aria-hidden="true" />
+      Open User Data Folder
+    </Button>
 
     <p
       v-if="error || mutationError"

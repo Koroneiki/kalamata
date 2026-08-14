@@ -79,6 +79,10 @@ const rpc = BrowserView.defineRPC<AppRpc>({
       updateSettings(settings) {
         return database.updateSettings(settings)
       },
+      openUserDataFolder() {
+        if (!Utils.openPath(Utils.paths.userData))
+          throw new Error('The user data folder could not be opened')
+      },
       addLibraryEntry({ appId }) {
         return database.addLibraryEntry(appId)
       },

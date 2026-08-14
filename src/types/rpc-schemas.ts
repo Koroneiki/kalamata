@@ -181,6 +181,7 @@ export const rpcRequestSchemas = {
   getLibrary: emptySchema,
   getSettings: emptySchema,
   updateSettings: appSettingsSchema,
+  openUserDataFolder: emptySchema,
   addLibraryEntry: idRequestSchema,
   removeLibraryEntry: idRequestSchema,
   setSelectedDepots: strict({
@@ -226,6 +227,7 @@ export const rpcResponseSchemas = {
   getLibrary: z.array(libraryEntrySchema),
   getSettings: appSettingsSchema,
   updateSettings: appSettingsSchema,
+  openUserDataFolder: z.void(),
   addLibraryEntry: libraryEntrySchema,
   removeLibraryEntry: z.void(),
   setSelectedDepots: z.array(steamIdSchema),

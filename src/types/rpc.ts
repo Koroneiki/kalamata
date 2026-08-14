@@ -285,6 +285,10 @@ export type AppRpc = {
         params: AppSettings
         response: AppSettings
       }
+      openUserDataFolder: {
+        params: Record<string, never>
+        response: void
+      }
       addLibraryEntry: {
         params: { appId: number }
         response: LibraryEntry
