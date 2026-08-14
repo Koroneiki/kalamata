@@ -1,4 +1,7 @@
-import type { ReconcileApplicationOptions } from '../depot/depot-download-service.ts'
+import type {
+  ApplicationDepotInput,
+  ReconcileApplicationOptions,
+} from '../depot/depot-download-service.ts'
 import type {
   ApplicationDepotRecord,
   ApplicationTransactionEvent,
@@ -50,6 +53,15 @@ interface QueueSteamService {
     plan: Awaited<ReturnType<typeof planApplication>>,
     outputDirectory?: string,
   ): Promise<ApplicationOperationPreview>
+}
+
+interface OperationFailureDisposition {
+  serialized: ReturnType<typeof serializeOperationError>
+  shuttingDown: boolean
+  recoverable: boolean
+  commitReady: boolean
+  paused: boolean
+  cancelled: boolean
 }
 
 export class DownloadQueueCoordinator {
@@ -447,144 +459,192 @@ export class DownloadQueueCoordinator {
     signal: AbortSignal,
   ): Promise<void> {
     try {
-      const { installedDepots, desiredDepots, desiredDepotIds } =
-        await planApplication(
-          request,
-          this.steam,
-          this.database,
-          signal,
-          (depotIds) => {
-            if (this.#state.status === 'active')
-              this.#state = { ...this.#state, desiredDepotIds: depotIds }
-          },
-        )
-      // Selection is user intent and persists before transactional file changes.
-      if (request.kind === 'reconcile')
-        this.database.replaceSelectedDepotIds(request.appId, desiredDepotIds)
-      const result = await this.steam.reconcileApplication({
-        kind: request.kind,
-        appId: request.appId,
-        outputDirectory: request.installPath,
-        installedDepots,
-        desiredDepots,
-        signal,
-        onEvent: (event) => this.handleEvent(event),
-        reconcile: async (desired) => this.reconcileDatabase(request, desired),
-      })
-      // The transaction journal is gone, so an empty installation can release its path.
-      this.database.clearUnusedInstallPath(request.appId)
-      const completedState: OperationState = {
-        status: 'completed',
-        kind: request.kind,
-        appId: request.appId,
-        installPath: request.installPath,
-        desiredDepotIds: desiredDepots.map(({ depotId }) => depotId),
-        installedBytes: result.logicalInstalledBytes,
-        reusedLocalBytes: result.reusedLocalBytes,
-        networkBytes: result.networkBytes,
-      }
-      if (request.kind === 'repair')
-        await clearRepairFallback(request.installPath)
-      this.#repairRequirements.delete(request.appId)
-      this.#currentRequest = undefined
-      this.#state = completedState
+      await this.executeOperation(request, signal)
     } catch (error) {
-      const failure = operationError(error)
-      const serialized = serializeOperationError(failure)
-      const shuttingDown = isOperationShutdown(failure, signal)
-      const resumable = await getResumableApplicationTransaction(
-        request.installPath,
-        request.appId,
-      ).catch(() => null)
-      const recoverable =
-        (isRecoverableOperationError(serialized.kind) || shuttingDown) &&
-        resumable !== null
-      const commitReady = await hasCommitReadyApplicationTransaction(
-        request.installPath,
-      ).catch(() => true)
-      const pauseRequested = this.#pausing && !this.#cancelRequested
-      const paused = pauseRequested && resumable?.paused === true
-      const cancelled =
-        !shuttingDown &&
-        (this.#cancelRequested ||
-          (!pauseRequested &&
-            (signal.aborted || isOperationCancellation(failure))))
-      if (!cancelled && !paused && !shuttingDown)
-        this.reportError(diagnosticOperationError(failure), {
-          appId: request.appId,
-          kind: request.kind,
-        })
-      if (cancelled && !commitReady) {
-        await discardPrecommitApplicationTransaction(request.installPath)
-        this.#currentRequest = undefined
-        this.database.clearUnusedInstallPath(request.appId)
-      }
-      if (this.#state.status !== 'active')
-        throw new Error('Operation left active state before completion')
-      const activeState = this.#state
-      const nextState: OperationState = paused
-        ? {
-            ...activeState,
-            status: 'paused',
-          }
-        : cancelled
-          ? {
-              status: 'cancelled',
-              kind: request.kind,
-              appId: request.appId,
-              installPath: request.installPath,
-              desiredDepotIds:
-                this.#state.status === 'active'
-                  ? activeState.desiredDepotIds
-                  : [],
-              error: {
-                kind: 'cancellation',
-                message: 'The operation was cancelled before commit.',
-              },
-            }
-          : commitReady
-            ? {
-                status: 'repair-required',
-                appId: request.appId,
-                installPath: request.installPath,
-                error: {
-                  kind: 'recovery',
-                  message:
-                    'The interrupted installation cannot be verified. Repair is required.',
-                },
-              }
-            : recoverable
-              ? {
-                  ...activeState,
-                  status: 'resumable',
-                  error: serialized,
-                }
-              : {
-                  status: 'failed',
-                  kind: request.kind,
-                  appId: request.appId,
-                  installPath: request.installPath,
-                  desiredDepotIds:
-                    this.#state.status === 'active'
-                      ? activeState.desiredDepotIds
-                      : [],
-                  error: serialized,
-                }
-      if (commitReady)
-        this.#repairRequirements.set(request.appId, request.installPath)
-      if (!cancelled && !paused && !recoverable && !commitReady) {
-        this.#currentRequest = undefined
-        const pending = await getResumableApplicationTransaction(
-          request.installPath,
-          request.appId,
-        ).catch(() => null)
-        if (!pending) this.database.clearUnusedInstallPath(request.appId)
-      }
-      this.#state = nextState
+      await this.handleOperationFailure(request, signal, operationError(error))
     }
     this.#progressQueued = false
     this.emitState()
     this.showNextRepairRequired()
+  }
+
+  private async executeOperation(
+    request: ApplicationPlanRequest,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const { installedDepots, desiredDepots, desiredDepotIds } =
+      await planApplication(
+        request,
+        this.steam,
+        this.database,
+        signal,
+        (depotIds) => {
+          if (this.#state.status === 'active')
+            this.#state = { ...this.#state, desiredDepotIds: depotIds }
+        },
+      )
+    // Selection is user intent and persists before transactional file changes.
+    if (request.kind === 'reconcile')
+      this.database.replaceSelectedDepotIds(request.appId, desiredDepotIds)
+    const result = await this.steam.reconcileApplication({
+      kind: request.kind,
+      appId: request.appId,
+      outputDirectory: request.installPath,
+      installedDepots,
+      desiredDepots,
+      signal,
+      onEvent: (event) => this.handleEvent(event),
+      reconcile: async (desired) => this.reconcileDatabase(request, desired),
+    })
+    await this.completeOperation(request, desiredDepots, result)
+  }
+
+  private async completeOperation(
+    request: ApplicationPlanRequest,
+    desiredDepots: ApplicationDepotInput[],
+    result: ApplicationTransactionResult,
+  ): Promise<void> {
+    // The transaction journal is gone, so an empty installation can release its path.
+    this.database.clearUnusedInstallPath(request.appId)
+    const completedState: OperationState = {
+      status: 'completed',
+      kind: request.kind,
+      appId: request.appId,
+      installPath: request.installPath,
+      desiredDepotIds: desiredDepots.map(({ depotId }) => depotId),
+      installedBytes: result.logicalInstalledBytes,
+      reusedLocalBytes: result.reusedLocalBytes,
+      networkBytes: result.networkBytes,
+    }
+    if (request.kind === 'repair')
+      await clearRepairFallback(request.installPath)
+    this.#repairRequirements.delete(request.appId)
+    this.#currentRequest = undefined
+    this.#state = completedState
+  }
+
+  private async handleOperationFailure(
+    request: ApplicationPlanRequest,
+    signal: AbortSignal,
+    failure: Error,
+  ): Promise<void> {
+    const disposition = await this.classifyOperationFailure(
+      request,
+      signal,
+      failure,
+    )
+    if (
+      ![
+        disposition.cancelled,
+        disposition.paused,
+        disposition.shuttingDown,
+      ].includes(true)
+    )
+      this.reportError(diagnosticOperationError(failure), {
+        appId: request.appId,
+        kind: request.kind,
+      })
+    if (disposition.cancelled && !disposition.commitReady) {
+      await discardPrecommitApplicationTransaction(request.installPath)
+      this.#currentRequest = undefined
+      this.database.clearUnusedInstallPath(request.appId)
+    }
+    if (this.#state.status !== 'active')
+      throw new Error('Operation left active state before completion')
+    const activeState = this.#state
+    const nextState = this.operationFailureState(
+      request,
+      activeState,
+      disposition,
+    )
+    if (disposition.commitReady)
+      this.#repairRequirements.set(request.appId, request.installPath)
+    if (
+      ![
+        disposition.cancelled,
+        disposition.paused,
+        disposition.recoverable,
+        disposition.commitReady,
+      ].includes(true)
+    ) {
+      this.#currentRequest = undefined
+      const pending = await getResumableApplicationTransaction(
+        request.installPath,
+        request.appId,
+      ).catch(() => null)
+      if (!pending) this.database.clearUnusedInstallPath(request.appId)
+    }
+    this.#state = nextState
+  }
+
+  private async classifyOperationFailure(
+    request: ApplicationPlanRequest,
+    signal: AbortSignal,
+    failure: Error,
+  ): Promise<OperationFailureDisposition> {
+    const serialized = serializeOperationError(failure)
+    const shuttingDown = isOperationShutdown(failure, signal)
+    const resumable = await getResumableApplicationTransaction(
+      request.installPath,
+      request.appId,
+    ).catch(() => null)
+    const recoverable =
+      (isRecoverableOperationError(serialized.kind) || shuttingDown) &&
+      resumable !== null
+    const commitReady = await hasCommitReadyApplicationTransaction(
+      request.installPath,
+    ).catch(() => true)
+    const pauseRequested = this.#pausing && !this.#cancelRequested
+    return {
+      serialized,
+      shuttingDown,
+      recoverable,
+      commitReady,
+      paused: pauseRequested && resumable?.paused === true,
+      cancelled: isCancelledFailure(
+        shuttingDown,
+        this.#cancelRequested,
+        pauseRequested,
+        signal,
+        failure,
+      ),
+    }
+  }
+
+  private operationFailureState(
+    request: ApplicationPlanRequest,
+    activeState: ActiveOperationState,
+    disposition: OperationFailureDisposition,
+  ): OperationState {
+    if (disposition.paused) return { ...activeState, status: 'paused' }
+    if (disposition.cancelled)
+      return {
+        status: 'cancelled',
+        kind: request.kind,
+        appId: request.appId,
+        installPath: request.installPath,
+        desiredDepotIds: activeState.desiredDepotIds,
+        error: {
+          kind: 'cancellation',
+          message: 'The operation was cancelled before commit.',
+        },
+      }
+    if (disposition.commitReady)
+      return repairRequiredState(request.appId, request.installPath)
+    if (disposition.recoverable)
+      return {
+        ...activeState,
+        status: 'resumable',
+        error: disposition.serialized,
+      }
+    return {
+      status: 'failed',
+      kind: request.kind,
+      appId: request.appId,
+      installPath: request.installPath,
+      desiredDepotIds: activeState.desiredDepotIds,
+      error: disposition.serialized,
+    }
   }
 
   private async runSafely(
@@ -683,6 +743,20 @@ function diagnosticOperationError(error: Error): Error {
   const diagnostic = new Error(serialized.message)
   diagnostic.name = `OperationError:${serialized.kind}`
   return diagnostic
+}
+
+function isCancelledFailure(
+  shuttingDown: boolean,
+  cancelRequested: boolean,
+  pauseRequested: boolean,
+  signal: AbortSignal,
+  failure: Error,
+): boolean {
+  return (
+    !shuttingDown &&
+    (cancelRequested ||
+      (!pauseRequested && (signal.aborted || isOperationCancellation(failure))))
+  )
 }
 
 function validateManifestTargets(
