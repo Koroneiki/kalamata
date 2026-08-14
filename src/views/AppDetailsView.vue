@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { useMutation, useQuery, useQueryCache } from '@pinia/colada'
-import { Download, ImageOff, Plus, ShieldCheck, Trash2 } from '@lucide/vue'
+import { Download, ImageOff, Plus, Settings, Trash2 } from '@lucide/vue'
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 import DownloadDepotsDialog from '@/components/forms/DownloadDepotsDialog.vue'
 import CustomManifestDialog from '@/components/forms/CustomManifestDialog.vue'
+import GameSettingsDialog from '@/components/forms/GameSettingsDialog.vue'
 import RemoveLibraryEntryDialog from '@/components/forms/RemoveLibraryEntryDialog.vue'
 import DepotAccordion from '@/components/shared/DepotAccordion.vue'
 import InlineOperationStatus from '@/components/shared/InlineOperationStatus.vue'
@@ -60,6 +61,7 @@ const selectedPath = ref('')
 const artworkFailed = ref(false)
 const iconIndex = ref(0)
 const dialogOpen = ref(false)
+const gameSettingsOpen = ref(false)
 const removeDialogOpen = ref(false)
 const selectedDepotIds = ref<number[]>([])
 const mutationError = ref('')
@@ -122,6 +124,7 @@ watch(
       loadedAppId.value = app.appId
       if (appChanged) {
         draftDirty.value = false
+        gameSettingsOpen.value = false
         selectedPath.value = app.installPath ?? ''
         manifestError.value = ''
         customManifestDialogOpen.value = false
@@ -708,6 +711,7 @@ async function focusDownloadQueue() {
 
 async function verifyGameFiles() {
   mutationError.value = ''
+  gameSettingsOpen.value = false
   try {
     await operation.verify({ appId: appId.value })
     await nextTick()
@@ -885,14 +889,16 @@ async function verifyGameFiles() {
           />
           <Button
             v-if="data.inLibrary && hasInstalledDepots"
-            class="h-12 shrink-0 self-stretch px-5 sm:ml-auto sm:self-auto"
+            class="shrink-0 self-end sm:ml-auto sm:self-auto"
             type="button"
+            size="icon-sm"
             variant="outline"
             :disabled="globalOperationBusy"
-            @click="verifyGameFiles"
+            aria-label="Game settings"
+            title="Game settings"
+            @click="gameSettingsOpen = true"
           >
-            <ShieldCheck aria-hidden="true" />
-            Verify Game Files
+            <Settings aria-hidden="true" />
           </Button>
         </div>
 
@@ -954,6 +960,14 @@ async function verifyGameFiles() {
         @update:open="customManifestDialogOpen = $event"
         @confirm="setCustomManifest"
         @remove="removeCustomManifest"
+      />
+
+      <GameSettingsDialog
+        v-if="data.inLibrary && hasInstalledDepots"
+        v-model:open="gameSettingsOpen"
+        :app-name="data.name"
+        :verify-disabled="globalOperationBusy"
+        @verify="verifyGameFiles"
       />
 
       <RemoveLibraryEntryDialog
