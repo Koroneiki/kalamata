@@ -18,6 +18,12 @@ export function formatBytes(value: string): string {
   return `${whole.toLocaleString()}.${fraction} ${BYTE_UNITS[unit]}`
 }
 
+export function formatSignedBytes(value: string): string {
+  const bytes = BigInt(value)
+  if (bytes === 0n) return formatBytes('0')
+  return `${bytes > 0n ? '+' : '−'}${formatBytes((bytes < 0n ? -bytes : bytes).toString())}`
+}
+
 export function bytePercentage(downloaded: string, total: string): number {
   const totalBytes = BigInt(total)
   if (totalBytes === 0n) return 0
