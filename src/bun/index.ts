@@ -69,7 +69,6 @@ const defaultSettings: AppSettings = {
   platforms: [systemPlatform],
 }
 const rpc = BrowserView.defineRPC<AppRpc>({
-  maxRequestTime: 30_000,
   handlers: {
     requests: validatedRpcHandlers({
       async getAppSummary({ appId }) {

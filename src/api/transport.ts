@@ -19,7 +19,9 @@ let latestOperationState: OperationState | undefined
 let operationStateMessageSequence = 0
 
 const rpc = Electroview.defineRPC<AppRpc>({
-  maxRequestTime: 30_000,
+  // Electrobun timeouts only abandon the response; they do not cancel native
+  // work such as manifest acquisition, filesystem previews, or durable pauses.
+  maxRequestTime: Infinity,
   handlers: {
     messages: {
       operationStateChanged: (state) => {
