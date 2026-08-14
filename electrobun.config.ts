@@ -8,6 +8,15 @@ export default {
     version: packageJson.version,
   },
   build: {
+    mac: {
+      icons: 'assets/icon.iconset',
+    },
+    win: {
+      icon: 'assets/icon.png',
+    },
+    linux: {
+      icon: 'assets/icon.png',
+    },
     bun: {
       entrypoint: 'src/bun/index.ts',
       // Bundling steam-crypto bakes its build-machine __dirname into the PEM lookup.
