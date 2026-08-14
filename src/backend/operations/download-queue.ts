@@ -73,6 +73,10 @@ export class DownloadQueueCoordinator {
     private readonly steam: QueueSteamService,
     private readonly database: KalamataDatabase,
     private readonly emitOperation: (state: OperationState) => void = () => {},
+    private readonly reportError: (
+      error: Error,
+      context: { appId: number; kind: ApplicationPlanRequest['kind'] },
+    ) => void = () => {},
   ) {}
 
   getOperationState(): OperationState {
@@ -505,6 +509,11 @@ export class DownloadQueueCoordinator {
         (this.#cancelRequested ||
           (!pauseRequested &&
             (signal.aborted || isOperationCancellation(failure))))
+      if (!cancelled && !paused && !shuttingDown)
+        this.reportError(diagnosticOperationError(failure), {
+          appId: request.appId,
+          kind: request.kind,
+        })
       if (cancelled && !commitReady) {
         await discardPrecommitApplicationTransaction(request.installPath)
         this.#currentRequest = undefined
@@ -584,7 +593,11 @@ export class DownloadQueueCoordinator {
   ): Promise<void> {
     try {
       await this.run(request, signal)
-    } catch {
+    } catch (error) {
+      this.reportError(diagnosticOperationError(operationError(error)), {
+        appId: request.appId,
+        kind: request.kind,
+      })
       this.#currentRequest = undefined
       this.#repairRequirements.set(request.appId, request.installPath)
       this.#state = repairRequiredState(request.appId, request.installPath)
@@ -663,6 +676,13 @@ export class DownloadQueueCoordinator {
     const operation = structuredClone(this.#state)
     this.emitOperation(operation)
   }
+}
+
+function diagnosticOperationError(error: Error): Error {
+  const serialized = serializeOperationError(error)
+  const diagnostic = new Error(serialized.message)
+  diagnostic.name = `OperationError:${serialized.kind}`
+  return diagnostic
 }
 
 function validateManifestTargets(

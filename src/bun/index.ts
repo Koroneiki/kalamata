@@ -17,8 +17,17 @@ import { openKalamataDatabase } from '../db/index.ts'
 import { canonicalizeInstallDirectory } from '../db/validation.ts'
 import type { AppRpc, AppSettings, DepotPlatform } from '../types/rpc.ts'
 import { validatedRpcHandlers } from '../types/rpc-schemas.ts'
+import packageJson from '../../package.json' with { type: 'json' }
+import { Diagnostics } from './diagnostics.ts'
 
 const DEV_SERVER_URL = 'http://localhost:5173'
+const diagnostics = new Diagnostics(Utils.paths.userData)
+diagnostics.info({
+  event: 'app.started',
+  version: packageJson.version,
+  platform: process.platform,
+  architecture: process.arch,
+})
 
 async function getMainViewUrl(): Promise<string> {
   if ((await Updater.localInfo.channel()) === 'dev') {
@@ -36,7 +45,12 @@ async function getMainViewUrl(): Promise<string> {
 const database = await openKalamataDatabase(Utils.paths.userData)
 const steam = createSteamService()
 // Warm the shared fallback without delaying the main window.
-void steam.initializeDepotKeyCache(database).catch(() => {})
+void steam.initializeDepotKeyCache(database).catch((error) => {
+  diagnostics.error({
+    event: 'depot-key-cache.initialization-failed',
+    error: error instanceof Error ? error : new Error(String(error)),
+  })
+})
 const appService = new AppService(steam, database)
 let queue: DownloadQueueCoordinator
 // Recovery runs before BrowserWindow attaches the RPC transport.
@@ -148,9 +162,30 @@ const rpc = BrowserView.defineRPC<AppRpc>({
   },
 })
 
-queue = new DownloadQueueCoordinator(steam, database, (state) => {
-  if (rpcReady) rpc.send.operationStateChanged(state)
-})
+let lastOperationEvent = 'idle'
+queue = new DownloadQueueCoordinator(
+  steam,
+  database,
+  (state) => {
+    if (rpcReady) rpc.send.operationStateChanged(state)
+    const operationEvent =
+      state.status === 'active'
+        ? `${state.status}:${state.phase}`
+        : state.status
+    if (operationEvent === lastOperationEvent) return
+    lastOperationEvent = operationEvent
+    diagnostics.info({
+      event: 'operation.state-changed',
+      status: state.status,
+      phase: 'phase' in state ? state.phase : undefined,
+      kind: 'kind' in state ? state.kind : undefined,
+      appId: 'appId' in state ? state.appId : undefined,
+      operationError: 'error' in state ? state.error : undefined,
+    })
+  },
+  (error, context) =>
+    diagnostics.error({ event: 'operation.failed', error, ...context }),
+)
 
 let shutdownStarted = false
 let allowQuit = false
@@ -165,6 +200,7 @@ Electrobun.events.on(
     event.response = { allow: false }
     if (shutdownStarted) return
     shutdownStarted = true
+    diagnostics.info({ event: 'app.shutdown-started' })
     void (async () => {
       try {
         await startup.catch(() => {})
@@ -173,14 +209,19 @@ Electrobun.events.on(
         await steam.shutdownDepotKeyAcquisitions()
       } finally {
         steam.dispose()
-        try {
-          database.close()
-        } finally {
-          allowQuit = true
-          Utils.quit()
-        }
+        database.close()
       }
-    })().catch(() => {})
+      diagnostics.info({ event: 'app.shutdown-completed' })
+      allowQuit = true
+      Utils.quit()
+    })().catch((error) => {
+      diagnostics.error({
+        event: 'app.shutdown-failed',
+        error: error instanceof Error ? error : new Error(String(error)),
+      })
+      allowQuit = true
+      Utils.quit()
+    })
   },
 )
 
@@ -222,7 +263,12 @@ startup = (async () => {
       // Pending staging and repair evidence keep first-install paths reserved.
       if (!resumable && !repairFallback)
         database.clearUnusedInstallPath(entry.appId)
-    } catch {
+    } catch (error) {
+      diagnostics.error({
+        event: 'recovery.failed',
+        error: error instanceof Error ? error : new Error(String(error)),
+        appId: entry.appId,
+      })
       recoveryFailures.push({
         appId: entry.appId,
         installPath: entry.installPath,
@@ -241,3 +287,4 @@ new BrowserWindow({
   rpc,
 })
 rpcReady = true
+diagnostics.info({ event: 'app.ready' })

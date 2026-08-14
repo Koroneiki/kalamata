@@ -33,6 +33,15 @@ async function setup(): Promise<DownloadQueueFixture> {
 test('planning failure is a terminal typed state and does not reject start', async () => {
   const fixture = await setup()
   const secret = `${DEPOTS[0].key}: steam raw failure`
+  const reportError = mock(
+    (
+      _error: Error,
+      _context: {
+        appId: number
+        kind: 'download' | 'reconcile' | 'repair'
+      },
+    ) => {},
+  )
   const queue = new DownloadQueueCoordinator(
     {
       getProductInfoWithDlc: async () => {
@@ -41,6 +50,8 @@ test('planning failure is a terminal typed state and does not reject start', asy
       reconcileApplication: mock(successfulReconciliation),
     },
     fixture.database,
+    () => {},
+    reportError,
   )
 
   await expect(
@@ -66,6 +77,14 @@ test('planning failure is a terminal typed state and does not reject start', asy
   const serialized = JSON.stringify(queue.getOperationState())
   expect(serialized).not.toContain(secret)
   expect(serialized).not.toContain(DEPOTS[0].key)
+  expect(reportError).toHaveBeenCalledTimes(1)
+  const reportedError = reportError.mock.calls[0]![0]
+  expect(reportedError).toMatchObject({
+    name: 'OperationError:steam',
+    message: 'Steam could not be reached or did not authorize the request.',
+  })
+  expect(reportedError.stack).not.toContain(secret)
+  expect(reportedError.stack).not.toContain(DEPOTS[0].key)
 })
 
 test('planning reuses manifest resources without reusing occurrence ownership', async () => {
