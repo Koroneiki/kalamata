@@ -13,17 +13,17 @@ export const appQueryKeys = {
 export const libraryQueryKey = ['library'] as const
 export const settingsQueryKey = ['settings'] as const
 
-export const appSummaryQuery = defineQueryOptions((appId: number) => ({
+const appSummaryQuery = defineQueryOptions((appId: number) => ({
   key: appQueryKeys.summary(appId),
   query: () => getAppSummary(appId),
 }))
 
-export const libraryQuery = defineQueryOptions({
+const libraryQuery = defineQueryOptions({
   key: libraryQueryKey,
   query: getLibrary,
 })
 
-export const settingsQuery = defineQueryOptions({
+const settingsQuery = defineQueryOptions({
   key: settingsQueryKey,
   query: getSettings,
 })

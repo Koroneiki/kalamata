@@ -8,6 +8,14 @@
     "src/mainview/main.ts",
   ],
   "ignorePatterns": ["src/components/ui/**"],
+  // These are consumed by excluded generated UI, runtime requires, or build-time CSS imports.
+  "ignoreDependencies": [
+    "@doctormckay/steam-crypto",
+    "@vueuse/core",
+    "adm-zip",
+    "class-variance-authority",
+    "tailwindcss",
+  ],
   "duplicates": {
     "ignore": ["tools/oxlint/anti-slop/**"],
   },

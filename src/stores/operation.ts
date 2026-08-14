@@ -137,13 +137,6 @@ export const useOperationStore = defineStore('operation', () => {
     return result
   }
 
-  function dispose() {
-    unsubscribe?.()
-    unsubscribe = undefined
-    initializePromise = undefined
-    initialized.value = false
-  }
-
   return {
     state,
     initialized,
@@ -155,6 +148,5 @@ export const useOperationStore = defineStore('operation', () => {
     pause,
     resume,
     cancel,
-    dispose,
   }
 })

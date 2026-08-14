@@ -11,6 +11,10 @@ import {
   validateId,
   validateManifestId,
 } from '../../../db/validation.ts'
+import type {
+  AcquiredManifest,
+  AcquireManifestRequest,
+} from '../../../types/rpc.ts'
 import { abortable } from '../../shared/abortable.ts'
 import type { SteamSession } from '../../steam/steam-session.ts'
 import type { ContentServer } from '../../steam/types.ts'
@@ -27,18 +31,6 @@ const STEAM_HEADERS = {
   'Accept-Encoding': 'identity',
   'Accept-Charset': 'ISO-8859-1,utf-8,*;q=0.7',
   'User-Agent': 'Valve/Steam HTTP Client 1.0',
-}
-
-export interface AcquireManifestRequest {
-  appId: number
-  depotId: number
-  manifestId: string
-}
-
-export interface AcquiredManifest {
-  depotId: number
-  manifestId: string
-  relativePath: string
 }
 
 type Fetcher = (

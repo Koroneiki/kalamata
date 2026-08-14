@@ -119,11 +119,14 @@ export class KalamataDatabase {
     return this.getLibraryEntry(appId)!
   }
 
+  // RPC handlers close over these methods in a shape Fallow cannot trace.
+  // fallow-ignore-next-line unused-class-member
   removeLibraryEntry(appId: number): void {
     validateId(appId, 'appId')
     this.sqlite.query('DELETE FROM library WHERE app_id = ?').run(appId)
   }
 
+  // fallow-ignore-next-line unused-class-member
   getSettings(defaults: AppSettings): AppSettings {
     this.validateSettings(defaults)
     this.sqlite
@@ -142,6 +145,7 @@ export class KalamataDatabase {
     return this.readSettings()
   }
 
+  // fallow-ignore-next-line unused-class-member
   updateSettings(settings: AppSettings): AppSettings {
     this.validateSettings(settings)
     this.sqlite
@@ -212,18 +216,6 @@ export class KalamataDatabase {
       .all(depotId)
   }
 
-  hasManifest(depotId: number, manifestId: string): boolean {
-    validateId(depotId, 'depotId')
-    validateManifestId(manifestId)
-    return Boolean(
-      this.sqlite
-        .query<{ present: number }, [number, string]>(
-          'SELECT 1 AS present FROM manifest_files WHERE depot_id = ? AND manifest_id = ?',
-        )
-        .get(depotId, manifestId),
-    )
-  }
-
   getDepotKey(depotId: number): string | null {
     const row = this.sqlite
       .query<{ decryptionKey: string }, [number]>(
@@ -242,6 +234,7 @@ export class KalamataDatabase {
       .map((row) => ({ ...row, pinned: Boolean(row.pinned) }))
   }
 
+  // fallow-ignore-next-line unused-class-member
   setDepotPinned(appId: number, depotId: number, pinned: boolean): void {
     validateId(appId, 'appId')
     validateId(depotId, 'depotId')

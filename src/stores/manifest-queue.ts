@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
-export interface ManifestQueueState {
+interface ManifestQueueState {
   id: number
   completed: number
   total: number
