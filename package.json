@@ -16,7 +16,8 @@
     "type-check": "vue-tsc --build",
     "lint": "oxlint",
     "format": "oxfmt",
-    "format:check": "oxfmt --check"
+    "format:check": "oxfmt --check",
+    "fallow": "fallow"
   },
   "dependencies": {
     "@doctormckay/steam-crypto": "1.2.0",
@@ -51,6 +52,7 @@
     "@vue/tsconfig": "^0.9.1",
     "concurrently": "10.0.3",
     "drizzle-kit": "^0.31.10",
+    "fallow": "3.6.0",
     "oxfmt": "^0.60.0",
     "oxlint": "^1.78.0",
     "oxlint-tsgolint": "^7.0.2001",

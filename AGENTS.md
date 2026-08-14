@@ -110,6 +110,10 @@ Put route guards in `src/router`. Keep API or Electrobun RPC calls in `src/api`,
 - Do not modify a migration that may already have been applied; create a new migration instead.
 - Verify fresh database creation. When a migration rebuilds tables or changes existing data or constraints, also verify upgrading a populated database preserves the intended data.
 
+## Fallow Code Quality
+
+`bun run fallow` runs the combined dead-code, duplication, and complexity analysis.
+
 ## Commands
 
 ```sh
@@ -120,4 +124,5 @@ bun test
 bun run type-check
 bun run lint
 bun run format
+bun run fallow
 ```

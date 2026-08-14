@@ -1,0 +1,17 @@
+{
+  "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
+  "entry": [
+    "electrobun.config.ts",
+    "scripts/sign-macos-wrapper.ts",
+    "src/bun/index.ts",
+    "src/backend/depot/transfer/decompress-worker.ts",
+    "src/mainview/main.ts",
+  ],
+  "ignorePatterns": ["src/components/ui/**"],
+  "duplicates": {
+    "ignore": ["tools/oxlint/anti-slop/**"],
+  },
+  "health": {
+    "ignore": ["tools/oxlint/anti-slop/**"],
+  },
+}
