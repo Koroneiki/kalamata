@@ -15,7 +15,12 @@ import {
 import { normalizeManifestSeparators } from '../../manifests/manifest-utils.ts'
 import type { ManifestChunk, ManifestFile } from '../../manifests/types.ts'
 import { completeChunk } from './journal.ts'
-import { chunkKey, fileSize, isDirectory } from './projection.ts'
+import {
+  chunkKey,
+  fileSize,
+  isDirectory,
+  uniqueCompressedChunkSizes,
+} from './projection.ts'
 import {
   ApplicationTransactionError,
   emitProgress,
@@ -41,6 +46,39 @@ export async function prepareStagedFiles(
   progress: ProgressState,
   journal: JournalContext,
 ): Promise<StagedFile[]> {
+  const { staged, destinations } = await createStagingLayout(
+    options,
+    changedFiles,
+    stagingRoot,
+    journal,
+  )
+  const downloads = await reuseLocalChunks(
+    options,
+    source,
+    destinations,
+    progress,
+    journal,
+  )
+
+  emitProgress(options, progress)
+  if (downloads.size > 0)
+    options.onEvent?.({ type: 'phase', phase: 'downloading' })
+  await downloadChunks(options, downloads, progress, journal)
+
+  options.onEvent?.({ type: 'phase', phase: 'verifying' })
+  await verifyStagedFiles(staged, options.signal)
+  return staged
+}
+
+async function createStagingLayout(
+  options: RunApplicationTransactionOptions,
+  changedFiles: ProjectionEntry[],
+  stagingRoot: string,
+  journal: JournalContext,
+): Promise<{
+  staged: StagedFile[]
+  destinations: Map<string, ChunkDestination[]>
+}> {
   const staged: StagedFile[] = []
   const destinations = new Map<string, ChunkDestination[]>()
   for (const entry of changedFiles) {
@@ -64,7 +102,16 @@ export async function prepareStagedFiles(
       destinations.set(key, group)
     }
   }
+  return { staged, destinations }
+}
 
+async function reuseLocalChunks(
+  options: RunApplicationTransactionOptions,
+  source: Map<string, ProjectionEntry>,
+  destinations: Map<string, ChunkDestination[]>,
+  progress: ProgressState,
+  journal: JournalContext,
+): Promise<Map<string, ChunkDestination[]>> {
   const sourceCandidates = buildChunkCandidates(source, options.outputDirectory)
   const downloads = new Map<string, ChunkDestination[]>()
   for (const [key, group] of destinations) {
@@ -98,15 +145,15 @@ export async function prepareStagedFiles(
     await completeChunk(journal, key, 'local', 0)
     emitProgress(options, progress)
   }
+  return downloads
+}
 
-  emitProgress(options, progress)
-  if (downloads.size > 0)
-    options.onEvent?.({ type: 'phase', phase: 'downloading' })
-  await downloadChunks(options, downloads, progress, journal)
-
-  options.onEvent?.({ type: 'phase', phase: 'verifying' })
+async function verifyStagedFiles(
+  staged: StagedFile[],
+  signal?: AbortSignal,
+): Promise<void> {
   for (const item of staged) {
-    throwIfAborted(options.signal)
+    throwIfAborted(signal)
     try {
       await setExecutable(item.stagingPath, item.entry.file)
     } catch (error) {
@@ -118,7 +165,6 @@ export async function prepareStagedFiles(
       )
     }
   }
-  return staged
 }
 
 export async function estimateDownloadPayload(
@@ -128,12 +174,7 @@ export async function estimateDownloadPayload(
 ): Promise<bigint> {
   // Match staging: only installed-source chunks can be copied for partial reuse.
   const candidates = buildChunkCandidates(source, outputDirectory)
-  const chunks = new Map<string, number>()
-  for (const { file } of changedFiles)
-    for (const chunk of file.chunks) {
-      const key = chunkKey(chunk)
-      chunks.set(key, Math.max(chunks.get(key) ?? 0, chunk.cb_compressed))
-    }
+  const chunks = uniqueCompressedChunkSizes(changedFiles)
 
   let total = 0n
   for (const [key, size] of chunks) {
@@ -218,7 +259,7 @@ async function fetchChunk(
   destinations: ChunkDestination[],
   signal: AbortSignal,
   serverPools: Map<string, Promise<ContentServerSelector | null>>,
-): Promise<{ chunk: Buffer; networkBytes: number }> {
+): Promise<DownloadedChunk> {
   let lastError: Error | undefined
   let foundServers = false
   const resources = uniqueResources(destinations)
@@ -226,18 +267,7 @@ async function fetchChunk(
     throwIfAborted(signal)
     let pool: ContentServerSelector | null
     try {
-      const cacheKey = `${resource.appId}:${resource.depot.depotId}`
-      let request = serverPools.get(cacheKey)
-      if (!request) {
-        request = abortable(
-          resource.depot.client.getContentServers(resource.appId),
-          signal,
-        ).then(({ servers }) =>
-          servers.length > 0 ? new ContentServerSelector(servers) : null,
-        )
-        serverPools.set(cacheKey, request)
-      }
-      pool = await abortable(request, signal)
+      pool = await contentServerPool(resource, signal, serverPools)
     } catch (error) {
       if (isAbort(error, signal)) throw error
       lastError = new ApplicationTransactionError(
@@ -249,69 +279,135 @@ async function fetchChunk(
     }
     if (!pool) continue
     foundServers = true
-    const attempted = new Set<ContentServer>()
-    for (let attempt = 0; attempt < pool.attemptsPerChunk; attempt++) {
-      throwIfAborted(signal)
-      const server = pool.getConnection(attempted)
-      attempted.add(server)
-      try {
-        const first = destinations[0]!
-        let downloaded
-        try {
-          downloaded = await resource.depot.client.downloadChunk(
-            resource.appId,
-            resource.depot.depotId,
-            first.chunk.sha,
-            server,
-            signal,
-            Number(first.chunk.cb_original),
-          )
-        } catch (error) {
-          if (
-            !(error instanceof HttpStatusError) ||
-            error.retryAfterMs === null
-          )
-            throw error
-          await sleep(error.retryAfterMs, undefined, { signal })
-          downloaded = await resource.depot.client.downloadChunk(
-            resource.appId,
-            resource.depot.depotId,
-            first.chunk.sha,
-            server,
-            signal,
-            Number(first.chunk.cb_original),
-          )
-        }
-        if (downloaded.chunk.length !== Number(first.chunk.cb_original)) {
-          throw new ApplicationTransactionError(
-            'unavailable-content',
-            `Chunk ${first.chunk.sha} has an unexpected size`,
-          )
-        }
-        pool.returnConnection(server)
-        return {
-          chunk: downloaded.chunk,
-          networkBytes: networkByteCount(
-            downloaded.networkBytes,
-            downloaded.chunk.length,
-          ),
-        }
-      } catch (error) {
-        if (isAbort(error, signal)) throw error
-        if (filesystemErrorCode(error) === 'ENOSPC')
-          throw new ApplicationTransactionError(
-            'insufficient-space',
-            'Insufficient space while transferring staged content',
-            { cause: error },
-          )
-        lastError =
-          error instanceof Error
-            ? error
-            : new Error('Content server failed', { cause: error })
-        pool.returnBrokenConnection(server)
+    const fetched = await fetchFromResource(
+      destinations,
+      resource,
+      pool,
+      signal,
+    )
+    if ('chunk' in fetched) return fetched
+    lastError = fetched.error
+  }
+  throwFetchChunkError(destinations, foundServers, lastError)
+}
+
+interface DownloadedChunk {
+  chunk: Buffer
+  networkBytes: number
+}
+
+interface ChunkResource {
+  depot: ChunkDestination['depot']
+  appId: number
+}
+
+async function contentServerPool(
+  resource: ChunkResource,
+  signal: AbortSignal,
+  serverPools: Map<string, Promise<ContentServerSelector | null>>,
+): Promise<ContentServerSelector | null> {
+  const cacheKey = `${resource.appId}:${resource.depot.depotId}`
+  let request = serverPools.get(cacheKey)
+  if (!request) {
+    request = abortable(
+      resource.depot.client.getContentServers(resource.appId),
+      signal,
+    ).then(({ servers }) =>
+      servers.length > 0 ? new ContentServerSelector(servers) : null,
+    )
+    serverPools.set(cacheKey, request)
+  }
+  return abortable(request, signal)
+}
+
+async function fetchFromResource(
+  destinations: ChunkDestination[],
+  resource: ChunkResource,
+  pool: ContentServerSelector,
+  signal: AbortSignal,
+): Promise<DownloadedChunk | { error: Error | undefined }> {
+  let lastError: Error | undefined
+  const attempted = new Set<ContentServer>()
+  for (let attempt = 0; attempt < pool.attemptsPerChunk; attempt++) {
+    throwIfAborted(signal)
+    const server = pool.getConnection(attempted)
+    attempted.add(server)
+    try {
+      const downloaded = await downloadFromServer(
+        destinations[0]!,
+        resource,
+        server,
+        signal,
+      )
+      pool.returnConnection(server)
+      return {
+        chunk: downloaded.chunk,
+        networkBytes: networkByteCount(
+          downloaded.networkBytes,
+          downloaded.chunk.length,
+        ),
       }
+    } catch (error) {
+      if (isAbort(error, signal)) throw error
+      if (filesystemErrorCode(error) === 'ENOSPC')
+        throw new ApplicationTransactionError(
+          'insufficient-space',
+          'Insufficient space while transferring staged content',
+          { cause: error },
+        )
+      lastError =
+        error instanceof Error
+          ? error
+          : new Error('Content server failed', { cause: error })
+      pool.returnBrokenConnection(server)
     }
   }
+  return { error: lastError }
+}
+
+async function downloadFromServer(
+  destination: ChunkDestination,
+  resource: ChunkResource,
+  server: ContentServer,
+  signal: AbortSignal,
+): Promise<{ chunk: Buffer; networkBytes?: number }> {
+  let downloaded
+  try {
+    downloaded = await resource.depot.client.downloadChunk(
+      resource.appId,
+      resource.depot.depotId,
+      destination.chunk.sha,
+      server,
+      signal,
+      Number(destination.chunk.cb_original),
+    )
+  } catch (error) {
+    if (!(error instanceof HttpStatusError) || error.retryAfterMs === null)
+      throw error
+    await sleep(error.retryAfterMs, undefined, { signal })
+    downloaded = await resource.depot.client.downloadChunk(
+      resource.appId,
+      resource.depot.depotId,
+      destination.chunk.sha,
+      server,
+      signal,
+      Number(destination.chunk.cb_original),
+    )
+  }
+  if (downloaded.chunk.length !== Number(destination.chunk.cb_original)) {
+    throw new ApplicationTransactionError(
+      'unavailable-content',
+      `Chunk ${destination.chunk.sha} has an unexpected size`,
+    )
+  }
+  return downloaded
+}
+
+function throwFetchChunkError(
+  destinations: ChunkDestination[],
+  foundServers: boolean,
+  lastError: Error | undefined,
+): never {
   if (!foundServers)
     throw new ApplicationTransactionError(
       'unavailable-resource',
@@ -416,10 +512,7 @@ async function readChunk(path: string, chunk: ManifestChunk): Promise<Buffer> {
 }
 
 function uniqueResources(destinations: ChunkDestination[]) {
-  const resources = new Map<
-    string,
-    { depot: ChunkDestination['depot']; appId: number }
-  >()
+  const resources = new Map<string, ChunkResource>()
   for (const destination of destinations) {
     const appId = destination.appId
     resources.set(`${appId}:${destination.depot.depotId}`, {

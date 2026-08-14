@@ -52,43 +52,38 @@ import {
 export async function runApplicationTransaction(
   options: RunApplicationTransactionOptions,
 ): Promise<ApplicationTransactionResult> {
-  const acquire = options.acquireLock ?? acquireOutputLock
-  const release = await acquire(options.outputDirectory).catch((error) => {
-    throw classify(error, 'filesystem', 'Could not acquire output lock')
-  })
-  let result: ApplicationTransactionResult
-  let releaseError: unknown
-  try {
-    result = await runUnlocked(options)
-  } finally {
-    try {
-      await release()
-    } catch (error) {
-      releaseError = error
-    }
-  }
-  if (releaseError)
-    throw classify(releaseError, 'filesystem', 'Could not release output lock')
-  return result
+  return withTransactionLock(options, () => runUnlocked(options))
 }
 
 export async function recoverAndRunApplicationTransaction(
   options: RunApplicationTransactionOptions,
 ): Promise<ApplicationTransactionResult> {
-  const acquire = options.acquireLock ?? acquireOutputLock
-  const release = await acquire(options.outputDirectory).catch((error) => {
-    throw classify(error, 'filesystem', 'Could not acquire output lock')
-  })
-  let result: ApplicationTransactionResult
-  let releaseError: unknown
-  try {
+  return withTransactionLock(options, async () => {
     const recoveryOptions: RecoverApplicationTransactionCallbacks = {
       appId: options.appId,
       reconcile: options.reconcile,
     }
     if (options.testCrashAt) recoveryOptions.testCrashAt = options.testCrashAt
     await recoverUnlocked(options.outputDirectory, recoveryOptions)
-    result = await runUnlocked(options)
+    return runUnlocked(options)
+  })
+}
+
+async function withTransactionLock<T>(
+  options: Pick<
+    RunApplicationTransactionOptions,
+    'outputDirectory' | 'acquireLock'
+  >,
+  action: () => Promise<T>,
+): Promise<T> {
+  const acquire = options.acquireLock ?? acquireOutputLock
+  const release = await acquire(options.outputDirectory).catch((error) => {
+    throw classify(error, 'filesystem', 'Could not acquire output lock')
+  })
+  let result: T
+  let releaseError: unknown
+  try {
+    result = await action()
   } finally {
     try {
       await release()
@@ -107,18 +102,7 @@ async function runUnlocked(
   options.onEvent?.({ type: 'phase', phase: 'planning' })
   throwIfAborted(options.signal)
 
-  let source: Map<string, ProjectionEntry>
-  let target: Map<string, ProjectionEntry>
-  try {
-    source = buildProjection(options.installedDepots, options.appId)
-    target = buildProjection(options.desiredDepots, options.appId)
-    validateDesiredDepots(options.desiredDepots)
-    for (const entry of target.values())
-      resolveOutputPath(options.outputDirectory, entry.file.filename)
-  } catch (error) {
-    throw classify(error, 'planning', 'Could not build application projection')
-  }
-
+  const { source, target } = buildValidatedProjections(options)
   const progress: ProgressState = {
     logicalInstalledCompleted: 0n,
     logicalInstalledTotal: sumProjectionFiles(target),
@@ -129,6 +113,59 @@ async function runUnlocked(
   if (options.kind === 'repair')
     options.onEvent?.({ type: 'phase', phase: 'verifying' })
 
+  const changed = await findChangedEntries(options, source, target, progress)
+  const changedFiles = changed.filter((entry) => !isDirectory(entry.file))
+  if (changed.length === 0 && !filesystemChangesNeeded(source, target)) {
+    const desired = desiredRecords(options.desiredDepots)
+    options.onEvent?.({ type: 'phase', phase: 'reconciling' })
+    await callPersistence(options.reconcile, desired, 'SQLite reconciliation')
+    options.onEvent?.({ type: 'phase', phase: 'completed' })
+    return {
+      transactionId: null,
+      logicalInstalledBytes: progress.logicalInstalledTotal.toString(),
+      reusedLocalBytes: progress.reusedLocal.toString(),
+      networkBytes: '0',
+    }
+  }
+
+  const transaction = await prepareTransaction(
+    options,
+    source,
+    target,
+    changed,
+    changedFiles,
+    progress,
+  )
+  return executeTransaction(
+    options,
+    source,
+    target,
+    changed,
+    changedFiles,
+    progress,
+    transaction,
+  )
+}
+
+function buildValidatedProjections(options: RunApplicationTransactionOptions) {
+  try {
+    const source = buildProjection(options.installedDepots, options.appId)
+    const target = buildProjection(options.desiredDepots, options.appId)
+    validateDesiredDepots(options.desiredDepots)
+    for (const entry of target.values())
+      resolveOutputPath(options.outputDirectory, entry.file.filename)
+    return { source, target }
+  } catch (error) {
+    throw classify(error, 'planning', 'Could not build application projection')
+  }
+}
+
+async function findChangedEntries(
+  options: RunApplicationTransactionOptions,
+  source: Map<string, ProjectionEntry>,
+  target: Map<string, ProjectionEntry>,
+  progress: ProgressState,
+): Promise<ProjectionEntry[]> {
   const changed: ProjectionEntry[] = []
   for (const entry of target.values()) {
     const previous = source.get(entry.key)
@@ -161,21 +198,30 @@ async function runUnlocked(
       emitProgress(options, progress)
     }
   }
+  return changed
+}
 
-  const changedFiles = changed.filter((entry) => !isDirectory(entry.file))
-  if (changed.length === 0 && !filesystemChangesNeeded(source, target)) {
-    const desired = desiredRecords(options.desiredDepots)
-    options.onEvent?.({ type: 'phase', phase: 'reconciling' })
-    await callPersistence(options.reconcile, desired, 'SQLite reconciliation')
-    options.onEvent?.({ type: 'phase', phase: 'completed' })
-    return {
-      transactionId: null,
-      logicalInstalledBytes: progress.logicalInstalledTotal.toString(),
-      reusedLocalBytes: progress.reusedLocal.toString(),
-      networkBytes: '0',
-    }
-  }
+interface PreparedTransaction {
+  id: string
+  transactionRoot: string
+  stagingRoot: string
+  backupRoot: string
+  journalPath: string
+  journalContext: JournalContext
+}
 
+interface TransactionFailure {
+  cause: unknown
+}
+
+async function prepareTransaction(
+  options: RunApplicationTransactionOptions,
+  source: Map<string, ProjectionEntry>,
+  target: Map<string, ProjectionEntry>,
+  changed: ProjectionEntry[],
+  changedFiles: ProjectionEntry[],
+  progress: ProgressState,
+): Promise<PreparedTransaction> {
   const sourceRecords = desiredRecords(options.installedDepots)
   const desired = desiredRecords(options.desiredDepots)
   const stagedFiles = stagedFileLayout(changedFiles)
@@ -206,7 +252,7 @@ async function runUnlocked(
   const stagingRoot = join(transactionRoot, 'staging')
   const backupRoot = join(transactionRoot, 'backup')
   const journalPath = join(transactionRoot, 'journal.json')
-  let journal: TransactionJournal = resumed ?? {
+  const journal: TransactionJournal = resumed ?? {
     version: TRANSACTION_VERSION,
     id,
     generation: randomUUID(),
@@ -231,7 +277,33 @@ async function runUnlocked(
     write: Promise.resolve(),
     resumed: resumed !== undefined,
   }
+  return {
+    id,
+    transactionRoot,
+    stagingRoot,
+    backupRoot,
+    journalPath,
+    journalContext,
+  }
+}
 
+async function executeTransaction(
+  options: RunApplicationTransactionOptions,
+  source: Map<string, ProjectionEntry>,
+  target: Map<string, ProjectionEntry>,
+  changed: ProjectionEntry[],
+  changedFiles: ProjectionEntry[],
+  progress: ProgressState,
+  transaction: PreparedTransaction,
+): Promise<ApplicationTransactionResult> {
+  const {
+    id,
+    transactionRoot,
+    stagingRoot,
+    backupRoot,
+    journalPath,
+    journalContext,
+  } = transaction
   try {
     await mkdir(stagingRoot, { recursive: true })
     journalContext.journal = { ...journalContext.journal, paused: false }
@@ -257,7 +329,11 @@ async function runUnlocked(
     )
     throwIfAborted(options.signal)
     options.onEvent?.({ type: 'phase', phase: 'committing' })
-    journal = { ...journalContext.journal, ...actions, phase: 'ready' }
+    const journal: TransactionJournal = {
+      ...journalContext.journal,
+      ...actions,
+      phase: 'ready',
+    }
     journalContext.journal = journal
     await writeJournal(journalPath, journal)
     await writeFile(join(transactionRoot, 'commit-ready'), '')
@@ -272,46 +348,65 @@ async function runUnlocked(
       networkBytes: progress.actualNetwork.toString(),
     }
   } catch (error) {
-    if (journalContext.journal.phase === 'staging') {
-      if (
-        isAbort(error, options.signal) &&
-        !isPause(error, options.signal) &&
-        !isShutdown(error, options.signal)
-      ) {
-        await rm(transactionRoot, { recursive: true, force: true }).catch(
-          () => {},
-        )
-      } else {
-        journalContext.journal = {
-          ...journalContext.journal,
-          paused: isPause(error, options.signal),
-        }
-        try {
-          await checkpointJournal(journalContext)
-        } catch (checkpointError) {
-          throw classify(
-            checkpointError,
-            'filesystem',
-            'Could not checkpoint interrupted staging',
-          )
-        }
-      }
-    }
-    if (error instanceof ApplicationTransactionError) throw error
-    if (isAbort(error, options.signal))
-      throw new ApplicationTransactionError(
-        'cancellation',
-        'Transaction cancelled',
-        { cause: error },
-      )
-    if (filesystemErrorCode(error) === 'ENOSPC')
-      throw new ApplicationTransactionError(
-        'insufficient-space',
-        'Insufficient space while staging application',
-        { cause: error },
-      )
-    throw classify(error, 'filesystem', 'Application transaction failed')
+    const failure: TransactionFailure = { cause: error }
+    await cleanupInterruptedStaging(
+      options,
+      transactionRoot,
+      journalContext,
+      failure,
+    )
+    throwTransactionFailure(options, failure)
   }
+}
+
+async function cleanupInterruptedStaging(
+  options: RunApplicationTransactionOptions,
+  transactionRoot: string,
+  journalContext: JournalContext,
+  failure: TransactionFailure,
+): Promise<void> {
+  if (journalContext.journal.phase !== 'staging') return
+  if (
+    isAbort(failure.cause, options.signal) &&
+    !isPause(failure.cause, options.signal) &&
+    !isShutdown(failure.cause, options.signal)
+  ) {
+    await rm(transactionRoot, { recursive: true, force: true }).catch(() => {})
+    return
+  }
+  journalContext.journal = {
+    ...journalContext.journal,
+    paused: isPause(failure.cause, options.signal),
+  }
+  try {
+    await checkpointJournal(journalContext)
+  } catch (checkpointError) {
+    throw classify(
+      checkpointError,
+      'filesystem',
+      'Could not checkpoint interrupted staging',
+    )
+  }
+}
+
+function throwTransactionFailure(
+  options: RunApplicationTransactionOptions,
+  failure: TransactionFailure,
+): never {
+  if (failure.cause instanceof ApplicationTransactionError) throw failure.cause
+  if (isAbort(failure.cause, options.signal))
+    throw new ApplicationTransactionError(
+      'cancellation',
+      'Transaction cancelled',
+      { cause: failure.cause },
+    )
+  if (filesystemErrorCode(failure.cause) === 'ENOSPC')
+    throw new ApplicationTransactionError(
+      'insufficient-space',
+      'Insufficient space while staging application',
+      { cause: failure.cause },
+    )
+  throw classify(failure.cause, 'filesystem', 'Application transaction failed')
 }
 
 async function assertSpace(path: string, required: bigint): Promise<void> {

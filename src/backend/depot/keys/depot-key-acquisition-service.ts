@@ -1,20 +1,14 @@
 import type { KalamataDatabase } from '../../../db/database.ts'
 import { depotKeyFromHex, validateId } from '../../../db/validation.ts'
+import type {
+  AcquiredDepotKeys,
+  AcquireDepotKeysRequest,
+} from '../../../types/rpc.ts'
 import { DepotKeyCache } from './depot-key-cache.ts'
 import { parseDepotKeysLua } from './depot-key-lua-parser.ts'
 
 const REPOSITORY_RAW_URL =
   'https://raw.githubusercontent.com/dvahana2424-web/sojogamesdatabase1'
-
-export interface AcquireDepotKeysRequest {
-  appId: number
-  depotIds: number[]
-}
-
-export interface AcquiredDepotKeys {
-  acquiredDepotIds: number[]
-  missingDepotIds: number[]
-}
 
 type Fetcher = (
   input: string | URL | Request,

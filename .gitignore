@@ -15,6 +15,7 @@ test/fixtures/
 /.opencode/
 /.agents/
 /.playwright-mcp/
+.fallow/
 
 # impeccable-ignore-start
 # Ephemeral output, runtime state, and per-developer overrides.

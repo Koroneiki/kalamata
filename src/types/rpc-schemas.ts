@@ -68,7 +68,7 @@ const activeOperationFields = {
   reusedLocalBytes: manifestIdSchema,
   networkBytes: manifestIdSchema,
 }
-export const activeOperationStateSchema = strict({
+const activeOperationStateSchema = strict({
   status: z.literal('active'),
   ...activeOperationFields,
 })

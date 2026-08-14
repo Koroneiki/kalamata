@@ -16,7 +16,7 @@ export const depotKeyHexSchema = z
     message: 'Depot key must contain exactly 64 hexadecimal characters',
   })
   .transform((value) => value.toLowerCase())
-export const depotPlatformSchema = z.enum(['windows', 'macos', 'linux'])
+const depotPlatformSchema = z.enum(['windows', 'macos', 'linux'])
 export const appSettingsSchema: z.ZodType<AppSettings> = z
   .object({
     automaticManifestAcquisition: z.boolean(),

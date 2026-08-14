@@ -74,26 +74,70 @@ export async function planCommitActions(
   Pick<TransactionJournal, 'oldMoves' | 'installs' | 'obsoleteDirectories'>
 > {
   const changedKeys = new Set(changed.map((entry) => entry.key))
-  const oldPaths = new Set<string>()
+  const oldPaths = await sourcePathsToMove(
+    outputDirectory,
+    source,
+    target,
+    changedKeys,
+  )
+  await addChangedPathsToMove(outputDirectory, source, changed, oldPaths)
 
+  const roots = removeNestedPaths([...oldPaths])
+  const oldMoves = roots.map((relativePath) => ({
+    path: relativePath,
+    backup: normalizeManifestSeparators(join('backup', relativePath)),
+  }))
+  const installs = planInstalls(changed, staged, backupRoot)
+  const obsoleteDirectories = [...source.values()]
+    .filter((entry) => isDirectory(entry.file) && !target.has(entry.key))
+    .map((entry) => normalizeManifestSeparators(entry.file.filename))
+    .sort((left, right) => pathDepth(right) - pathDepth(left))
+  return { oldMoves, installs, obsoleteDirectories }
+}
+
+async function sourcePathsToMove(
+  outputDirectory: string,
+  source: Map<string, ProjectionEntry>,
+  target: Map<string, ProjectionEntry>,
+  changedKeys: Set<string>,
+): Promise<Set<string>> {
+  const oldPaths = new Set<string>()
   for (const entry of source.values()) {
-    if (isDirectory(entry.file)) continue
-    const wanted = target.get(entry.key)
-    if (!wanted) {
-      if (isUserConfig(entry.file)) continue
-      const info = await safeLstat(
-        resolveOutputPath(outputDirectory, entry.file.filename),
-      )
-      if (info?.isSymbolicLink())
-        throw new ApplicationTransactionError(
-          'planning',
-          `Managed path became a symbolic link: ${entry.file.filename}`,
-        )
-      if (!info || info.isDirectory()) continue
-    }
-    if (!wanted || isDirectory(wanted.file) || changedKeys.has(entry.key))
+    if (await sourcePathShouldMove(outputDirectory, entry, target, changedKeys))
       oldPaths.add(normalizeManifestSeparators(entry.file.filename))
   }
+  return oldPaths
+}
+
+async function sourcePathShouldMove(
+  outputDirectory: string,
+  entry: ProjectionEntry,
+  target: Map<string, ProjectionEntry>,
+  changedKeys: Set<string>,
+): Promise<boolean> {
+  if (isDirectory(entry.file)) return false
+  const wanted = target.get(entry.key)
+  if (!wanted) {
+    if (isUserConfig(entry.file)) return false
+    const info = await safeLstat(
+      resolveOutputPath(outputDirectory, entry.file.filename),
+    )
+    if (info?.isSymbolicLink())
+      throw new ApplicationTransactionError(
+        'planning',
+        `Managed path became a symbolic link: ${entry.file.filename}`,
+      )
+    if (!info || info.isDirectory()) return false
+  }
+  return !wanted || isDirectory(wanted.file) || changedKeys.has(entry.key)
+}
+
+async function addChangedPathsToMove(
+  outputDirectory: string,
+  source: Map<string, ProjectionEntry>,
+  changed: ProjectionEntry[],
+  oldPaths: Set<string>,
+): Promise<void> {
   for (const entry of changed) {
     const path = resolveOutputPath(outputDirectory, entry.file.filename)
     const info = await safeLstat(path)
@@ -116,14 +160,15 @@ export async function planCommitActions(
       oldPaths.add(normalizeManifestSeparators(entry.file.filename))
     }
   }
+}
 
-  const roots = removeNestedPaths([...oldPaths])
-  const oldMoves = roots.map((relativePath) => ({
-    path: relativePath,
-    backup: normalizeManifestSeparators(join('backup', relativePath)),
-  }))
+function planInstalls(
+  changed: ProjectionEntry[],
+  staged: StagedFile[],
+  backupRoot: string,
+): InstallAction[] {
   const stagedByKey = new Map(staged.map((item) => [item.entry.key, item]))
-  const installs: InstallAction[] = changed
+  return changed
     .sort(
       (left, right) =>
         pathDepth(left.file.filename) - pathDepth(right.file.filename),
@@ -146,11 +191,6 @@ export async function planCommitActions(
       }
       return action
     })
-  const obsoleteDirectories = [...source.values()]
-    .filter((entry) => isDirectory(entry.file) && !target.has(entry.key))
-    .map((entry) => normalizeManifestSeparators(entry.file.filename))
-    .sort((left, right) => pathDepth(right) - pathDepth(left))
-  return { oldMoves, installs, obsoleteDirectories }
 }
 
 export async function rollForward(
@@ -166,61 +206,14 @@ export async function rollForward(
   let journal = initial
   const outputDirectory = resolve(transactionRoot, '..', '..', '..')
 
-  if (journal.phase === 'ready') {
-    for (const action of journal.oldMoves) {
-      const live = resolveOutputPath(outputDirectory, action.path)
-      const backup = resolveManifestPath(transactionRoot, action.backup)
-      if (await pathExists(backup)) continue
-      const install = journal.installs.find((item) => item.path === action.path)
-      if (
-        install?.staging &&
-        !(await pathExists(
-          resolveManifestPath(transactionRoot, install.staging),
-        ))
-      )
-        continue
-      if (!(await pathExists(live))) continue
-      await revalidateDestructivePath(outputDirectory, action.path)
-      await mkdir(dirname(backup), { recursive: true })
-      await rename(live, backup)
-    }
-    callbacks.testCrashAt?.('old-moved')
-
-    let installed = 0
-    for (const action of journal.installs) {
-      const live = resolveOutputPath(outputDirectory, action.path)
-      if (action.directory) {
-        const info = await safeLstat(live)
-        if (!info) await mkdir(live, { recursive: true })
-        else if (!info.isDirectory() || info.isSymbolicLink())
-          throw new ApplicationTransactionError(
-            'recovery',
-            `Cannot install directory at ${action.path}`,
-          )
-      } else {
-        const staging = resolveManifestPath(transactionRoot, action.staging!)
-        if (await pathExists(staging)) {
-          await assertNoSymlinkTraversal(outputDirectory, action.path)
-          await mkdir(dirname(live), { recursive: true })
-          await rename(staging, live)
-        } else {
-          await verifyCommittedFile(live, action)
-        }
-      }
-      installed++
-      if (installed === 1) callbacks.testCrashAt?.('some-new-installed')
-    }
-    for (const path of journal.obsoleteDirectories) {
-      await revalidateDestructivePath(outputDirectory, path)
-      await rmdir(resolveOutputPath(outputDirectory, path)).catch((error) => {
-        const code = filesystemErrorCode(error)
-        if (!['ENOENT', 'ENOTEMPTY', 'EEXIST'].includes(code ?? '')) throw error
-      })
-    }
-    journal = { ...journal, phase: 'filesystem-committed' }
-    await writeJournal(journalPath, journal)
-    callbacks.testCrashAt?.('filesystem-committed')
-  }
+  if (journal.phase === 'ready')
+    journal = await commitFilesystem(
+      transactionRoot,
+      outputDirectory,
+      journalPath,
+      journal,
+      callbacks,
+    )
 
   if (journal.phase === 'filesystem-committed') {
     await callPersistence(
@@ -238,6 +231,94 @@ export async function rollForward(
   }
   if (journal.phase === 'completed')
     await rm(transactionRoot, { recursive: true, force: true })
+}
+
+async function commitFilesystem(
+  transactionRoot: string,
+  outputDirectory: string,
+  journalPath: string,
+  journal: TransactionJournal,
+  callbacks: Pick<
+    RunApplicationTransactionOptions,
+    'reconcile' | 'testCrashAt'
+  >,
+): Promise<TransactionJournal> {
+  await moveOldPaths(transactionRoot, outputDirectory, journal)
+  callbacks.testCrashAt?.('old-moved')
+  await installNewPaths(transactionRoot, outputDirectory, journal, callbacks)
+  await removeObsoleteDirectories(outputDirectory, journal)
+
+  const committed = { ...journal, phase: 'filesystem-committed' as const }
+  await writeJournal(journalPath, committed)
+  callbacks.testCrashAt?.('filesystem-committed')
+  return committed
+}
+
+async function moveOldPaths(
+  transactionRoot: string,
+  outputDirectory: string,
+  journal: TransactionJournal,
+): Promise<void> {
+  for (const action of journal.oldMoves) {
+    const live = resolveOutputPath(outputDirectory, action.path)
+    const backup = resolveManifestPath(transactionRoot, action.backup)
+    if (await pathExists(backup)) continue
+    const install = journal.installs.find((item) => item.path === action.path)
+    if (
+      install?.staging &&
+      !(await pathExists(resolveManifestPath(transactionRoot, install.staging)))
+    )
+      continue
+    if (!(await pathExists(live))) continue
+    await revalidateDestructivePath(outputDirectory, action.path)
+    await mkdir(dirname(backup), { recursive: true })
+    await rename(live, backup)
+  }
+}
+
+async function installNewPaths(
+  transactionRoot: string,
+  outputDirectory: string,
+  journal: TransactionJournal,
+  callbacks: Pick<RunApplicationTransactionOptions, 'testCrashAt'>,
+): Promise<void> {
+  let installed = 0
+  for (const action of journal.installs) {
+    const live = resolveOutputPath(outputDirectory, action.path)
+    if (action.directory) {
+      const info = await safeLstat(live)
+      if (!info) await mkdir(live, { recursive: true })
+      else if (!info.isDirectory() || info.isSymbolicLink())
+        throw new ApplicationTransactionError(
+          'recovery',
+          `Cannot install directory at ${action.path}`,
+        )
+    } else {
+      const staging = resolveManifestPath(transactionRoot, action.staging!)
+      if (await pathExists(staging)) {
+        await assertNoSymlinkTraversal(outputDirectory, action.path)
+        await mkdir(dirname(live), { recursive: true })
+        await rename(staging, live)
+      } else {
+        await verifyCommittedFile(live, action)
+      }
+    }
+    installed++
+    if (installed === 1) callbacks.testCrashAt?.('some-new-installed')
+  }
+}
+
+async function removeObsoleteDirectories(
+  outputDirectory: string,
+  journal: TransactionJournal,
+): Promise<void> {
+  for (const path of journal.obsoleteDirectories) {
+    await revalidateDestructivePath(outputDirectory, path)
+    await rmdir(resolveOutputPath(outputDirectory, path)).catch((error) => {
+      const code = filesystemErrorCode(error)
+      if (!['ENOENT', 'ENOTEMPTY', 'EEXIST'].includes(code ?? '')) throw error
+    })
+  }
 }
 
 async function assertDirectoryIsManaged(

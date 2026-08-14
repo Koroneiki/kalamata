@@ -1,19 +1,17 @@
 import { DepotDownloadService } from './depot/depot-download-service.ts'
 import type { ReconcileApplicationOptions } from './depot/depot-download-service.ts'
 import type { ApplicationTransactionResult } from './depot/install/transaction/types.ts'
-import {
-  DepotKeyAcquisitionService,
-  type AcquiredDepotKeys,
-  type AcquireDepotKeysRequest,
-} from './depot/keys/depot-key-acquisition-service.ts'
-import {
-  ManifestAcquisitionService,
-  type AcquiredManifest,
-  type AcquireManifestRequest,
-} from './depot/manifests/manifest-acquisition-service.ts'
+import { DepotKeyAcquisitionService } from './depot/keys/depot-key-acquisition-service.ts'
+import { ManifestAcquisitionService } from './depot/manifests/manifest-acquisition-service.ts'
 import { previewApplicationOperation } from './operations/application-preview.ts'
 import type { ApplicationPlan } from './operations/application-planner.ts'
-import type { ApplicationOperationPreview } from '../types/rpc.ts'
+import type {
+  AcquiredDepotKeys,
+  AcquiredManifest,
+  AcquireDepotKeysRequest,
+  AcquireManifestRequest,
+  ApplicationOperationPreview,
+} from '../types/rpc.ts'
 import { ProductInfoService } from './steam/product-info-service.ts'
 import { SteamSession } from './steam/steam-session.ts'
 import type { ProductInfo, ProductInfoResult } from './steam/types.ts'
@@ -40,16 +38,20 @@ export class SteamService {
     this.#products = new ProductInfoService(this.#session)
   }
 
+  // These methods are consumed through structural service interfaces that Fallow cannot trace.
+  // fallow-ignore-next-line unused-class-member
   connect(): Promise<void> {
     return this.#session.connect()
   }
 
+  // fallow-ignore-next-line unused-class-member
   reconcileApplication(
     options: ReconcileApplicationOptions,
   ): Promise<ApplicationTransactionResult> {
     return this.#downloads.reconcileApplication(options)
   }
 
+  // fallow-ignore-next-line unused-class-member
   previewApplicationOperation(
     appId: number,
     plan: ApplicationPlan,
@@ -63,10 +65,12 @@ export class SteamService {
     )
   }
 
+  // fallow-ignore-next-line unused-class-member
   getProductInfo(appId: number): Promise<ProductInfo> {
     return this.#products.getProductInfo(appId)
   }
 
+  // fallow-ignore-next-line unused-class-member
   getProductInfoWithDlc(appId: number): Promise<ProductInfoResult> {
     return this.#products.getProductInfoWithDlc(appId)
   }

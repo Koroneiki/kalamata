@@ -110,6 +110,21 @@ Put route guards in `src/router`. Keep API or Electrobun RPC calls in `src/api`,
 - Do not modify a migration that may already have been applied; create a new migration instead.
 - Verify fresh database creation. When a migration rebuilds tables or changes existing data or constraints, also verify upgrading a populated database preserves the intended data.
 
+## Fallow Code Quality
+
+`bun run fallow` runs the combined dead-code, duplication, and complexity analysis.
+
+- Run it after non-trivial changes. Use `bunx fallow dead-code`, `bunx fallow dupes`, or `bunx fallow health` when investigating one category.
+- Treat dead files, exports, and dependencies as removal candidates. Before deleting them, check runtime entry points, generated code, dynamic imports, build scripts, and package side effects.
+- Remove genuine duplication when the copies represent the same stable behavior. Do not abstract incidental visual similarity or create a shared helper that needs flags for unrelated callers.
+- Treat complexity findings as review prompts, not a requirement to reach zero. Prioritize hard-to-follow control flow, repeated conditions, unsafe state transitions, and code that is difficult to test.
+- CRAP scores are estimated from static references unless coverage is supplied. Add focused tests for risky behavior rather than splitting code only to reduce the estimate.
+- Keep cohesive domain workflows, parsers, state machines, and Vue templates together when extraction would hide control flow or increase coupling.
+- For Vue, extract reusable or independently meaningful sections and move substantial stateful workflows into composables. Avoid one-use pass-through wrappers, micro-components, wide prop/emit surfaces, and `h()` pseudo-components created only to satisfy a metric.
+- Prefer the smallest refactor that improves readability or testability, then verify behavior with tests and, for UI changes, desktop and narrow-window checks.
+- Keep ignores narrow. Add configuration entries or inline suppressions only for confirmed false positives or intentionally cohesive code, and include a short reason.
+- The current health report includes reviewed findings and may exit nonzero. Judge new work by whether it introduces or worsens relevant findings; dead code and duplication should remain at zero.
+
 ## Commands
 
 ```sh
@@ -120,4 +135,5 @@ bun test
 bun run type-check
 bun run lint
 bun run format
+bun run fallow
 ```

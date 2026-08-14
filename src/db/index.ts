@@ -3,11 +3,10 @@ import { join } from 'node:path'
 import { KalamataDatabase } from './database.ts'
 import { pruneMissingManifestFiles } from './manifest-files.ts'
 
-export { KalamataDatabase } from './database.ts'
 export * from './manifest-files.ts'
 export * from './validation.ts'
 
-export async function discoverMigrationsFolder(): Promise<string> {
+async function discoverMigrationsFolder(): Promise<string> {
   const candidates = [
     join(import.meta.dir, 'migrations'),
     join(import.meta.dir, '..', 'db', 'migrations'),

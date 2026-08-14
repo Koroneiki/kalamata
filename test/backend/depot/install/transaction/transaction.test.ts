@@ -509,6 +509,49 @@ describe('application filesystem transactions', () => {
     ).toMatchObject({ appId: 100, paused: true })
   })
 
+  test('reconstructs retained, local, and network progress from completed chunks', async () => {
+    directory = await tempDirectory()
+    const desired = depot(10, '1', {
+      'local.bin': 'local',
+      'network.bin': 'net',
+    })
+    await writeStagingJournal(desired, 'local')
+    const journalPath = join(
+      directory,
+      '.Kalamata/transactions/resume-test/journal.json',
+    )
+    const journal = JSON.parse(await readFile(journalPath, 'utf8'))
+    journal.stagedFiles = desired.manifest.files.map((file) => ({
+      path: file.filename,
+      size: file.size,
+      sha1: file.sha_content,
+      chunks: file.chunks.map((chunk) => ({
+        key: `${chunk.sha.toLowerCase()}:${chunk.cb_original}`,
+        offset: chunk.offset,
+        size: chunk.cb_original,
+      })),
+    }))
+    const [local, network] = journal.stagedFiles.flatMap(
+      (file: { chunks: Array<{ key: string }> }) => file.chunks,
+    )
+    journal.completedChunks = {
+      [local.key]: { source: 'local', networkBytes: '0' },
+      [network.key]: { source: 'network', networkBytes: '2' },
+    }
+    journal.retainedBytes = '7'
+    journal.logicalInstalledTotal = '15'
+    await writeFile(journalPath, JSON.stringify(journal))
+
+    expect(
+      await getResumableApplicationTransaction(directory, 100),
+    ).toMatchObject({
+      installedBytesCompleted: '15',
+      installedBytesTotal: '15',
+      reusedLocalBytes: '12',
+      networkBytes: '2',
+    })
+  })
+
   test('rejects multiple pending transactions without mutating them', async () => {
     directory = await tempDirectory()
     const desired = depot(10, '1', { 'game.bin': 'good' })

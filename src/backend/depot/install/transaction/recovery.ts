@@ -1,3 +1,4 @@
+import type { Dirent } from 'node:fs'
 import { mkdir, readdir, rename, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { CONFIG_DIRECTORY } from '../internal-paths.ts'
@@ -46,59 +47,65 @@ export async function recoverUnlocked(
   callbacks: RecoverApplicationTransactionCallbacks,
 ): Promise<void> {
   const root = join(outputDirectory, CONFIG_DIRECTORY, 'transactions')
-  let entries
+  let entry: Dirent | undefined
   try {
-    entries = await readdir(root, { withFileTypes: true })
+    entry = transactionDirectory(await readDirectoryIfExists(root))
   } catch (error) {
-    if (filesystemErrorCode(error) === 'ENOENT') return
     throw classify(
       error,
       'recovery',
       'Could not inspect application transactions',
     )
   }
-  entries = entries.filter((entry) => entry.isDirectory())
-  if (entries.length > 1)
+  if (!entry) return
+  await recoverTransaction(root, entry, outputDirectory, callbacks)
+}
+
+async function recoverTransaction(
+  root: string,
+  entry: Dirent,
+  outputDirectory: string,
+  callbacks: RecoverApplicationTransactionCallbacks,
+): Promise<void> {
+  const transactionRoot = join(root, entry.name)
+  const journalPath = join(transactionRoot, 'journal.json')
+  const journal = await readRecoverableJournal(transactionRoot, journalPath)
+  if (!journal) return
+  if (journal.id !== entry.name)
     throw new ApplicationTransactionError(
       'recovery',
-      'Application has ambiguous pending transaction state',
+      'Transaction journal ID mismatch',
     )
-  for (const entry of entries.sort((left, right) =>
-    left.name.localeCompare(right.name),
-  )) {
-    const transactionRoot = join(root, entry.name)
-    const journalPath = join(transactionRoot, 'journal.json')
-    let journal: TransactionJournal
-    try {
-      journal = await readJournal(journalPath)
-    } catch (error) {
-      if (
-        !(await pathExists(join(transactionRoot, 'commit-ready'))) &&
-        !(await pathExists(join(transactionRoot, 'backup')))
-      ) {
-        await rm(transactionRoot, { recursive: true, force: true })
-        continue
-      }
-      throw error
+  assertJournalIdentity(journal, callbacks.appId, outputDirectory)
+  if (journal.phase === 'staging') return
+  try {
+    // Once commit was ready, recovery always rolls forward deterministically.
+    await rollForward(transactionRoot, journalPath, journal, callbacks)
+  } catch (error) {
+    if (error instanceof ApplicationTransactionError) throw error
+    throw classify(
+      error,
+      'recovery',
+      `Could not recover transaction ${entry.name}`,
+    )
+  }
+}
+
+async function readRecoverableJournal(
+  transactionRoot: string,
+  journalPath: string,
+): Promise<TransactionJournal | undefined> {
+  try {
+    return await readJournal(journalPath)
+  } catch (error) {
+    if (
+      !(await pathExists(join(transactionRoot, 'commit-ready'))) &&
+      !(await pathExists(join(transactionRoot, 'backup')))
+    ) {
+      await rm(transactionRoot, { recursive: true, force: true })
+      return undefined
     }
-    if (journal.id !== entry.name)
-      throw new ApplicationTransactionError(
-        'recovery',
-        'Transaction journal ID mismatch',
-      )
-    assertJournalIdentity(journal, callbacks.appId, outputDirectory)
-    if (journal.phase === 'staging') continue
-    try {
-      // Once commit was ready, recovery always rolls forward deterministically.
-      await rollForward(transactionRoot, journalPath, journal, callbacks)
-    } catch (error) {
-      if (error instanceof ApplicationTransactionError) throw error
-      throw classify(
-        error,
-        'recovery',
-        `Could not recover transaction ${entry.name}`,
-      )
-    }
+    throw error
   }
 }
 
@@ -107,25 +114,27 @@ export async function getResumableApplicationTransaction(
   expectedAppId: number,
 ): Promise<ResumableApplicationTransaction | null> {
   const root = join(outputDirectory, CONFIG_DIRECTORY, 'transactions')
-  let entries
-  try {
-    entries = await readdir(root, { withFileTypes: true })
-  } catch (error) {
-    if (filesystemErrorCode(error) === 'ENOENT') return null
-    throw error
-  }
-  entries = entries.filter((entry) => entry.isDirectory())
-  if (entries.length === 0) return null
-  if (entries.length > 1)
-    throw new ApplicationTransactionError(
-      'recovery',
-      'Application has ambiguous pending transaction state',
-    )
-  const journal = await readJournal(
-    join(root, entries[0]!.name, 'journal.json'),
-  )
+  const entry = transactionDirectory(await readDirectoryIfExists(root))
+  if (!entry) return null
+  const journal = await readJournal(join(root, entry.name, 'journal.json'))
   assertJournalIdentity(journal, expectedAppId, outputDirectory)
   if (journal.phase !== 'staging') return null
+  const progress = reconstructProgress(journal)
+  return {
+    appId: journal.appId,
+    kind: journal.kind,
+    installPath: journal.installPath,
+    desiredDepotIds: journal.desired.map(({ depotId }) => depotId),
+    desired: journal.desired,
+    paused: journal.paused,
+    installedBytesCompleted: progress.completed.toString(),
+    installedBytesTotal: journal.logicalInstalledTotal,
+    reusedLocalBytes: progress.reused.toString(),
+    networkBytes: progress.network.toString(),
+  }
+}
+
+function reconstructProgress(journal: TransactionJournal) {
   let completed = BigInt(journal.retainedBytes)
   let reused = BigInt(journal.retainedBytes)
   let network = 0n
@@ -139,18 +148,7 @@ export async function getResumableApplicationTransaction(
   }
   for (const record of Object.values(journal.completedChunks))
     network += BigInt(record.networkBytes)
-  return {
-    appId: journal.appId,
-    kind: journal.kind,
-    installPath: journal.installPath,
-    desiredDepotIds: journal.desired.map(({ depotId }) => depotId),
-    desired: journal.desired,
-    paused: journal.paused,
-    installedBytesCompleted: completed.toString(),
-    installedBytesTotal: journal.logicalInstalledTotal,
-    reusedLocalBytes: reused.toString(),
-    networkBytes: network.toString(),
-  }
+  return { completed, reused, network }
 }
 
 export async function hasCommitReadyApplicationTransaction(
@@ -278,13 +276,8 @@ async function discardPrecommitApplicationTransactionUnlocked(
   outputDirectory: string,
 ): Promise<void> {
   const root = join(outputDirectory, CONFIG_DIRECTORY, 'transactions')
-  let entries
-  try {
-    entries = await readdir(root, { withFileTypes: true })
-  } catch (error) {
-    if (filesystemErrorCode(error) === 'ENOENT') return
-    throw error
-  }
+  const entries = await readDirectoryIfExists(root)
+  if (!entries) return
   for (const entry of entries) {
     if (!entry.isDirectory()) continue
     const transactionRoot = join(root, entry.name)
@@ -296,6 +289,29 @@ async function discardPrecommitApplicationTransactionUnlocked(
       )
     await rm(transactionRoot, { recursive: true, force: true })
   }
+}
+
+async function readDirectoryIfExists(
+  root: string,
+): Promise<Dirent[] | undefined> {
+  try {
+    return await readdir(root, { withFileTypes: true })
+  } catch (error) {
+    if (filesystemErrorCode(error) === 'ENOENT') return undefined
+    throw error
+  }
+}
+
+function transactionDirectory(
+  entries: Dirent[] | undefined,
+): Dirent | undefined {
+  const directories = entries?.filter((entry) => entry.isDirectory())
+  if (directories && directories.length > 1)
+    throw new ApplicationTransactionError(
+      'recovery',
+      'Application has ambiguous pending transaction state',
+    )
+  return directories?.[0]
 }
 
 async function withOutputLock<T>(

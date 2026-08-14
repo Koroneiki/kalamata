@@ -154,6 +154,15 @@ export function changedProjectionFiles(
 }
 
 export function sumUniqueCompressedChunks(entries: ProjectionEntry[]): bigint {
+  const chunks = uniqueCompressedChunkSizes(entries)
+  let total = 0n
+  for (const size of chunks.values()) total += BigInt(size)
+  return total
+}
+
+export function uniqueCompressedChunkSizes(
+  entries: ProjectionEntry[],
+): Map<string, number> {
   const chunks = new Map<string, number>()
   for (const { file } of entries)
     for (const chunk of file.chunks) {
@@ -161,9 +170,7 @@ export function sumUniqueCompressedChunks(entries: ProjectionEntry[]): bigint {
       // Equivalent chunks can advertise different compressed transfer sizes.
       chunks.set(key, Math.max(chunks.get(key) ?? 0, chunk.cb_compressed))
     }
-  let total = 0n
-  for (const size of chunks.values()) total += BigInt(size)
-  return total
+  return chunks
 }
 
 export function isDirectory(file: ManifestFile): boolean {

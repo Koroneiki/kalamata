@@ -37,32 +37,13 @@ export function parseDepotKeysLua(
 }
 
 function stripComment(line: string): string {
-  let quote = ''
-  let escaped = false
-  for (let index = 0; index < line.length - 1; index += 1) {
-    const character = line[index]
-    if (escaped) {
-      escaped = false
-      continue
-    }
-    if (quote && character === '\\') {
-      escaped = true
-      continue
-    }
-    if (character === '"' || character === "'") {
-      quote = quote === character ? '' : quote || character
-      continue
-    }
-    if (!quote && character === '-' && line[index + 1] === '-') {
+  for (const index of unquotedCharacterIndexes(line))
+    if (line[index] === '-' && line[index + 1] === '-')
       return line.slice(0, index)
-    }
-  }
   return line
 }
 
-function splitArguments(contents: string): string[] {
-  const args: string[] = []
-  let start = 0
+function* unquotedCharacterIndexes(contents: string): Generator<number> {
   let quote = ''
   let escaped = false
   for (let index = 0; index < contents.length; index += 1) {
@@ -79,11 +60,18 @@ function splitArguments(contents: string): string[] {
       quote = quote === character ? '' : quote || character
       continue
     }
-    if (!quote && character === ',') {
+    if (!quote) yield index
+  }
+}
+
+function splitArguments(contents: string): string[] {
+  const args: string[] = []
+  let start = 0
+  for (const index of unquotedCharacterIndexes(contents))
+    if (contents[index] === ',') {
       args.push(contents.slice(start, index).trim())
       start = index + 1
     }
-  }
   args.push(contents.slice(start).trim())
   return args
 }
