@@ -94,6 +94,15 @@ jobs:
           bun test --path-ignore-patterns="**/decompress-pool.test.ts"
           bun test ./test/decompress-pool.test.ts
 
+      - name: Work around Electrobun Windows icon resolution
+        if: matrix.platform == 'windows-x64'
+        shell: pwsh
+        run: |
+          # Electrobun 1.18.1 resolves rcedit from the CLI's build-machine path.
+          $target = 'D:\a\electrobun\electrobun\package\node_modules\rcedit'
+          New-Item -ItemType Directory -Force (Split-Path $target) | Out-Null
+          Copy-Item -Recurse -Force node_modules/rcedit $target
+
       - name: Build release
         run: bun run build
 
