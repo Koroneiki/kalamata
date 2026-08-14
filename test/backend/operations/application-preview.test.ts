@@ -183,6 +183,44 @@ test('includes directory paths in added and removed counts', () => {
   expect(preview.fileCounts).toEqual({ added: 2, removed: 2, changed: 0 })
 })
 
+test('counts file and directory replacements as removal and addition', () => {
+  const installed = depot(1, 'old', { fileToDirectory: 'old' })
+  const desired = depot(1, 'new', { directoryToFile: 'new' })
+  installed.manifest.files.push({
+    filename: 'directoryToFile',
+    size: '0',
+    flags: DIRECTORY,
+    sha_content: '',
+    chunks: [],
+  })
+  desired.manifest.files.push({
+    filename: 'fileToDirectory',
+    size: '0',
+    flags: DIRECTORY,
+    sha_content: '',
+    chunks: [],
+  })
+
+  const preview = compareApplicationManifests(100, [installed], [desired])
+
+  expect(preview.fileCounts).toEqual({ added: 2, removed: 2, changed: 0 })
+})
+
+test('reports files shadowed by a winning ancestor file', () => {
+  const preview = compareApplicationManifests(
+    100,
+    [],
+    [
+      depot(1, 'first', { 'parent/child': 'first' }),
+      depot(2, 'second', { parent: 'second' }),
+    ],
+  )
+
+  expect(preview.overlaps).toEqual([
+    { depotId: 1, overriddenByDepotIds: [2], complete: true },
+  ])
+})
+
 test('subtracts reusable installed chunks from the download estimate', async () => {
   directory = await mkdtemp(join(tmpdir(), 'application-preview-'))
   await writeFile(join(directory, 'old.bin'), 'shared')

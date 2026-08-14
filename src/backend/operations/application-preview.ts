@@ -6,7 +6,10 @@ import {
   sumProjectionFiles,
   sumUniqueCompressedChunks,
 } from '../depot/install/transaction/projection.ts'
-import type { InstalledApplicationDepot } from '../depot/install/transaction/types.ts'
+import type {
+  InstalledApplicationDepot,
+  ProjectionEntry,
+} from '../depot/install/transaction/types.ts'
 import { manifestPathKey } from '../depot/manifests/manifest-utils.ts'
 import { projectionEntryNeedsStaging } from '../depot/install/transaction/local-state.ts'
 import { estimateDownloadPayload } from '../depot/install/transaction/staging.ts'
@@ -49,6 +52,89 @@ export async function previewApplicationOperation(
       await estimateDownloadPayload(source, changedFiles, outputDirectory)
     ).toString(),
   }
+}
+
+type Projection = Map<string, ProjectionEntry>
+
+function projectedFileChange(
+  previous: ProjectionEntry | undefined,
+  current: ProjectionEntry,
+): 'added' | 'changed' | undefined {
+  if (!previous || isDirectory(previous.file) !== isDirectory(current.file))
+    return 'added'
+  if (isDirectory(current.file)) return undefined
+  return previous.file.sha_content.toLowerCase() !==
+    current.file.sha_content.toLowerCase() ||
+    previous.file.size !== current.file.size ||
+    previous.file.flags !== current.file.flags
+    ? 'changed'
+    : undefined
+}
+
+function projectionFileCounts(
+  source: Projection,
+  target: Projection,
+): ApplicationOperationPreview['fileCounts'] {
+  const counts = { added: 0, removed: 0, changed: 0 }
+  for (const [key, current] of target) {
+    const change = projectedFileChange(source.get(key), current)
+    if (change) counts[change] += 1
+  }
+  for (const [key, { file }] of source) {
+    const current = target.get(key)
+    if (!current || isDirectory(current.file) !== isDirectory(file))
+      counts.removed += 1
+  }
+  return counts
+}
+
+function projectionWinner(
+  target: Projection,
+  key: string,
+): ProjectionEntry | undefined {
+  let candidate = key
+  while (candidate) {
+    const winner = target.get(candidate)
+    if (winner) return winner
+    const separator = candidate.lastIndexOf('/')
+    if (separator === -1) return undefined
+    candidate = candidate.slice(0, separator)
+  }
+  return undefined
+}
+
+function overridingDepotIds(
+  depot: InstalledApplicationDepot,
+  target: Projection,
+): number[] {
+  const depotIds = new Set<number>()
+  for (const file of depot.manifest.files) {
+    if (isDirectory(file)) continue
+    const winner = projectionWinner(target, manifestPathKey(file.filename))
+    if (winner && winner.depot.depotId !== depot.depotId)
+      depotIds.add(winner.depot.depotId)
+  }
+  return [...depotIds]
+}
+
+function applicationOverlaps(
+  desired: InstalledApplicationDepot[],
+  target: Projection,
+): ApplicationOperationPreview['overlaps'] {
+  const projectedDepotIds = new Set(
+    [...target.values()].map(({ depot }) => depot.depotId),
+  )
+  const overlaps: ApplicationOperationPreview['overlaps'] = []
+  for (const depot of desired) {
+    const overriddenByDepotIds = overridingDepotIds(depot, target)
+    if (overriddenByDepotIds.length)
+      overlaps.push({
+        depotId: depot.depotId,
+        overriddenByDepotIds,
+        complete: !projectedDepotIds.has(depot.depotId),
+      })
+  }
+  return overlaps
 }
 
 export function compareApplicationManifests(
@@ -100,53 +186,9 @@ export function compareApplicationManifests(
   const source = buildProjection(installed, appId)
   const target = buildProjection(desired, appId)
   const changedFiles = changedProjectionFiles(source, target)
-  const fileCounts = { added: 0, removed: 0, changed: 0 }
-  for (const [key, { file }] of target) {
-    const previous = source.get(key)?.file
-    if (!previous || isDirectory(previous) !== isDirectory(file))
-      fileCounts.added += 1
-    else if (
-      !isDirectory(file) &&
-      (previous.sha_content.toLowerCase() !== file.sha_content.toLowerCase() ||
-        previous.size !== file.size ||
-        previous.flags !== file.flags)
-    )
-      fileCounts.changed += 1
-  }
-  for (const [key, { file }] of source)
-    if (
-      !target.has(key) ||
-      isDirectory(target.get(key)!.file) !== isDirectory(file)
-    )
-      fileCounts.removed += 1
+  const fileCounts = projectionFileCounts(source, target)
   // A depot is fully overridden only when it owns no final file or directory.
-  const projectedDepotIds = new Set(
-    [...target.values()].map(({ depot }) => depot.depotId),
-  )
-  const overlaps = desired.flatMap((depot) => {
-    const files = depot.manifest.files.filter((file) => !isDirectory(file))
-    const overriddenByDepotIds = new Set<number>()
-    for (const file of files) {
-      const key = manifestPathKey(file.filename)
-      let winner = target.get(key)
-      let separator = key.lastIndexOf('/')
-      while (!winner && separator !== -1) {
-        winner = target.get(key.slice(0, separator))
-        separator = key.lastIndexOf('/', separator - 1)
-      }
-      if (winner && winner.depot.depotId !== depot.depotId)
-        overriddenByDepotIds.add(winner.depot.depotId)
-    }
-    return overriddenByDepotIds.size
-      ? [
-          {
-            depotId: depot.depotId,
-            overriddenByDepotIds: [...overriddenByDepotIds],
-            complete: !projectedDepotIds.has(depot.depotId),
-          },
-        ]
-      : []
-  })
+  const overlaps = applicationOverlaps(desired, target)
   const counts = { install: 0, remove: 0, update: 0 }
   for (const depot of depots) counts[depot.action] += 1
 

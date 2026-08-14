@@ -7,8 +7,27 @@ import type { ProductInfoResult } from '../steam/types.ts'
 import type { KalamataDatabase } from '../../db/database.ts'
 import { validateManagedManifest } from '../../db/manifest-files.ts'
 import { depotKeyFromHex } from '../../db/validation.ts'
-import type { OperationKind } from '../../types/rpc.ts'
-import type { DepotManifestTarget } from '../../types/rpc.ts'
+import type { DepotManifestTarget, OperationKind } from '../../types/rpc.ts'
+
+type InstalledDepotRow = ReturnType<KalamataDatabase['getInstalls']>[number]
+type PublicDepot = ReturnType<typeof extractPublicDepots>[number]
+type DepotMetadata = Map<number, PublicDepot>
+type DepotResources = Map<
+  string,
+  Promise<Omit<ApplicationDepotInput, 'ownerAppId' | 'pinned'>>
+>
+
+interface DesiredDepotContext {
+  request: ApplicationPlanRequest
+  installedRows: InstalledDepotRow[]
+  metadata: DepotMetadata
+  requested: Set<number>
+  manifestTargets: Map<number, DepotManifestTarget>
+  pureRemoval: boolean
+  signal: AbortSignal
+  database: KalamataDatabase
+  resources: DepotResources
+}
 
 export interface ApplicationPlanRequest {
   kind: OperationKind
@@ -38,54 +57,24 @@ export async function planApplication(
   onDesiredDepotIds: (depotIds: number[]) => void,
 ): Promise<ApplicationPlan> {
   const installedRows = database.getInstalls(request.appId)
-  // Desired selection drives reconciliation; legacy starts are additive.
-  const desiredIds =
-    request.kind === 'download'
-      ? new Set([
-          ...installedRows.map(({ depotId }) => depotId),
-          ...(request.requestedDepotIds ?? []),
-        ])
-      : new Set(request.desiredDepotIds ?? [])
-  if (request.fixedDesired)
-    for (const { depotId } of request.fixedDesired) desiredIds.add(depotId)
-  const pureRemoval =
-    request.kind === 'reconcile' &&
-    desiredIds.size < installedRows.length &&
-    [...desiredIds].every((depotId) =>
-      installedRows.some((row) => row.depotId === depotId),
-    )
-  const needsOwnershipMetadata = installedRows.some(
-    (row) => desiredIds.has(row.depotId) && row.ownerAppId === null,
+  const desiredIds = getDesiredDepotIds(request, installedRows)
+  const pureRemoval = isPureRemoval(request, installedRows, desiredIds)
+  const needsOwnershipMetadata = requiresOwnershipMetadata(
+    installedRows,
+    desiredIds,
   )
-  const canPlanLocally =
-    request.fixedDesired !== undefined ||
-    ((request.kind === 'repair' || pureRemoval) && !needsOwnershipMetadata)
-  const publicDepots = canPlanLocally
-    ? []
-    : extractPublicDepots(
-        await abortable(
-          steam.getProductInfoWithDlc(request.appId).catch((error) => {
-            throw new ApplicationTransactionError(
-              'steam',
-              'Steam product metadata is unavailable',
-              { cause: error },
-            )
-          }),
-          signal,
-        ),
-      )
+  const publicDepots = await getPublicDepots(
+    request,
+    steam,
+    signal,
+    pureRemoval,
+    needsOwnershipMetadata,
+  )
   signal.throwIfAborted()
   const metadata = new Map(publicDepots.map((depot) => [depot.depotId, depot]))
   const metadataOrder = publicDepots.map(({ depotId }) => depotId)
-  const requested = new Set(request.requestedDepotIds ?? [])
-  const manifestTargets = new Map(
-    request.manifestTargets?.map((target) => [target.depotId, target]),
-  )
   // Physical resources are shared; ownership remains specific to each occurrence.
-  const resources = new Map<
-    string,
-    Promise<Omit<ApplicationDepotInput, 'ownerAppId' | 'pinned'>>
-  >()
+  const resources: DepotResources = new Map()
   const installedDepots = await Promise.all(
     installedRows.map((row) =>
       planDepot(
@@ -102,6 +91,113 @@ export async function planApplication(
       ),
     ),
   )
+  validateDesiredAvailability(request, installedRows, desiredIds, metadata)
+  validateOwnershipMetadata(
+    installedRows,
+    desiredIds,
+    metadata,
+    needsOwnershipMetadata,
+  )
+  const desiredOrder = getDesiredDepotOrder(
+    request,
+    installedRows,
+    desiredIds,
+    metadata,
+    metadataOrder,
+    pureRemoval,
+  )
+  onDesiredDepotIds(desiredOrder)
+  const context: DesiredDepotContext = {
+    request,
+    installedRows,
+    metadata,
+    requested: new Set(request.requestedDepotIds ?? []),
+    manifestTargets: new Map(
+      request.manifestTargets?.map((target) => [target.depotId, target]),
+    ),
+    pureRemoval,
+    signal,
+    database,
+    resources,
+  }
+  const desiredDepots = await Promise.all(
+    desiredOrder.map((depotId) => planDesiredDepot(depotId, context)),
+  )
+  signal.throwIfAborted()
+  return { installedDepots, desiredDepots, desiredDepotIds: desiredOrder }
+}
+
+function getDesiredDepotIds(
+  request: ApplicationPlanRequest,
+  installedRows: InstalledDepotRow[],
+): Set<number> {
+  // Desired selection drives reconciliation; legacy starts are additive.
+  const desiredIds =
+    request.kind === 'download'
+      ? new Set([
+          ...installedRows.map(({ depotId }) => depotId),
+          ...(request.requestedDepotIds ?? []),
+        ])
+      : new Set(request.desiredDepotIds ?? [])
+  if (request.fixedDesired)
+    for (const { depotId } of request.fixedDesired) desiredIds.add(depotId)
+  return desiredIds
+}
+
+function isPureRemoval(
+  request: ApplicationPlanRequest,
+  installedRows: InstalledDepotRow[],
+  desiredIds: Set<number>,
+): boolean {
+  return (
+    request.kind === 'reconcile' &&
+    desiredIds.size < installedRows.length &&
+    [...desiredIds].every((depotId) =>
+      installedRows.some((row) => row.depotId === depotId),
+    )
+  )
+}
+
+function requiresOwnershipMetadata(
+  installedRows: InstalledDepotRow[],
+  desiredIds: Set<number>,
+): boolean {
+  return installedRows.some(
+    (row) => desiredIds.has(row.depotId) && row.ownerAppId === null,
+  )
+}
+
+async function getPublicDepots(
+  request: ApplicationPlanRequest,
+  steam: ApplicationMetadataService,
+  signal: AbortSignal,
+  pureRemoval: boolean,
+  needsOwnershipMetadata: boolean,
+): Promise<PublicDepot[]> {
+  const canPlanLocally =
+    request.fixedDesired !== undefined ||
+    ((request.kind === 'repair' || pureRemoval) && !needsOwnershipMetadata)
+  if (canPlanLocally) return []
+
+  const product = await abortable(
+    steam.getProductInfoWithDlc(request.appId).catch((error) => {
+      throw new ApplicationTransactionError(
+        'steam',
+        'Steam product metadata is unavailable',
+        { cause: error },
+      )
+    }),
+    signal,
+  )
+  return extractPublicDepots(product)
+}
+
+function validateDesiredAvailability(
+  request: ApplicationPlanRequest,
+  installedRows: InstalledDepotRow[],
+  desiredIds: Set<number>,
+  metadata: DepotMetadata,
+): void {
   const unavailableDesired = [...desiredIds].filter(
     (depotId) =>
       !installedRows.some((row) => row.depotId === depotId) &&
@@ -114,6 +210,14 @@ export async function planApplication(
       'unavailable-resource',
       `Depots are unavailable for this application: ${unavailableDesired.join(', ')}`,
     )
+}
+
+function validateOwnershipMetadata(
+  installedRows: InstalledDepotRow[],
+  desiredIds: Set<number>,
+  metadata: DepotMetadata,
+  needsOwnershipMetadata: boolean,
+): void {
   if (
     needsOwnershipMetadata &&
     installedRows.some(
@@ -124,82 +228,143 @@ export async function planApplication(
       'unavailable-resource',
       'Legacy depot ownership could not be resolved from Steam metadata',
     )
-  const desiredOrder = request.fixedDesired
-    ? request.fixedDesired.map(({ depotId }) => depotId)
-    : request.kind === 'repair' || pureRemoval
-      ? installedRows
-          .map(({ depotId }) => depotId)
-          .filter((depotId) => desiredIds.has(depotId))
-      : [
-          ...metadataOrder.filter((depotId) => desiredIds.has(depotId)),
-          // Keep unavailable installed depots after published depots without
-          // disturbing their persisted relative mount order.
-          ...installedRows
-            .map(({ depotId }) => depotId)
-            .filter(
-              (depotId) => desiredIds.has(depotId) && !metadata.has(depotId),
-            ),
-        ]
-  onDesiredDepotIds(desiredOrder)
-  const desiredDepots = await Promise.all(
-    desiredOrder.map((depotId) => {
-      const installed = installedRows.find((row) => row.depotId === depotId)
-      const publicManifestId = metadata.get(depotId)?.manifestId
-      const fixed = request.fixedDesired?.find(
-        (record) => record.depotId === depotId,
-      )
-      const customTarget = manifestTargets.get(depotId)
-      const customManifestId = customTarget?.manifestId
-      const useInstalled =
-        pureRemoval ||
-        request.kind === 'repair' ||
-        (request.kind === 'download' &&
-          installed !== undefined &&
-          !requested.has(depotId))
-      const manifestId =
-        fixed?.manifestId ??
-        customManifestId ??
-        (installed?.pinned || useInstalled
-          ? installed?.installedManifestId
-          : publicManifestId)
-      if (!manifestId)
-        throw new ApplicationTransactionError(
-          'unavailable-resource',
-          `Depot ${depotId} has no available target manifest`,
-        )
-      return planDepot(
-        depotId,
-        manifestId,
-        metadata,
-        signal,
-        fixed?.ownerAppId ??
-          installed?.ownerAppId ??
-          metadata.get(depotId)?.ownerAppId ??
-          request.appId,
-        database,
-        resources,
-        fixed?.pinned ??
-          (customManifestId !== undefined
-            ? true
-            : (installed?.pinned ?? false)),
-      )
-    }),
+}
+
+function getDesiredDepotOrder(
+  request: ApplicationPlanRequest,
+  installedRows: InstalledDepotRow[],
+  desiredIds: Set<number>,
+  metadata: DepotMetadata,
+  metadataOrder: number[],
+  pureRemoval: boolean,
+): number[] {
+  if (request.fixedDesired)
+    return request.fixedDesired.map(({ depotId }) => depotId)
+  if (request.kind === 'repair' || pureRemoval)
+    return installedRows
+      .map(({ depotId }) => depotId)
+      .filter((depotId) => desiredIds.has(depotId))
+
+  return [
+    ...metadataOrder.filter((depotId) => desiredIds.has(depotId)),
+    // Keep unavailable installed depots after published depots without
+    // disturbing their persisted relative mount order.
+    ...installedRows
+      .map(({ depotId }) => depotId)
+      .filter((depotId) => desiredIds.has(depotId) && !metadata.has(depotId)),
+  ]
+}
+
+async function planDesiredDepot(
+  depotId: number,
+  context: DesiredDepotContext,
+): Promise<ApplicationDepotInput> {
+  const installed = context.installedRows.find((row) => row.depotId === depotId)
+  const fixed = getFixedDesired(context.request, depotId)
+  const customManifestId = getCustomManifestId(context.manifestTargets, depotId)
+  const manifestId = resolveManifestId(
+    depotId,
+    installed,
+    fixed,
+    customManifestId,
+    context,
   )
-  signal.throwIfAborted()
-  return { installedDepots, desiredDepots, desiredDepotIds: desiredOrder }
+  if (!manifestId)
+    throw new ApplicationTransactionError(
+      'unavailable-resource',
+      `Depot ${depotId} has no available target manifest`,
+    )
+
+  return planDepot(
+    depotId,
+    manifestId,
+    context.metadata,
+    context.signal,
+    resolveOwnerAppId(depotId, installed, fixed, context),
+    context.database,
+    context.resources,
+    resolvePinned(installed, fixed, customManifestId),
+  )
+}
+
+function getFixedDesired(
+  request: ApplicationPlanRequest,
+  depotId: number,
+): ApplicationDepotRecord | undefined {
+  return request.fixedDesired?.find((record) => record.depotId === depotId)
+}
+
+function getCustomManifestId(
+  manifestTargets: Map<number, DepotManifestTarget>,
+  depotId: number,
+): string | undefined {
+  return manifestTargets.get(depotId)?.manifestId
+}
+
+function resolveManifestId(
+  depotId: number,
+  installed: InstalledDepotRow | undefined,
+  fixed: ApplicationDepotRecord | undefined,
+  customManifestId: string | undefined,
+  context: DesiredDepotContext,
+): string | null | undefined {
+  const selectedManifestId = fixed?.manifestId ?? customManifestId
+  if (selectedManifestId != null) return selectedManifestId
+  if (
+    installed?.pinned ||
+    shouldUseInstalledManifest(depotId, installed, context)
+  )
+    return installed?.installedManifestId
+  return context.metadata.get(depotId)?.manifestId
+}
+
+function resolveOwnerAppId(
+  depotId: number,
+  installed: InstalledDepotRow | undefined,
+  fixed: ApplicationDepotRecord | undefined,
+  context: DesiredDepotContext,
+): number {
+  return (
+    fixed?.ownerAppId ??
+    installed?.ownerAppId ??
+    context.metadata.get(depotId)?.ownerAppId ??
+    context.request.appId
+  )
+}
+
+function resolvePinned(
+  installed: InstalledDepotRow | undefined,
+  fixed: ApplicationDepotRecord | undefined,
+  customManifestId: string | undefined,
+): boolean {
+  const fixedPinned = fixed?.pinned
+  if (fixedPinned != null) return fixedPinned
+  if (customManifestId !== undefined) return true
+  return installed?.pinned ?? false
+}
+
+function shouldUseInstalledManifest(
+  depotId: number,
+  installed: InstalledDepotRow | undefined,
+  context: DesiredDepotContext,
+): boolean {
+  return (
+    context.pureRemoval ||
+    context.request.kind === 'repair' ||
+    (context.request.kind === 'download' &&
+      installed !== undefined &&
+      !context.requested.has(depotId))
+  )
 }
 
 async function planDepot(
   depotId: number,
   manifestId: string,
-  metadata: Map<number, ReturnType<typeof extractPublicDepots>[number]>,
+  metadata: DepotMetadata,
   signal: AbortSignal,
   fallbackOwnerAppId: number,
   database: KalamataDatabase,
-  resources: Map<
-    string,
-    Promise<Omit<ApplicationDepotInput, 'ownerAppId' | 'pinned'>>
-  >,
+  resources: DepotResources,
   pinned = false,
 ): Promise<ApplicationDepotInput> {
   signal.throwIfAborted()
