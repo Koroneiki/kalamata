@@ -13,6 +13,7 @@ import { computed, ref, watch } from 'vue'
 import { selectInstallDirectory } from '@/api/install-directory'
 import { previewApplicationOperation } from '@/api/operations'
 import DepotBadges from '@/components/shared/DepotBadges.vue'
+import DepotGroupHeading from '@/components/shared/DepotGroupHeading.vue'
 import { useOperationStore } from '@/stores/operation'
 import type {
   AppDetails,
@@ -513,16 +514,10 @@ async function submit() {
               <AccordionTrigger
                 class="hover:bg-accent/50 rounded-none px-3 py-2.5 hover:no-underline"
               >
-                <span
-                  class="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-3 pr-2"
-                >
-                  <span class="flex items-center gap-2">
-                    <span>{{ group.name }}</span>
-                    <Badge variant="outline" class="tabular-nums">
-                      {{ group.depots.length }}
-                    </Badge>
-                  </span>
-                </span>
+                <DepotGroupHeading
+                  :name="group.name"
+                  :count="group.depots.length"
+                />
               </AccordionTrigger>
               <AccordionContent class="pb-0">
                 <ul :aria-label="`${group.name} depot changes`">

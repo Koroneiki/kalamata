@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ImageOff } from '@lucide/vue'
-import { computed, ref, watch } from 'vue'
+import { computed } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
 import { useAppSummaryQuery } from '@/composables/queries'
+import { useFallbackImage } from '@/composables/use-fallback-image'
 import type { LibraryEntry } from '@/types/rpc'
 
 import {
@@ -20,26 +21,14 @@ const { setOpenMobile } = useSidebar()
 const { data, error, isPending } = useAppSummaryQuery(
   computed(() => props.entry.appId),
 )
-const iconIndex = ref(0)
-
-watch(
-  () => data.value?.iconUrls,
-  () => {
-    iconIndex.value = 0
-  },
-)
-
-const iconUrl = computed(() => data.value?.iconUrls?.[iconIndex.value] ?? null)
+const { imageUrl: iconUrl, handleImageError: handleIconError } =
+  useFallbackImage(() => data.value?.iconUrls)
 const name = computed(() => data.value?.name ?? `App ${props.entry.appId}`)
 const isActive = computed(
   () =>
     route.name === 'app-details' &&
     Number(route.params.appId) === props.entry.appId,
 )
-
-function handleIconError() {
-  iconIndex.value += 1
-}
 </script>
 
 <template>

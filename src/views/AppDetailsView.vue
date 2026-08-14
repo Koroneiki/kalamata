@@ -22,6 +22,7 @@ import {
   libraryQueryKey,
   useSettingsQuery,
 } from '@/composables/queries'
+import { useFallbackImage } from '@/composables/use-fallback-image'
 import {
   acquireDepotKeys,
   acquireManifest,
@@ -71,7 +72,6 @@ const { data, error, isPending, refetch } = useQuery(() => ({
 
 const selectedPath = ref('')
 const artworkFailed = ref(false)
-const iconIndex = ref(0)
 const dialogOpen = ref(false)
 const gameSettingsOpen = ref(false)
 const removeDialogOpen = ref(false)
@@ -166,14 +166,8 @@ watch(
   },
 )
 
-watch(
-  () => data.value?.iconUrls,
-  () => {
-    iconIndex.value = 0
-  },
-)
-
-const iconUrl = computed(() => data.value?.iconUrls?.[iconIndex.value] ?? null)
+const { imageUrl: iconUrl, handleImageError: handleIconError } =
+  useFallbackImage(() => data.value?.iconUrls)
 const selectedIdSet = computed(() => new Set(selectedDepotIds.value))
 const visibleDepots = computed(() => {
   const depots = data.value?.depots ?? []
@@ -662,27 +656,16 @@ watch(
         matchesDepotPlatform(depot, platforms) &&
         !attemptedManifests.has(manifestKey(app.appId, depot)),
     )
-    if (pending.length === 0) return
-
-    const queueId = manifestQueue.begin(pending.length)
-    for (const depot of pending) {
-      const key = manifestKey(app.appId, depot)
-      // Attempt each manifest version once per app view to avoid reactive refetch loops.
-      attemptedManifests.add(key)
-      void getManifest(depot, queueId, '', app.appId)
+    if (pending.length > 0) {
+      const queueId = manifestQueue.begin(pending.length)
+      for (const depot of pending) {
+        const key = manifestKey(app.appId, depot)
+        // Attempt each manifest version once per app view to avoid reactive refetch loops.
+        attemptedManifests.add(key)
+        void getManifest(depot, queueId, '', app.appId)
+      }
     }
-  },
-  { immediate: true },
-)
 
-watch(
-  [
-    () => data.value,
-    () => settings.value?.automaticManifestAcquisition,
-    () => settings.value?.platforms,
-  ],
-  ([app, automatic, platforms]) => {
-    if (!app?.inLibrary || !automatic || !platforms) return
     const depotIds = app.depots
       .filter(
         (depot) =>
@@ -712,10 +695,6 @@ watch(
   },
   { immediate: true },
 )
-
-function handleIconError() {
-  iconIndex.value += 1
-}
 
 async function focusDownloadQueue() {
   draftDirty.value = false
