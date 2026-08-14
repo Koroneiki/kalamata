@@ -38,7 +38,7 @@ jobs:
           package_version="$(bun -p "require('./package.json').version")"
           tag_version="${GITHUB_REF_NAME#v}"
 
-          if [[ "$GITHUB_REF_NAME" != v* || "$tag_version" != "$package_version" ]]; then
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ || "$tag_version" != "$package_version" ]]; then
             echo "Tag $GITHUB_REF_NAME must match package version v$package_version" >&2
             exit 1
           fi
@@ -66,8 +66,15 @@ jobs:
         include:
           - platform: macos-arm64
             runner: macos-15
+            target: macos-arm64
+            installer: stable-macos-arm64-Kalamata.dmg
           - platform: windows-x64
             runner: windows-2025
+            target: win-x64
+            installer: stable-win-x64-Kalamata-Setup.zip
+
+    env:
+      KALAMATA_BUILD_TARGET: ${{ matrix.target }}
 
     steps:
       - name: Check out repository
@@ -94,7 +101,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: release-${{ matrix.platform }}
-          path: artifacts/*
+          path: artifacts/${{ matrix.installer }}
           if-no-files-found: error
           retention-days: 7
 
@@ -116,14 +123,21 @@ jobs:
           path: artifacts
           merge-multiple: true
 
+      - name: Prepare public release assets
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          mv artifacts/stable-macos-arm64-Kalamata.dmg "artifacts/Kalamata-v${version}-macos-arm64.dmg"
+          mv artifacts/stable-win-x64-Kalamata-Setup.zip "artifacts/Kalamata-v${version}-windows-x64.zip"
+
       - name: Create GitHub release
         env:
           GH_REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
         run: >-
           gh release create "$GITHUB_REF_NAME"
-          artifacts/*.dmg
-          artifacts/*.zip
+          artifacts/Kalamata-*.dmg
+          artifacts/Kalamata-*.zip
           --verify-tag
           --generate-notes
           --title "Kalamata $GITHUB_REF_NAME"

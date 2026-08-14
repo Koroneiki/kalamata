@@ -4,7 +4,7 @@
 
 ## Platform
 
-web
+desktop (macOS and Windows)
 
 ## Product Purpose
 

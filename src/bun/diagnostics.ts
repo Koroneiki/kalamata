@@ -1,9 +1,4 @@
-import {
-  appendFileSync,
-  mkdirSync,
-  renameSync,
-  statSync,
-} from 'node:fs'
+import { appendFileSync, mkdirSync, renameSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
 const MAX_LOG_SIZE_BYTES = 1024 * 1024

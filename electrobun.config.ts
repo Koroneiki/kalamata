@@ -4,10 +4,13 @@ import packageJson from './package.json' with { type: 'json' }
 export default {
   app: {
     name: 'Kalamata',
-    identifier: 'dev.kalamata.app',
+    identifier: 'com.koroneiki.kalamata',
     version: packageJson.version,
+    description:
+      'Install public Steam depot content from locally managed resources.',
   },
   build: {
+    targets: process.env.KALAMATA_BUILD_TARGET ?? 'current',
     mac: {
       icons: 'assets/icon.iconset',
     },
@@ -33,6 +36,7 @@ export default {
       'dist/assets': 'views/mainview/assets',
       'dist/decompress-worker': 'bun/decompress-worker',
       'src/db/migrations': 'bun/migrations',
+      LICENSE: 'LICENSE',
     },
     watchIgnore: ['dist/**'],
   },
