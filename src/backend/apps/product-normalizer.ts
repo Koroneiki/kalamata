@@ -5,7 +5,7 @@ import type {
   DepotGroup,
   EligibleAppDepot,
 } from '../../types/rpc.ts'
-import type { KalamataDatabase } from '../../db/database.ts'
+import type { InstallRow, KalamataDatabase } from '../../db/database.ts'
 import { z } from 'zod'
 import { validateManagedManifest } from '../../db/manifest-files.ts'
 import { depotKeyFromHex } from '../../db/validation.ts'
@@ -68,54 +68,27 @@ export function extractPublicDepots(
 ): PublicDepot[] {
   const result: PublicDepot[] = []
   const seen = new Set<number>()
+  const allProducts = [products.baseProduct, ...products.dlcProducts]
   const productNames = new Map(
-    [products.baseProduct, ...products.dlcProducts].map((product) => [
+    allProducts.map((product) => [
       product.appId,
       stringValue(asRecord(product.appinfo.common).name),
     ]),
   )
-  for (const product of [products.baseProduct, ...products.dlcProducts]) {
-    const depots = asRecord(asRecord(product.appinfo).depots)
-    const entries = Object.entries(depots)
-      .flatMap(([rawDepotId, rawDepot]) => {
-        const result = steamIdStringSchema.safeParse(rawDepotId)
-        return result.success ? [{ depotId: result.data, rawDepot }] : []
-      })
-      .sort((left, right) => left.depotId - right.depotId)
-    for (const { depotId, rawDepot } of entries) {
+  for (const product of allProducts) {
+    for (const { depotId, rawDepot } of publicDepotEntries(product)) {
       if (seen.has(depotId)) continue
       seen.add(depotId)
-      const depot = asRecord(rawDepot)
-      const config = asRecord(depot.config)
-      const publicManifest = asRecord(asRecord(depot.manifests).public)
-      // Steam can list a DLC depot under the base app. In that case dlcappid is
-      // the authoritative classification and download owner (for example 323320/353590).
-      const dlcAppId = positiveId(depot.dlcappid)
-      const group = classifyDepot(
-        depotId,
-        product.appId === products.baseProduct.appId,
-        dlcAppId !== null,
-        dlcAppId === null || productNames.has(dlcAppId),
-        publicManifest,
+      result.push(
+        normalizePublicDepot(
+          depotId,
+          rawDepot,
+          product.appId,
+          products.baseProduct.appId,
+          productNames,
+          result.length,
+        ),
       )
-      const ownerAppId = dlcAppId ?? product.appId
-      result.push({
-        depotId,
-        ownerAppId,
-        ownerAppName:
-          group === 'Unknown'
-            ? `Unknown App ${ownerAppId}`
-            : group === 'DLC'
-              ? (productNames.get(ownerAppId) ?? null)
-              : null,
-        group,
-        platform: restriction(config.oslist),
-        language: restriction(config.language),
-        manifestId: decimalString(publicManifest.gid),
-        sizeBytes: decimalString(publicManifest.size),
-        downloadBytes: decimalString(publicManifest.download),
-        mountIndex: result.length,
-      })
     }
   }
   return result
@@ -133,133 +106,20 @@ export async function normalizeAppDetails(
   const publicDepots = extractPublicDepots(products)
   const publicDepotIds = new Set(publicDepots.map(({ depotId }) => depotId))
   for (const depot of publicDepots) {
-    const { group, ...depotFields } = depot
-    if (!isEligibleGroup(group)) {
-      depots.push({
-        ...depotFields,
-        installedManifestId: null,
-        pinned: false,
-        group,
-        eligible: false,
-        manifestStatus: null,
-        keyStatus: null,
-        installStatus: null,
-        selectable: false,
-      })
-      continue
-    }
-
-    const keyText = database.getDepotKey(depot.depotId)
-    let key: Buffer | undefined
-    let keyStatus: EligibleAppDepot['keyStatus'] = 'missing'
-    if (keyText !== null) {
-      try {
-        key = depotKeyFromHex(keyText)
-        keyStatus = 'present'
-      } catch {
-        keyStatus = 'invalid'
-      }
-    }
-
-    const rows = database.getManifestRows(depot.depotId)
-    const current = depot.manifestId
-      ? rows.find((row) => row.manifestId === depot.manifestId)
-      : undefined
-    let manifestStatus: EligibleAppDepot['manifestStatus'] = rows.length
-      ? 'outdated'
-      : 'missing'
-    if (current && depot.manifestId) {
-      try {
-        await validateManagedManifest(
-          database.dataRoot,
-          depot.depotId,
-          depot.manifestId,
-          current.relativePath,
-          key,
-        )
-        manifestStatus = 'ready'
-      } catch {
-        manifestStatus = 'invalid'
-      }
-    }
-
-    const installed = installs.get(depot.depotId)
-    const installStatus: EligibleAppDepot['installStatus'] = !installed
-      ? 'not-installed'
-      : installed.pinned || installed.installedManifestId === depot.manifestId
-        ? 'current'
-        : 'outdated'
-    depots.push({
-      ...depotFields,
-      installedManifestId: installed?.installedManifestId ?? null,
-      pinned: installed?.pinned ?? false,
-      group,
-      eligible: true,
-      manifestStatus,
-      keyStatus,
-      installStatus,
-      selectable:
-        manifestStatus === 'ready' &&
-        keyStatus === 'present' &&
-        installStatus !== 'current',
-    })
+    depots.push(
+      await normalizePublicAppDepot(
+        depot,
+        installs.get(depot.depotId),
+        database,
+      ),
+    )
   }
   // Missing Steam metadata must not hide installed depots from removal.
   for (const installed of installedRows) {
     if (publicDepotIds.has(installed.depotId)) continue
-    const keyText = database.getDepotKey(installed.depotId)
-    let key: Buffer | undefined
-    let keyStatus: EligibleAppDepot['keyStatus'] = 'missing'
-    if (keyText !== null) {
-      try {
-        key = depotKeyFromHex(keyText)
-        keyStatus = 'present'
-      } catch {
-        keyStatus = 'invalid'
-      }
-    }
-    const manifest = database
-      .getManifestRows(installed.depotId)
-      .find(({ manifestId }) => manifestId === installed.installedManifestId)
-    let manifestStatus: EligibleAppDepot['manifestStatus'] = manifest
-      ? 'invalid'
-      : 'missing'
-    if (manifest) {
-      try {
-        await validateManagedManifest(
-          database.dataRoot,
-          installed.depotId,
-          installed.installedManifestId,
-          manifest.relativePath,
-          key,
-        )
-        manifestStatus = 'ready'
-      } catch {
-        manifestStatus = 'invalid'
-      }
-    }
-    depots.push({
-      depotId: installed.depotId,
-      mountIndex: installed.mountIndex,
-      ownerAppId: installed.ownerAppId ?? product.appId,
-      ownerAppName: null,
-      group:
-        (installed.ownerAppId ?? product.appId) === product.appId
-          ? 'Base Game'
-          : 'DLC',
-      platform: null,
-      language: null,
-      manifestId: installed.installedManifestId,
-      installedManifestId: installed.installedManifestId,
-      pinned: installed.pinned,
-      sizeBytes: null,
-      downloadBytes: null,
-      eligible: true,
-      manifestStatus,
-      keyStatus,
-      installStatus: 'current',
-      selectable: false,
-    })
+    depots.push(
+      await normalizeHiddenInstall(installed, product.appId, database),
+    )
   }
   const availableSelectionIds = new Set(
     depots.filter((depot) => depot.eligible).map(({ depotId }) => depotId),
@@ -275,6 +135,212 @@ export async function normalizeAppDetails(
       : [],
     depots,
   }
+}
+
+function publicDepotEntries(product: ProductInfo) {
+  const depots = asRecord(asRecord(product.appinfo).depots)
+  return Object.entries(depots)
+    .flatMap(([rawDepotId, rawDepot]) => {
+      const result = steamIdStringSchema.safeParse(rawDepotId)
+      return result.success ? [{ depotId: result.data, rawDepot }] : []
+    })
+    .sort((left, right) => left.depotId - right.depotId)
+}
+
+function normalizePublicDepot(
+  depotId: number,
+  rawDepot: SteamValue,
+  productAppId: number,
+  baseAppId: number,
+  productNames: Map<number, string | null>,
+  mountIndex: number,
+): PublicDepot {
+  const depot = asRecord(rawDepot)
+  const config = asRecord(depot.config)
+  const publicManifest = asRecord(asRecord(depot.manifests).public)
+  // Steam can list a DLC depot under the base app. In that case dlcappid is
+  // the authoritative classification and download owner (for example 323320/353590).
+  const dlcAppId = positiveId(depot.dlcappid)
+  const group = classifyDepot(
+    depotId,
+    productAppId === baseAppId,
+    dlcAppId !== null,
+    dlcAppId === null || productNames.has(dlcAppId),
+    publicManifest,
+  )
+  const ownerAppId = dlcAppId ?? productAppId
+  return {
+    depotId,
+    ownerAppId,
+    ownerAppName: depotOwnerName(group, ownerAppId, productNames),
+    group,
+    platform: restriction(config.oslist),
+    language: restriction(config.language),
+    manifestId: decimalString(publicManifest.gid),
+    sizeBytes: decimalString(publicManifest.size),
+    downloadBytes: decimalString(publicManifest.download),
+    mountIndex,
+  }
+}
+
+function depotOwnerName(
+  group: DepotGroup,
+  ownerAppId: number,
+  productNames: Map<number, string | null>,
+): string | null {
+  if (group === 'Unknown') return `Unknown App ${ownerAppId}`
+  if (group === 'DLC') return productNames.get(ownerAppId) ?? null
+  return null
+}
+
+async function normalizePublicAppDepot(
+  depot: PublicDepot,
+  installed: InstallRow | undefined,
+  database: KalamataDatabase,
+): Promise<AppDepot> {
+  const { group, ...depotFields } = depot
+  if (!isEligibleGroup(group)) {
+    return {
+      ...depotFields,
+      installedManifestId: null,
+      pinned: false,
+      group,
+      eligible: false,
+      manifestStatus: null,
+      keyStatus: null,
+      installStatus: null,
+      selectable: false,
+    }
+  }
+
+  const { key, keyStatus } = readDepotKey(database, depot.depotId)
+  const manifestStatus = await publicManifestStatus(database, depot, key)
+  const installStatus = getInstallStatus(installed, depot.manifestId)
+  return {
+    ...depotFields,
+    installedManifestId: installed?.installedManifestId ?? null,
+    pinned: installed?.pinned ?? false,
+    group,
+    eligible: true,
+    manifestStatus,
+    keyStatus,
+    installStatus,
+    selectable:
+      manifestStatus === 'ready' &&
+      keyStatus === 'present' &&
+      installStatus !== 'current',
+  }
+}
+
+async function normalizeHiddenInstall(
+  installed: InstallRow,
+  productAppId: number,
+  database: KalamataDatabase,
+): Promise<EligibleAppDepot> {
+  const { key, keyStatus } = readDepotKey(database, installed.depotId)
+  const manifest = database
+    .getManifestRows(installed.depotId)
+    .find(({ manifestId }) => manifestId === installed.installedManifestId)
+  const manifestStatus = manifest
+    ? await validateManifest(
+        database,
+        installed.depotId,
+        installed.installedManifestId,
+        manifest.relativePath,
+        key,
+      )
+    : 'missing'
+  const ownerAppId = installed.ownerAppId ?? productAppId
+  return {
+    depotId: installed.depotId,
+    mountIndex: installed.mountIndex,
+    ownerAppId,
+    ownerAppName: null,
+    group: ownerAppId === productAppId ? 'Base Game' : 'DLC',
+    platform: null,
+    language: null,
+    manifestId: installed.installedManifestId,
+    installedManifestId: installed.installedManifestId,
+    pinned: installed.pinned,
+    sizeBytes: null,
+    downloadBytes: null,
+    eligible: true,
+    manifestStatus,
+    keyStatus,
+    installStatus: 'current',
+    selectable: false,
+  }
+}
+
+function readDepotKey(database: KalamataDatabase, depotId: number) {
+  const keyText = database.getDepotKey(depotId)
+  if (keyText === null) {
+    return {
+      key: undefined,
+      keyStatus: 'missing' as const,
+    }
+  }
+  try {
+    return {
+      key: depotKeyFromHex(keyText),
+      keyStatus: 'present' as const,
+    }
+  } catch {
+    return {
+      key: undefined,
+      keyStatus: 'invalid' as const,
+    }
+  }
+}
+
+async function publicManifestStatus(
+  database: KalamataDatabase,
+  depot: PublicDepot,
+  key: Buffer | undefined,
+): Promise<EligibleAppDepot['manifestStatus']> {
+  const rows = database.getManifestRows(depot.depotId)
+  const current = depot.manifestId
+    ? rows.find((row) => row.manifestId === depot.manifestId)
+    : undefined
+  if (!current || !depot.manifestId) return rows.length ? 'outdated' : 'missing'
+  return validateManifest(
+    database,
+    depot.depotId,
+    depot.manifestId,
+    current.relativePath,
+    key,
+  )
+}
+
+async function validateManifest(
+  database: KalamataDatabase,
+  depotId: number,
+  manifestId: string,
+  relativePath: string,
+  key: Buffer | undefined,
+): Promise<'ready' | 'invalid'> {
+  try {
+    await validateManagedManifest(
+      database.dataRoot,
+      depotId,
+      manifestId,
+      relativePath,
+      key,
+    )
+    return 'ready'
+  } catch {
+    return 'invalid'
+  }
+}
+
+function getInstallStatus(
+  installed: InstallRow | undefined,
+  manifestId: string | null,
+): EligibleAppDepot['installStatus'] {
+  if (!installed) return 'not-installed'
+  if (installed.pinned || installed.installedManifestId === manifestId)
+    return 'current'
+  return 'outdated'
 }
 
 function isEligibleGroup(
