@@ -5,7 +5,12 @@ import {
   SYMLINK,
   manifestPathKey,
 } from './manifest-utils.ts'
-import { depotManifestSchema, type DepotManifest } from './types.ts'
+import {
+  depotManifestSchema,
+  type DepotManifest,
+  type ManifestChunk,
+  type ManifestFile,
+} from './types.ts'
 import { manifestIdSchema, sha1Schema } from '../../../types/schemas.ts'
 
 const END_OF_MANIFEST_MAGIC = 0x32c415ab
@@ -59,78 +64,111 @@ export function validateManifest(
 
   const filenames = new Map<string, { filename: string; directory: boolean }>()
   for (const file of manifest.files) {
-    if (!file.filename) {
-      throw new Error('Manifest contains a file with no filename')
-    }
-    if (!Number.isInteger(file.flags)) {
-      throw new Error(`Manifest contains invalid metadata for ${file.filename}`)
-    }
-    const filenameKey = manifestPathKey(file.filename)
-    if (filenames.has(filenameKey))
-      throw new Error(`Manifest contains duplicate path ${file.filename}`)
-    filenames.set(filenameKey, {
-      filename: file.filename,
-      directory: Boolean(file.flags & DIRECTORY),
-    })
-    if (file.flags & SYMLINK) {
-      throw new Error(`Manifest symlinks are not supported: ${file.filename}`)
-    }
-    if (file.flags & DIRECTORY) continue
-
-    const size = parseSafeIntegerText(file.size, `size for ${file.filename}`)
-    if (!sha1Schema.safeParse(file.sha_content).success) {
-      throw new Error(
-        `Manifest contains an invalid file hash for ${file.filename}`,
-      )
-    }
-    let previousEnd = 0
-    for (const chunk of [...file.chunks].sort(
-      (left, right) => Number(left.offset) - Number(right.offset),
-    )) {
-      if (!sha1Schema.safeParse(chunk.sha).success)
-        throw new Error(
-          `Manifest contains an invalid chunk hash for ${file.filename}`,
-        )
-      const offset = parseSafeIntegerText(
-        chunk.offset,
-        `chunk offset for ${file.filename}`,
-      )
-      const originalSize = validateSafeInteger(
-        chunk.cb_original,
-        `chunk size for ${file.filename}`,
-      )
-      const compressedSize = validateSafeInteger(
-        chunk.cb_compressed,
-        `compressed chunk size for ${file.filename}`,
-      )
-      if (
-        originalSize < 1 ||
-        originalSize > MAX_CHUNK_BYTES ||
-        compressedSize < 1 ||
-        compressedSize > MAX_CHUNK_BYTES
-      ) {
-        throw new Error(
-          `Manifest contains an unsupported chunk size for ${file.filename}`,
-        )
-      }
-      if (
-        !Number.isInteger(chunk.crc) ||
-        chunk.crc < 0 ||
-        chunk.crc > 0xffffffff
-      ) {
-        throw new Error(
-          `Manifest contains an invalid chunk checksum for ${file.filename}`,
-        )
-      }
-      if (offset !== previousEnd || offset + originalSize > size) {
-        throw new Error(`Manifest chunks do not exactly cover ${file.filename}`)
-      }
-      previousEnd = offset + originalSize
-    }
-    if (previousEnd !== size)
-      throw new Error(`Manifest chunks do not exactly cover ${file.filename}`)
+    validateManifestFile(file, filenames)
   }
 
+  validateManifestPaths(filenames)
+}
+
+type ManifestPathEntry = { filename: string; directory: boolean }
+
+function validateManifestFile(
+  file: ManifestFile,
+  filenames: Map<string, ManifestPathEntry>,
+): void {
+  if (!file.filename) {
+    throw new Error('Manifest contains a file with no filename')
+  }
+  if (!Number.isInteger(file.flags)) {
+    throw new Error(`Manifest contains invalid metadata for ${file.filename}`)
+  }
+  const filenameKey = manifestPathKey(file.filename)
+  if (filenames.has(filenameKey))
+    throw new Error(`Manifest contains duplicate path ${file.filename}`)
+  filenames.set(filenameKey, {
+    filename: file.filename,
+    directory: Boolean(file.flags & DIRECTORY),
+  })
+  if (file.flags & SYMLINK) {
+    throw new Error(`Manifest symlinks are not supported: ${file.filename}`)
+  }
+  if (!(file.flags & DIRECTORY)) validateFileContents(file)
+}
+
+function validateFileContents(file: ManifestFile): void {
+  const size = parseSafeIntegerText(file.size, `size for ${file.filename}`)
+  if (!sha1Schema.safeParse(file.sha_content).success) {
+    throw new Error(
+      `Manifest contains an invalid file hash for ${file.filename}`,
+    )
+  }
+
+  let previousEnd = 0
+  for (const chunk of [...file.chunks].sort(
+    (left, right) => Number(left.offset) - Number(right.offset),
+  )) {
+    previousEnd = validateManifestChunk(chunk, file.filename, size, previousEnd)
+  }
+  if (previousEnd !== size)
+    throw new Error(`Manifest chunks do not exactly cover ${file.filename}`)
+}
+
+function validateManifestChunk(
+  chunk: ManifestChunk,
+  filename: string,
+  fileSize: number,
+  previousEnd: number,
+): number {
+  if (!sha1Schema.safeParse(chunk.sha).success)
+    throw new Error(`Manifest contains an invalid chunk hash for ${filename}`)
+  const offset = parseSafeIntegerText(
+    chunk.offset,
+    `chunk offset for ${filename}`,
+  )
+  const originalSize = validateSafeInteger(
+    chunk.cb_original,
+    `chunk size for ${filename}`,
+  )
+  const compressedSize = validateSafeInteger(
+    chunk.cb_compressed,
+    `compressed chunk size for ${filename}`,
+  )
+  validateChunkSizes(originalSize, compressedSize, filename)
+  validateChunkChecksum(chunk.crc, filename)
+  if (offset !== previousEnd || offset + originalSize > fileSize) {
+    throw new Error(`Manifest chunks do not exactly cover ${filename}`)
+  }
+  return offset + originalSize
+}
+
+function validateChunkSizes(
+  originalSize: number,
+  compressedSize: number,
+  filename: string,
+): void {
+  if (
+    originalSize < 1 ||
+    originalSize > MAX_CHUNK_BYTES ||
+    compressedSize < 1 ||
+    compressedSize > MAX_CHUNK_BYTES
+  ) {
+    throw new Error(
+      `Manifest contains an unsupported chunk size for ${filename}`,
+    )
+  }
+}
+
+function validateChunkChecksum(checksum: number, filename: string): void {
+  if (!Number.isInteger(checksum) || checksum < 0 || checksum > 0xffffffff) {
+    throw new Error(
+      `Manifest contains an invalid chunk checksum for ${filename}`,
+    )
+  }
+}
+
+function validateManifestPaths(
+  filenames: Map<string, ManifestPathEntry>,
+): void {
   for (const [filenameKey, entry] of filenames) {
     let separator = filenameKey.lastIndexOf('/')
     while (separator !== -1) {
