@@ -64,6 +64,11 @@ const rpc = BrowserView.defineRPC<AppRpc>({
       async getAppDetails({ appId }) {
         return appService.getAppDetails(appId)
       },
+      openInstallDirectory({ appId }) {
+        const installPath = database.getLibraryEntry(appId)?.installPath
+        if (!installPath || !Utils.openPath(installPath))
+          throw new Error('The local files folder could not be opened')
+      },
       acquireManifest(request) {
         return steam.acquireManifest(database, request)
       },

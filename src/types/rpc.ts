@@ -273,6 +273,10 @@ export type AppRpc = {
         params: { appId: number }
         response: AppDetails
       }
+      openInstallDirectory: {
+        params: { appId: number }
+        response: void
+      }
       getLibrary: {
         params: Record<string, never>
         response: LibraryEntry[]

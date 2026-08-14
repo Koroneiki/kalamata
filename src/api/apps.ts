@@ -8,6 +8,10 @@ export function getAppDetails(appId: number) {
   return request('getAppDetails', { appId })
 }
 
+export function openInstallDirectory(appId: number) {
+  return request('openInstallDirectory', { appId })
+}
+
 export function acquireManifest(
   appId: number,
   depotId: number,

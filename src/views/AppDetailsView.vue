@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { useMutation, useQuery, useQueryCache } from '@pinia/colada'
-import { Download, ImageOff, Plus, Settings, Trash2 } from '@lucide/vue'
+import {
+  Download,
+  FolderOpen,
+  ImageOff,
+  Plus,
+  Settings,
+  Trash2,
+} from '@lucide/vue'
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
@@ -15,7 +22,12 @@ import {
   libraryQueryKey,
   useSettingsQuery,
 } from '@/composables/queries'
-import { acquireDepotKeys, acquireManifest, getAppDetails } from '@/api/apps'
+import {
+  acquireDepotKeys,
+  acquireManifest,
+  getAppDetails,
+  openInstallDirectory,
+} from '@/api/apps'
 import {
   addLibraryEntry,
   removeLibraryEntry,
@@ -114,6 +126,9 @@ const pinMutation = useMutation({
     depotId: number
     pinned: boolean
   }) => setDepotPinned(appId, depotId, pinned),
+})
+const openInstallDirectoryMutation = useMutation({
+  mutation: (id: number) => openInstallDirectory(id),
 })
 
 watch(
@@ -720,6 +735,15 @@ async function verifyGameFiles() {
     mutationError.value = error instanceof Error ? error.message : String(error)
   }
 }
+
+async function browseLocalFiles() {
+  mutationError.value = ''
+  try {
+    await openInstallDirectoryMutation.mutateAsync(appId.value)
+  } catch (error) {
+    mutationError.value = error instanceof Error ? error.message : String(error)
+  }
+}
 </script>
 
 <template>
@@ -887,19 +911,34 @@ async function verifyGameFiles() {
             :state="operationForApp"
             :finished="operationFinished"
           />
-          <Button
-            v-if="data.inLibrary && hasInstalledDepots"
-            class="shrink-0 self-end sm:ml-auto sm:self-auto"
-            type="button"
-            size="icon-sm"
-            variant="outline"
-            :disabled="globalOperationBusy"
-            aria-label="Game settings"
-            title="Game settings"
-            @click="gameSettingsOpen = true"
+          <div
+            v-if="data.installPath || hasInstalledDepots"
+            class="flex shrink-0 items-center gap-2 self-end sm:ml-auto sm:self-auto"
           >
-            <Settings aria-hidden="true" />
-          </Button>
+            <Button
+              v-if="data.installPath"
+              type="button"
+              size="sm"
+              variant="outline"
+              :disabled="openInstallDirectoryMutation.isLoading.value"
+              @click="browseLocalFiles"
+            >
+              <FolderOpen aria-hidden="true" />
+              Browse local files
+            </Button>
+            <Button
+              v-if="hasInstalledDepots"
+              type="button"
+              size="icon-sm"
+              variant="outline"
+              :disabled="globalOperationBusy"
+              aria-label="Game settings"
+              title="Game settings"
+              @click="gameSettingsOpen = true"
+            >
+              <Settings aria-hidden="true" />
+            </Button>
+          </div>
         </div>
 
         <p

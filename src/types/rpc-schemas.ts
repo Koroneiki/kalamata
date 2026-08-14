@@ -178,6 +178,7 @@ const acceptedResultSchema = strict({ accepted: z.literal(true) })
 export const rpcRequestSchemas = {
   getAppSummary: idRequestSchema,
   getAppDetails: idRequestSchema,
+  openInstallDirectory: idRequestSchema,
   getLibrary: emptySchema,
   getSettings: emptySchema,
   updateSettings: appSettingsSchema,
@@ -224,6 +225,7 @@ export const rpcRequestSchemas = {
 export const rpcResponseSchemas = {
   getAppSummary: appSummarySchema,
   getAppDetails: appDetailsSchema,
+  openInstallDirectory: z.void(),
   getLibrary: z.array(libraryEntrySchema),
   getSettings: appSettingsSchema,
   updateSettings: appSettingsSchema,
