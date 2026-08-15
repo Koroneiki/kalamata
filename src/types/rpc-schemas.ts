@@ -118,6 +118,19 @@ export const operationStateSchema = z.discriminatedUnion('status', [
     error: strict({ kind: z.literal('recovery'), message: z.string() }),
   }),
 ])
+const pendingDownloadSchema = strict({
+  id: z.string().min(1),
+  appId: steamIdSchema,
+  kind: operationKindSchema,
+  installPath: z.string().min(1),
+  desiredDepotIds: uniqueSteamIdsSchema,
+  createdAt: z.number().int().nonnegative(),
+})
+export const downloadQueueSnapshotSchema = strict({
+  operation: operationStateSchema,
+  pending: z.array(pendingDownloadSchema),
+  repairRequiredAppIds: uniqueSteamIdsSchema,
+})
 const summaryFields = {
   appId: steamIdSchema,
   name: z.string(),
@@ -219,7 +232,8 @@ export const rpcRequestSchemas = {
   cancelOperation: emptySchema,
   pauseOperation: emptySchema,
   resumeOperation: emptySchema,
-  getOperationState: emptySchema,
+  getDownloadQueue: emptySchema,
+  removeQueuedOperation: strict({ id: z.string().min(1) }),
 } satisfies RequestSchemas
 
 export const rpcResponseSchemas = {
@@ -235,8 +249,8 @@ export const rpcResponseSchemas = {
   setSelectedDepots: z.array(steamIdSchema),
   setDepotPinned: z.void(),
   selectInstallDirectory: z.string().nullable(),
-  startDownload: activeOperationStateSchema,
-  queueDepotUpdate: activeOperationStateSchema,
+  startDownload: downloadQueueSnapshotSchema,
+  queueDepotUpdate: downloadQueueSnapshotSchema,
   previewApplicationOperation: strict({
     overlaps: z.array(
       strict({
@@ -271,7 +285,7 @@ export const rpcResponseSchemas = {
     networkPayloadUpperBoundBytes: manifestIdSchema.nullable(),
     stagingLogicalUpperBoundBytes: manifestIdSchema,
   }),
-  repairApplication: activeOperationStateSchema,
+  repairApplication: downloadQueueSnapshotSchema,
   acquireManifest: strict({
     depotId: steamIdSchema,
     manifestId: manifestIdSchema,
@@ -302,7 +316,8 @@ export const rpcResponseSchemas = {
       reason: z.literal('no-resumable-operation'),
     }),
   ]),
-  getOperationState: operationStateSchema,
+  getDownloadQueue: downloadQueueSnapshotSchema,
+  removeQueuedOperation: downloadQueueSnapshotSchema,
 } satisfies ResponseSchemas
 
 export function parseRpcRequest<K extends keyof Requests>(

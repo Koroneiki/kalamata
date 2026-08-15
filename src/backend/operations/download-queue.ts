@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import type {
   ApplicationDepotInput,
   ReconcileApplicationOptions,
@@ -15,12 +16,16 @@ import {
   hasCommitReadyApplicationTransaction,
 } from '../depot/install/transaction/recovery.ts'
 import type { ProductInfoResult } from '../steam/types.ts'
-import type { KalamataDatabase } from '../../db/database.ts'
+import type {
+  ApplicationQueueItem,
+  KalamataDatabase,
+} from '../../db/database.ts'
 import { validateId, validateManifestId } from '../../db/validation.ts'
 import type {
   ActiveOperationState,
   ApplicationOperationPreview,
   CancelOperationResult,
+  DownloadQueueSnapshot,
   OperationState,
   PauseOperationResult,
   PreviewApplicationOperationRequest,
@@ -64,27 +69,34 @@ interface OperationFailureDisposition {
   cancelled: boolean
 }
 
+interface QueuePreparationFailure {
+  itemId: string
+  error: Error
+}
+
 export class DownloadQueueCoordinator {
   #state: OperationState = { status: 'idle' }
   #controller: AbortController | undefined
   #runPromise: Promise<void> | undefined
   #commitStarted = false
   #shuttingDown = false
-  #acceptingAppId: number | null = null
-  #acceptanceDone: Promise<void> | undefined
+  #acceptanceQueue: Promise<void> = Promise.resolve()
+  #pumpPromise: Promise<QueuePreparationFailure | undefined> | undefined
   #controlPromise: Promise<unknown> | undefined
-  #resolveAcceptance: (() => void) | undefined
   #operationId = 0
   #progressQueued = false
   #currentRequest: ApplicationPlanRequest | undefined
   #pausing = false
   #cancelRequested = false
   readonly #repairRequirements = new Map<number, string>()
+  readonly #queuePreparationFailures = new Set<string>()
 
   constructor(
     private readonly steam: QueueSteamService,
     private readonly database: KalamataDatabase,
-    private readonly emitOperation: (state: OperationState) => void = () => {},
+    private readonly emitOperation: (
+      snapshot: DownloadQueueSnapshot,
+    ) => void = () => {},
     private readonly reportError: (
       error: Error,
       context: { appId: number; kind: ApplicationPlanRequest['kind'] },
@@ -95,10 +107,18 @@ export class DownloadQueueCoordinator {
     return structuredClone(this.#state)
   }
 
+  getDownloadQueue(): DownloadQueueSnapshot {
+    return {
+      operation: this.getOperationState(),
+      pending: this.database.getApplicationQueueItems().map(queueItemSnapshot),
+      repairRequiredAppIds: [...this.#repairRequirements.keys()],
+    }
+  }
+
   isBusyForApp(appId: number): boolean {
     return (
       this.#repairRequirements.has(appId) ||
-      this.#acceptingAppId === appId ||
+      this.database.hasQueuedApplication(appId) ||
       (this.#state.status !== 'idle' &&
         'appId' in this.#state &&
         this.#state.appId === appId &&
@@ -108,42 +128,38 @@ export class DownloadQueueCoordinator {
     )
   }
 
-  async start(request: StartDownloadRequest): Promise<ActiveOperationState> {
+  async start(request: StartDownloadRequest): Promise<DownloadQueueSnapshot> {
     validateId(request.appId, 'appId')
     validateDepotIds(request.depotIds, false)
     validateManifestTargets(request.manifestTargets, request.depotIds)
-    this.claimAcceptance(request.appId)
-    try {
+    return this.serializeAcceptance(async () => {
+      this.assertAppAvailable(request.appId)
       const installPath = await this.database.assertInstallPathAvailable(
         request.appId,
         request.installPath,
       )
       if (this.#shuttingDown) throw new Error('Application is shutting down')
-      this.database.reserveInstallPath(request.appId, installPath)
-      const active = this.begin(
-        {
-          kind: 'download',
-          appId: request.appId,
-          installPath,
-          requestedDepotIds: request.depotIds,
-          manifestTargets: request.manifestTargets,
-        },
-        true,
-      )
-      return active
-    } finally {
-      this.releaseAcceptance()
-    }
+      const item = {
+        id: randomUUID(),
+        kind: 'download' as const,
+        appId: request.appId,
+        installPath,
+        depotIds: request.depotIds,
+        manifestTargets: request.manifestTargets,
+        createdAt: Date.now(),
+      }
+      return this.acceptQueueItem(item, true)
+    })
   }
 
   async queueDepotUpdate(
     request: QueueDepotUpdateRequest,
-  ): Promise<ActiveOperationState> {
+  ): Promise<DownloadQueueSnapshot> {
     validateId(request.appId, 'appId')
     validateDepotIds(request.desiredDepotIds, true)
     validateManifestTargets(request.manifestTargets, request.desiredDepotIds)
-    this.claimAcceptance(request.appId)
-    try {
+    return this.serializeAcceptance(async () => {
+      this.assertAppAvailable(request.appId)
       const entry = this.database.getLibraryEntry(request.appId)
       if (!entry?.installPath) throw new Error('App has no installation path')
       const installPath = await this.database.assertInstallPathAvailable(
@@ -151,19 +167,17 @@ export class DownloadQueueCoordinator {
         entry.installPath,
       )
       if (this.#shuttingDown) throw new Error('Application is shutting down')
-      return this.begin(
-        {
-          kind: 'reconcile',
-          appId: request.appId,
-          installPath,
-          desiredDepotIds: request.desiredDepotIds,
-          manifestTargets: request.manifestTargets,
-        },
-        true,
-      )
-    } finally {
-      this.releaseAcceptance()
-    }
+      const item = {
+        id: randomUUID(),
+        kind: 'reconcile' as const,
+        appId: request.appId,
+        installPath,
+        depotIds: request.desiredDepotIds,
+        manifestTargets: request.manifestTargets,
+        createdAt: Date.now(),
+      }
+      return this.acceptQueueItem(item)
+    })
   }
 
   async previewApplicationOperation(
@@ -208,40 +222,49 @@ export class DownloadQueueCoordinator {
 
   async repairApplication(
     request: RepairApplicationRequest,
-  ): Promise<ActiveOperationState> {
+  ): Promise<DownloadQueueSnapshot> {
     validateId(request.appId, 'appId')
     const entry = this.database.getLibraryEntry(request.appId)
     if (!entry?.installPath) throw new Error('App has no installation path')
-    const repairRequired = this.#repairRequirements.has(request.appId)
-    this.claimAcceptance(request.appId, true)
-    try {
-      const fixedDesired = repairRequired
-        ? ((await archiveUnresolvedApplicationTransaction(entry.installPath)) ??
-          undefined)
-        : undefined
+    const existingInstallPath = entry.installPath
+    return this.serializeAcceptance(async () => {
+      this.assertAppAvailable(request.appId, true)
+      const installPath = await this.database.assertInstallPathAvailable(
+        request.appId,
+        existingInstallPath,
+      )
+      if (this.#shuttingDown) throw new Error('Application is shutting down')
       if (
-        repairRequired &&
         this.#state.status === 'repair-required' &&
         this.#state.appId === request.appId
       )
         this.#state = { status: 'idle' }
-      const installPath = await this.database.assertInstallPathAvailable(
-        request.appId,
-        entry.installPath,
-      )
-      const repairRequest: ApplicationPlanRequest = {
-        kind: 'repair',
+      const item = {
+        id: randomUUID(),
+        kind: 'repair' as const,
         appId: request.appId,
         installPath,
-        desiredDepotIds: this.database
-          .getInstalls(request.appId)
-          .map(({ depotId }) => depotId),
+        depotIds: [],
+        createdAt: Date.now(),
       }
-      if (fixedDesired) repairRequest.fixedDesired = fixedDesired
-      return this.begin(repairRequest, true)
-    } finally {
-      this.releaseAcceptance()
-    }
+      return this.acceptQueueItem(item)
+    })
+  }
+
+  async removeQueuedOperation(id: string): Promise<DownloadQueueSnapshot> {
+    return this.serializeAcceptance(async () => {
+      if (this.#shuttingDown) throw new Error('Application is shutting down')
+      const removed = this.database.removeApplicationQueueItem(id)
+      if (!removed) throw new Error('Queued operation was not found')
+      this.#queuePreparationFailures.delete(id)
+      this.emitState()
+      await this.pump()
+      return this.getDownloadQueue()
+    })
+  }
+
+  async startPending(): Promise<void> {
+    await this.pump()
   }
 
   async cancel(): Promise<CancelOperationResult> {
@@ -272,6 +295,7 @@ export class DownloadQueueCoordinator {
         }
         this.database.clearUnusedInstallPath(state.appId)
         this.emitState()
+        await this.pump()
         return { accepted: true }
       })()
       this.#controlPromise = cancellation
@@ -372,7 +396,8 @@ export class DownloadQueueCoordinator {
       reason.name = 'ShutdownError'
       this.#controller.abort(reason)
     }
-    await this.#acceptanceDone
+    await this.#acceptanceQueue
+    await this.#pumpPromise
     await this.#runPromise
     await this.#controlPromise
   }
@@ -421,37 +446,45 @@ export class DownloadQueueCoordinator {
   private assertAvailable(): void {
     if (this.#shuttingDown) throw new Error('Application is shutting down')
     // Operations are globally serialized; repair requirements block only their app.
-    if (
-      this.#acceptingAppId !== null ||
-      ['active', 'paused', 'resumable'].includes(this.#state.status)
-    )
+    if (['active', 'paused', 'resumable'].includes(this.#state.status))
       throw new Error('Another application operation is already running')
   }
 
-  private claimAcceptance(appId: number, allowRepair = false): void {
+  private assertAppAvailable(appId: number, allowRepair = false): void {
+    if (this.#shuttingDown) throw new Error('Application is shutting down')
+    if (this.database.hasQueuedApplication(appId))
+      throw new Error('This application is already in Downloads')
     if (
-      !(
-        allowRepair &&
-        this.#state.status === 'repair-required' &&
-        this.#state.appId === appId
-      )
+      this.#state.status !== 'idle' &&
+      'appId' in this.#state &&
+      this.#state.appId === appId &&
+      ['active', 'paused', 'resumable'].includes(this.#state.status)
     )
-      this.assertAvailable()
+      throw new Error('This application is already in Downloads')
     if (!allowRepair && this.#repairRequirements.has(appId))
       throw new Error(
         'Repair this application before starting another operation',
       )
-    this.#acceptingAppId = appId
-    this.#acceptanceDone = new Promise((resolve) => {
-      this.#resolveAcceptance = resolve
-    })
   }
 
-  private releaseAcceptance(): void {
-    this.#acceptingAppId = null
-    this.#resolveAcceptance?.()
-    this.#resolveAcceptance = undefined
-    this.#acceptanceDone = undefined
+  private serializeAcceptance<T>(work: () => Promise<T>): Promise<T> {
+    const result = this.#acceptanceQueue.then(work, work)
+    this.#acceptanceQueue = result.then(
+      () => {},
+      () => {},
+    )
+    return result
+  }
+
+  private async acceptQueueItem(
+    item: ApplicationQueueItem,
+    reserveInstallPath = false,
+  ): Promise<DownloadQueueSnapshot> {
+    this.database.appendApplicationQueueItem(item, reserveInstallPath)
+    this.emitState()
+    const failure = await this.pump()
+    if (failure?.itemId === item.id) throw failure.error
+    return this.getDownloadQueue()
   }
 
   private async run(
@@ -465,6 +498,7 @@ export class DownloadQueueCoordinator {
     }
     this.#progressQueued = false
     this.emitState()
+    if (!['paused', 'resumable'].includes(this.#state.status)) await this.pump()
     this.showNextRepairRequired()
   }
 
@@ -663,6 +697,8 @@ export class DownloadQueueCoordinator {
       this.#state = repairRequiredState(request.appId, request.installPath)
       this.#progressQueued = false
       this.emitState()
+      await this.pump()
+      this.showNextRepairRequired()
     }
   }
 
@@ -733,8 +769,88 @@ export class DownloadQueueCoordinator {
   }
 
   private emitState(): void {
-    const operation = structuredClone(this.#state)
-    this.emitOperation(operation)
+    this.emitOperation(this.getDownloadQueue())
+  }
+
+  private async pump(): Promise<QueuePreparationFailure | undefined> {
+    if (this.#pumpPromise) return this.#pumpPromise
+    if (
+      this.#shuttingDown ||
+      ['active', 'paused', 'resumable'].includes(this.#state.status)
+    )
+      return
+    const pumping = (async (): Promise<QueuePreparationFailure | undefined> => {
+      let firstFailure: QueuePreparationFailure | undefined
+      while (!this.#shuttingDown) {
+        const item = this.database.claimFirstApplicationQueueItem(
+          new Set(this.#repairRequirements.keys()),
+          this.#queuePreparationFailures,
+        )
+        if (!item) return firstFailure
+        try {
+          const request = await this.requestForQueueItem(item)
+          this.begin(request, true)
+          return firstFailure
+        } catch (error) {
+          const operationFailure = operationError(error)
+          this.database.restoreApplicationQueueItemAtFront(item)
+          this.#queuePreparationFailures.add(item.id)
+          firstFailure ??= { itemId: item.id, error: operationFailure }
+          this.emitState()
+          this.reportError(diagnosticOperationError(operationFailure), {
+            appId: item.appId,
+            kind: item.kind,
+          })
+        }
+      }
+      return firstFailure
+    })()
+    this.#pumpPromise = pumping
+    try {
+      await pumping
+    } finally {
+      if (this.#pumpPromise === pumping) this.#pumpPromise = undefined
+    }
+  }
+
+  private async requestForQueueItem(
+    item: ApplicationQueueItem,
+  ): Promise<ApplicationPlanRequest> {
+    const request: ApplicationPlanRequest = {
+      kind: item.kind,
+      appId: item.appId,
+      installPath: item.installPath,
+      manifestTargets: item.manifestTargets,
+    }
+    if (item.kind === 'download') request.requestedDepotIds = item.depotIds
+    if (item.kind === 'reconcile') request.desiredDepotIds = item.depotIds
+    if (item.kind === 'repair') {
+      request.desiredDepotIds = this.database
+        .getInstalls(item.appId)
+        .map(({ depotId }) => depotId)
+      if (this.#repairRequirements.has(item.appId)) {
+        request.fixedDesired =
+          (await archiveUnresolvedApplicationTransaction(item.installPath)) ??
+          undefined
+        if (
+          this.#state.status === 'repair-required' &&
+          this.#state.appId === item.appId
+        )
+          this.#state = { status: 'idle' }
+      }
+    }
+    return request
+  }
+}
+
+function queueItemSnapshot(item: ApplicationQueueItem) {
+  return {
+    id: item.id,
+    appId: item.appId,
+    kind: item.kind,
+    installPath: item.installPath,
+    desiredDepotIds: [...item.depotIds],
+    createdAt: item.createdAt,
   }
 }
 

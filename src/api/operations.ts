@@ -6,8 +6,12 @@ import type {
   RepairApplicationRequest,
 } from '@/types/rpc'
 
-export function getOperationState() {
-  return rpcRequest('getOperationState', {})
+export function getDownloadQueue() {
+  return rpcRequest('getDownloadQueue', {})
+}
+
+export function removeQueuedOperation(id: string) {
+  return rpcRequest('removeQueuedOperation', { id })
 }
 
 export function queueDepotUpdate(request: QueueDepotUpdateRequest) {

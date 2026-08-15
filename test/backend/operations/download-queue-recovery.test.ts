@@ -231,6 +231,10 @@ test('surfaces queued recovery failures one at a time', async () => {
     status: 'repair-required',
     appId: APP_ID,
   })
+  expect(queue.getDownloadQueue().repairRequiredAppIds).toEqual([
+    APP_ID,
+    DLC_APP_ID,
+  ])
   await queue.repairApplication({ appId: APP_ID })
   await waitForTerminal(queue)
 
@@ -239,6 +243,7 @@ test('surfaces queued recovery failures one at a time', async () => {
     appId: DLC_APP_ID,
     installPath: otherInstallPath,
   })
+  expect(queue.getDownloadQueue().repairRequiredAppIds).toEqual([DLC_APP_ID])
 })
 
 test('cleanup failure transitions to repair-required instead of staying active', async () => {

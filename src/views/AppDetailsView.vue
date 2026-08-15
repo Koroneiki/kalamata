@@ -246,6 +246,7 @@ const customManifestRemovable = computed(() =>
 )
 // A first download reserves installPath before any depot is installed.
 const primaryActionLabel = computed(() => {
+  if (operation.isAppInDownloads(appId.value)) return 'In Downloads'
   if (!hasInstalledDepots.value) return 'Install'
   if (selectedDepotIds.value.length === 0) return 'Uninstall'
   return hasDepotAdditionsOrRemovals.value ||
@@ -264,16 +265,15 @@ const primaryActionLabel = computed(() => {
     ? 'Update'
     : 'Installed'
 })
-const globalOperationBusy = computed(() =>
-  ['active', 'paused', 'resumable'].includes(operation.state.status),
+const operationBusy = computed(() => operation.isAppInDownloads(appId.value))
+const repairRequiredForApp = computed(() =>
+  operation.isRepairRequired(appId.value),
 )
-const repairRequiredForApp = computed(
-  () =>
-    operation.state.status === 'repair-required' &&
-    operation.state.appId === appId.value,
+const globalOperationBusy = computed(
+  () => operationBusy.value && !repairRequiredForApp.value,
 )
-const operationBusy = computed(
-  () => globalOperationBusy.value || repairRequiredForApp.value,
+const hasLocalInstallationActions = computed(
+  () => hasInstalledDepots.value || repairRequiredForApp.value,
 )
 const canOpenDownload = computed(() => {
   if (!data.value?.inLibrary || operationBusy.value) return false
@@ -516,7 +516,6 @@ watch(
 )
 
 async function focusDownloadQueue() {
-  draftDirty.value = false
   customManifestTargets.clear()
   await nextTick()
   operationPanel.value?.focusHeading()
@@ -575,7 +574,7 @@ async function browseLocalFiles() {
               pending: addMutation.isLoading.value,
             }"
             :local-actions="{
-              hasInstalledDepots,
+              hasInstalledDepots: hasLocalInstallationActions,
               browsePending: openInstallDirectoryMutation.isLoading.value,
               globalOperationBusy,
             }"
@@ -651,7 +650,7 @@ async function browseLocalFiles() {
         />
 
         <GameSettingsDialog
-          v-if="data.inLibrary && hasInstalledDepots"
+          v-if="data.inLibrary && hasLocalInstallationActions"
           :open="gameSettingsOpen"
           :app-name="data.name"
           :verify-disabled="globalOperationBusy"

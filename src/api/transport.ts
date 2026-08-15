@@ -1,7 +1,10 @@
 import { Electroview } from 'electrobun/view'
 
-import type { AppRpc, OperationState } from '@/types/rpc'
-import { operationStateSchema, rpcResponseSchemas } from '@/types/rpc-schemas'
+import type { AppRpc, DownloadQueueSnapshot } from '@/types/rpc'
+import {
+  downloadQueueSnapshotSchema,
+  rpcResponseSchemas,
+} from '@/types/rpc-schemas'
 
 type Requests = AppRpc['bun']['requests']
 type AppRequest = <K extends keyof Requests>(
@@ -9,14 +12,14 @@ type AppRequest = <K extends keyof Requests>(
   params: Requests[K]['params'],
 ) => Promise<Requests[K]['response']>
 
-type OperationStateListener = (
-  state: OperationState,
+type DownloadQueueListener = (
+  snapshot: DownloadQueueSnapshot,
   messageSequence: number,
 ) => void
 
-const operationStateListeners = new Set<OperationStateListener>()
-let latestOperationState: OperationState | undefined
-let operationStateMessageSequence = 0
+const downloadQueueListeners = new Set<DownloadQueueListener>()
+let latestDownloadQueue: DownloadQueueSnapshot | undefined
+let downloadQueueMessageSequence = 0
 
 const rpc = Electroview.defineRPC<AppRpc>({
   // Electrobun timeouts only abandon the response; they do not cancel native
@@ -24,13 +27,13 @@ const rpc = Electroview.defineRPC<AppRpc>({
   maxRequestTime: Infinity,
   handlers: {
     messages: {
-      operationStateChanged: (state) => {
-        const result = operationStateSchema.safeParse(state)
+      downloadQueueChanged: (snapshot) => {
+        const result = downloadQueueSnapshotSchema.safeParse(snapshot)
         if (!result.success) return
-        latestOperationState = result.data
-        operationStateMessageSequence += 1
-        for (const listener of operationStateListeners)
-          listener(result.data, operationStateMessageSequence)
+        latestDownloadQueue = result.data
+        downloadQueueMessageSequence += 1
+        for (const listener of downloadQueueListeners)
+          listener(result.data, downloadQueueMessageSequence)
       },
     },
   },
@@ -50,15 +53,15 @@ export async function request<K extends keyof Requests>(
   return rpcResponseSchemas[method].parse(response) as Requests[K]['response']
 }
 
-export function subscribeToOperationState(
-  listener: OperationStateListener,
+export function subscribeToDownloadQueue(
+  listener: DownloadQueueListener,
 ): () => void {
-  operationStateListeners.add(listener)
-  if (latestOperationState)
-    listener(latestOperationState, operationStateMessageSequence)
-  return () => operationStateListeners.delete(listener)
+  downloadQueueListeners.add(listener)
+  if (latestDownloadQueue)
+    listener(latestDownloadQueue, downloadQueueMessageSequence)
+  return () => downloadQueueListeners.delete(listener)
 }
 
-export function getOperationStateMessageSequence() {
-  return operationStateMessageSequence
+export function getDownloadQueueMessageSequence() {
+  return downloadQueueMessageSequence
 }

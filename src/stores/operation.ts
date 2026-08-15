@@ -5,19 +5,22 @@ import { ref, shallowRef } from 'vue'
 import { startDownload } from '@/api/downloads'
 import {
   cancelOperation,
-  getOperationState,
+  getDownloadQueue,
   pauseOperation,
   queueDepotUpdate,
   repairApplication,
+  removeQueuedOperation,
   resumeOperation,
 } from '@/api/operations'
 import {
-  getOperationStateMessageSequence,
-  subscribeToOperationState,
+  getDownloadQueueMessageSequence,
+  subscribeToDownloadQueue,
 } from '@/api/transport'
 import { appQueryKeys, libraryQueryKey } from '@/composables/queries'
 import type {
+  DownloadQueueSnapshot,
   OperationState,
+  PendingDownload,
   QueueDepotUpdateRequest,
   RepairApplicationRequest,
   StartDownloadRequest,
@@ -33,6 +36,8 @@ const persistedTransitionStates = new Set([
 export const useOperationStore = defineStore('operation', () => {
   const queryCache = useQueryCache()
   const state = shallowRef<OperationState>({ status: 'idle' })
+  const pending = shallowRef<PendingDownload[]>([])
+  const repairRequiredAppIds = shallowRef<number[]>([])
   const initialized = ref(false)
   const initializationError = ref<string | null>(null)
   let initializePromise: Promise<void> | undefined
@@ -52,9 +57,12 @@ export const useOperationStore = defineStore('operation', () => {
     ])
   }
 
-  function applyState(next: OperationState) {
+  function applySnapshot(snapshot: DownloadQueueSnapshot) {
+    const next = snapshot.operation
     const previous = state.value
     state.value = next
+    pending.value = snapshot.pending
+    repairRequiredAppIds.value = snapshot.repairRequiredAppIds
     if (
       next.status !== 'idle' &&
       'appId' in next &&
@@ -69,14 +77,14 @@ export const useOperationStore = defineStore('operation', () => {
   function initialize() {
     if (initializePromise) return initializePromise
     initializePromise = (async () => {
-      unsubscribe ??= subscribeToOperationState(applyState)
-      const sequence = getOperationStateMessageSequence()
+      unsubscribe ??= subscribeToDownloadQueue(applySnapshot)
+      const sequence = getDownloadQueueMessageSequence()
       initializationError.value = null
       try {
-        const snapshot = await getOperationState()
+        const snapshot = await getDownloadQueue()
         // Do not let an older RPC snapshot overwrite a newer pushed state.
-        if (getOperationStateMessageSequence() === sequence)
-          applyState(snapshot)
+        if (getDownloadQueueMessageSequence() === sequence)
+          applySnapshot(snapshot)
         initialized.value = true
       } catch (error) {
         initialized.value = false
@@ -90,55 +98,80 @@ export const useOperationStore = defineStore('operation', () => {
   }
 
   async function refreshIfNoMessage(sequence: number) {
-    if (getOperationStateMessageSequence() !== sequence) return
-    const snapshot = await getOperationState()
-    if (getOperationStateMessageSequence() === sequence) applyState(snapshot)
+    if (getDownloadQueueMessageSequence() !== sequence) return
+    const snapshot = await getDownloadQueue()
+    if (getDownloadQueueMessageSequence() === sequence) applySnapshot(snapshot)
   }
 
   async function install(request: StartDownloadRequest) {
-    const sequence = getOperationStateMessageSequence()
+    const sequence = getDownloadQueueMessageSequence()
     const result = await startDownload(request)
-    if (getOperationStateMessageSequence() === sequence) applyState(result)
+    if (getDownloadQueueMessageSequence() === sequence) applySnapshot(result)
     return result
   }
 
   async function reconcile(request: QueueDepotUpdateRequest) {
-    const sequence = getOperationStateMessageSequence()
+    const sequence = getDownloadQueueMessageSequence()
     const result = await queueDepotUpdate(request)
-    if (getOperationStateMessageSequence() === sequence) applyState(result)
+    if (getDownloadQueueMessageSequence() === sequence) applySnapshot(result)
     return result
   }
 
   async function verify(request: RepairApplicationRequest) {
-    const sequence = getOperationStateMessageSequence()
+    const sequence = getDownloadQueueMessageSequence()
     const result = await repairApplication(request)
-    if (getOperationStateMessageSequence() === sequence) applyState(result)
+    if (getDownloadQueueMessageSequence() === sequence) applySnapshot(result)
     return result
   }
 
   async function pause() {
-    const sequence = getOperationStateMessageSequence()
+    const sequence = getDownloadQueueMessageSequence()
     const result = await pauseOperation()
     if (result.accepted) await refreshIfNoMessage(sequence)
     return result
   }
 
   async function resume() {
-    const sequence = getOperationStateMessageSequence()
+    const sequence = getDownloadQueueMessageSequence()
     const result = await resumeOperation()
     if (result.accepted) await refreshIfNoMessage(sequence)
     return result
   }
 
   async function cancel() {
-    const sequence = getOperationStateMessageSequence()
+    const sequence = getDownloadQueueMessageSequence()
     const result = await cancelOperation()
     if (result.accepted) await refreshIfNoMessage(sequence)
     return result
   }
 
+  function isAppInDownloads(appId: number) {
+    return (
+      repairRequiredAppIds.value.includes(appId) ||
+      pending.value.some((item) => item.appId === appId) ||
+      (state.value.status !== 'idle' &&
+        'appId' in state.value &&
+        state.value.appId === appId &&
+        ['active', 'paused', 'resumable', 'repair-required'].includes(
+          state.value.status,
+        ))
+    )
+  }
+
+  function isRepairRequired(appId: number) {
+    return repairRequiredAppIds.value.includes(appId)
+  }
+
+  async function removePending(id: string) {
+    const sequence = getDownloadQueueMessageSequence()
+    const result = await removeQueuedOperation(id)
+    if (getDownloadQueueMessageSequence() === sequence) applySnapshot(result)
+    return result
+  }
+
   return {
     state,
+    pending,
     initialized,
     initializationError,
     initialize,
@@ -148,5 +181,8 @@ export const useOperationStore = defineStore('operation', () => {
     pause,
     resume,
     cancel,
+    isAppInDownloads,
+    isRepairRequired,
+    removePending,
   }
 })

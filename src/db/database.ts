@@ -3,7 +3,13 @@ import { join } from 'node:path'
 import { Database } from 'bun:sqlite'
 import { drizzle } from 'drizzle-orm/bun-sqlite'
 import { migrate } from 'drizzle-orm/bun-sqlite/migrator'
-import type { AppSettings, DepotPlatform, LibraryEntry } from '../types/rpc.ts'
+import type {
+  AppSettings,
+  DepotManifestTarget,
+  DepotPlatform,
+  LibraryEntry,
+  OperationKind,
+} from '../types/rpc.ts'
 import { appSettingsSchema } from '../types/schemas.ts'
 import { z } from 'zod'
 import {
@@ -26,6 +32,30 @@ export interface InstallRow {
   pinned?: boolean
   mountIndex: number
   ownerAppId: number | null
+}
+
+export interface ApplicationQueueItem {
+  id: string
+  appId: number
+  kind: OperationKind
+  installPath: string
+  depotIds: number[]
+  manifestTargets?: DepotManifestTarget[]
+  createdAt: number
+}
+
+interface ApplicationQueueItemRow {
+  id: string
+  appId: number
+  kind: OperationKind
+  installPath: string
+  createdAt: number
+}
+
+interface ApplicationQueueDepotRow {
+  queueItemId: string
+  depotId: number
+  manifestId: string | null
 }
 
 interface SettingsRow {
@@ -289,6 +319,155 @@ export class KalamataDatabase {
       .run(appId, appId)
   }
 
+  appendApplicationQueueItem(
+    item: ApplicationQueueItem,
+    reserveInstallPath = false,
+  ): void {
+    validateQueueItem(item)
+    this.sqlite.transaction(() => {
+      if (reserveInstallPath) {
+        const result = this.sqlite
+          .query(
+            'UPDATE library SET install_path = COALESCE(install_path, ?) WHERE app_id = ?',
+          )
+          .run(item.installPath, item.appId)
+        if (result.changes !== 1) throw new Error('App is not in library')
+      } else if (!this.getLibraryEntry(item.appId)) {
+        throw new Error('App is not in library')
+      }
+      const position = this.sqlite
+        .query<{ position: number }, []>(
+          'SELECT COALESCE(MAX(position), -1) + 1 AS position FROM application_queue_items',
+        )
+        .get()!.position
+      this.insertApplicationQueueItem(item, position)
+    })()
+  }
+
+  getApplicationQueueItems(): ApplicationQueueItem[] {
+    const rows = this.sqlite
+      .query<ApplicationQueueItemRow, []>(
+        'SELECT id, app_id AS appId, kind, install_path AS installPath, created_at AS createdAt FROM application_queue_items ORDER BY position',
+      )
+      .all()
+    if (rows.length === 0) return []
+    const depots = this.sqlite
+      .query<ApplicationQueueDepotRow, []>(
+        'SELECT queue_item_id AS queueItemId, depot_id AS depotId, manifest_id AS manifestId FROM application_queue_item_depots ORDER BY queue_item_id, request_position',
+      )
+      .all()
+    const depotsByItem = Map.groupBy(depots, ({ queueItemId }) => queueItemId)
+    return rows.map((row) =>
+      queueItemFromRows(row, depotsByItem.get(row.id) ?? []),
+    )
+  }
+
+  hasQueuedApplication(appId: number): boolean {
+    validateId(appId, 'appId')
+    return Boolean(
+      this.sqlite
+        .query<{ found: number }, [number]>(
+          'SELECT 1 AS found FROM application_queue_items WHERE app_id = ?',
+        )
+        .get(appId),
+    )
+  }
+
+  claimFirstApplicationQueueItem(
+    blockedAppIds: ReadonlySet<number> = new Set(),
+    blockedItemIds: ReadonlySet<string> = new Set(),
+  ): ApplicationQueueItem | null {
+    return this.sqlite.transaction(() => {
+      const item = this.getApplicationQueueItems().find(
+        (entry) =>
+          !blockedItemIds.has(entry.id) &&
+          (entry.kind === 'repair' || !blockedAppIds.has(entry.appId)),
+      )
+      if (!item) return null
+      this.sqlite
+        .query('DELETE FROM application_queue_items WHERE id = ?')
+        .run(item.id)
+      this.compactQueue()
+      return item
+    })()
+  }
+
+  removeApplicationQueueItem(id: string): ApplicationQueueItem | null {
+    if (!id) throw new Error('Queue item id must not be empty')
+    return this.sqlite.transaction(() => {
+      const item = this.getApplicationQueueItems().find(
+        (entry) => entry.id === id,
+      )
+      if (!item) return null
+      this.sqlite
+        .query('DELETE FROM application_queue_items WHERE id = ?')
+        .run(id)
+      this.compactQueue()
+      if (item.kind === 'download') {
+        this.sqlite
+          .query(
+            'UPDATE library SET install_path = NULL WHERE app_id = ? AND install_path = ? AND NOT EXISTS (SELECT 1 FROM library_depot_installs WHERE app_id = ?)',
+          )
+          .run(item.appId, item.installPath, item.appId)
+      }
+      return item
+    })()
+  }
+
+  restoreApplicationQueueItemAtFront(item: ApplicationQueueItem): void {
+    validateQueueItem(item)
+    this.sqlite.transaction(() => {
+      const items = [item, ...this.getApplicationQueueItems()]
+      this.rewriteApplicationQueue(items)
+    })()
+  }
+
+  private compactQueue(): void {
+    this.rewriteApplicationQueue(this.getApplicationQueueItems())
+  }
+
+  private rewriteApplicationQueue(items: ApplicationQueueItem[]): void {
+    this.sqlite.query('DELETE FROM application_queue_items').run()
+    items.forEach((item, position) =>
+      this.insertApplicationQueueItem(item, position),
+    )
+  }
+
+  private insertApplicationQueueItem(
+    item: ApplicationQueueItem,
+    position: number,
+  ): void {
+    this.sqlite
+      .query(
+        'INSERT INTO application_queue_items (id, app_id, kind, install_path, position, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+      )
+      .run(
+        item.id,
+        item.appId,
+        item.kind,
+        item.installPath,
+        position,
+        item.createdAt,
+      )
+    const manifests = new Map(
+      item.manifestTargets?.map(({ depotId, manifestId }) => [
+        depotId,
+        manifestId,
+      ]),
+    )
+    const insertDepot = this.sqlite.query(
+      'INSERT INTO application_queue_item_depots (queue_item_id, depot_id, request_position, manifest_id) VALUES (?, ?, ?, ?)',
+    )
+    item.depotIds.forEach((depotId, requestPosition) =>
+      insertDepot.run(
+        item.id,
+        depotId,
+        requestPosition,
+        manifests.get(depotId) ?? null,
+      ),
+    )
+  }
+
   addManifest(depotId: number, manifestId: string, now = Date.now()): string {
     const relativePath = manifestRelativePath(depotId, manifestId)
     this.sqlite
@@ -416,4 +595,53 @@ export class KalamataDatabase {
         )
     })()
   }
+}
+
+function validateQueueItem(item: ApplicationQueueItem): void {
+  if (!item.id) throw new Error('Queue item id must not be empty')
+  validateId(item.appId, 'appId')
+  if (!['download', 'reconcile', 'repair'].includes(item.kind))
+    throw new Error('Invalid queue item kind')
+  if (!item.installPath) throw new Error('Install path must not be empty')
+  if (!Number.isSafeInteger(item.createdAt) || item.createdAt < 0)
+    throw new Error('createdAt must be a non-negative integer')
+  const uniqueDepotIds = validateUniqueDepotIds(item.depotIds)
+  const targets = item.manifestTargets ?? []
+  validateQueueManifestTargets(targets, uniqueDepotIds)
+}
+
+function validateUniqueDepotIds(depotIds: number[]): Set<number> {
+  const uniqueDepotIds = new Set(depotIds)
+  if (uniqueDepotIds.size !== depotIds.length)
+    throw new Error('depotIds must not contain duplicates')
+  for (const depotId of depotIds) validateId(depotId, 'depotId')
+  return uniqueDepotIds
+}
+
+function validateQueueManifestTargets(
+  targets: DepotManifestTarget[],
+  depotIds: Set<number>,
+): void {
+  if (new Set(targets.map(({ depotId }) => depotId)).size !== targets.length)
+    throw new Error('Manifest targets must not contain duplicate depots')
+  for (const { depotId, manifestId } of targets) {
+    if (!depotIds.has(depotId))
+      throw new Error('Manifest target must belong to a selected depot')
+    validateManifestId(manifestId)
+  }
+}
+
+function queueItemFromRows(
+  row: ApplicationQueueItemRow,
+  depots: ApplicationQueueDepotRow[],
+): ApplicationQueueItem {
+  const manifestTargets = depots.flatMap(({ depotId, manifestId }) =>
+    manifestId === null ? [] : [{ depotId, manifestId }],
+  )
+  const item: ApplicationQueueItem = {
+    ...row,
+    depotIds: depots.map(({ depotId }) => depotId),
+  }
+  if (manifestTargets.length > 0) item.manifestTargets = manifestTargets
+  return item
 }

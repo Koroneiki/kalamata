@@ -110,6 +110,69 @@ export const libraryDepotInstalls = sqliteTable(
   ],
 )
 
+export const applicationQueueItems = sqliteTable(
+  'application_queue_items',
+  {
+    id: text('id').primaryKey(),
+    appId: integer('app_id')
+      .notNull()
+      .references(() => library.appId, { onDelete: 'cascade' }),
+    kind: text('kind', { enum: ['download', 'reconcile', 'repair'] }).notNull(),
+    installPath: text('install_path').notNull(),
+    position: integer('position').notNull(),
+    createdAt: integer('created_at').notNull(),
+  },
+  (table) => [
+    unique('application_queue_items_app_id_unique').on(table.appId),
+    unique('application_queue_items_position_unique').on(table.position),
+    check('application_queue_items_id_valid', sql`${table.id} <> ''`),
+    check('application_queue_items_app_id_valid', validId(table.appId)),
+    check(
+      'application_queue_items_kind_valid',
+      sql`${table.kind} IN ('download', 'reconcile', 'repair')`,
+    ),
+    check(
+      'application_queue_items_install_path_valid',
+      sql`${table.installPath} <> ''`,
+    ),
+    check(
+      'application_queue_items_position_valid',
+      sql`${table.position} >= 0`,
+    ),
+  ],
+)
+
+export const applicationQueueItemDepots = sqliteTable(
+  'application_queue_item_depots',
+  {
+    queueItemId: text('queue_item_id')
+      .notNull()
+      .references(() => applicationQueueItems.id, { onDelete: 'cascade' }),
+    depotId: integer('depot_id').notNull(),
+    requestPosition: integer('request_position').notNull(),
+    manifestId: text('manifest_id'),
+  },
+  (table) => [
+    primaryKey({ columns: [table.queueItemId, table.depotId] }),
+    unique('application_queue_item_depots_position_unique').on(
+      table.queueItemId,
+      table.requestPosition,
+    ),
+    check(
+      'application_queue_item_depots_depot_id_valid',
+      validId(table.depotId),
+    ),
+    check(
+      'application_queue_item_depots_request_position_valid',
+      sql`${table.requestPosition} >= 0`,
+    ),
+    check(
+      'application_queue_item_depots_manifest_id_valid',
+      sql`${table.manifestId} IS NULL OR (${table.manifestId} <> '' AND ${table.manifestId} NOT GLOB '*[^0-9]*')`,
+    ),
+  ],
+)
+
 export const settings = sqliteTable(
   'settings',
   {

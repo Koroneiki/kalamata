@@ -32,9 +32,9 @@ Kalamata sends the displayed public manifest ID to `manifest.opensteamtool.com` 
 
 ## Operation queue
 
-Kalamata runs one active, paused, or resumable application operation at a time. A repair requirement blocks only its affected application, so other applications remain available. Multiple repair requirements are retained and exposed one at a time when no operation occupies the queue.
+Kalamata runs one application operation at a time. Confirmed work for other applications is stored in SQLite and starts in FIFO order after the current operation completes, fails, or is cancelled. A paused or resumable operation keeps the execution slot. Pending work can be removed before it starts. Removing a pending first install also releases its unused path reservation.
 
-At startup, Kalamata rolls forward each unambiguous commit-ready transaction. It then restores at most one paused or active staging transaction. Afterward, it exposes queued repair requirements. Multiple journals for one installation are never ordered or replayed automatically. Repair archives all of them and uses the last committed installed metadata. A restored journal uses its recorded depot, manifest, mount order, and owner instead of current Steam metadata. The managed manifest and depot key are still validated before staging resumes.
+At startup, Kalamata rolls forward each unambiguous commit-ready transaction and restores at most one paused or active staging transaction before starting persisted pending work. A repair requirement blocks only its affected application. Multiple repair requirements are retained and exposed one at a time when no operation is running. Multiple journals for one installation are never ordered or replayed automatically. Repair archives all of them and uses the last committed installed metadata. A restored journal uses its recorded depot, manifest, mount order, and owner instead of current Steam metadata. The managed manifest and depot key are still validated before staging resumes.
 
 ## Persistence boundaries
 

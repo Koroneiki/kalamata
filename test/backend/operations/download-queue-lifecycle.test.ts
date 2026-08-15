@@ -1,5 +1,6 @@
 import { afterEach, expect, mock } from 'bun:test'
-import { realpath } from 'node:fs/promises'
+import { mkdir, realpath } from 'node:fs/promises'
+import { join } from 'node:path'
 import type { ProductInfoResult } from '../../../src/backend/steam/types.ts'
 import { getResumableApplicationTransaction } from '../../../src/backend/depot/install/transaction/recovery.ts'
 import { DownloadQueueCoordinator } from '../../../src/backend/operations/download-queue.ts'
@@ -52,7 +53,7 @@ test('start returns active operation state before product planning completes', a
   })
   await planningStarted.promise
 
-  expect(started).toMatchObject({
+  expect(started.operation).toMatchObject({
     status: 'active',
     desiredDepotIds: [DEPOTS[0].depotId],
     phase: 'planning',
@@ -69,10 +70,52 @@ test('start returns active operation state before product planning completes', a
       installPath: fixture.installPath,
       depotIds: [DEPOTS[0].depotId],
     }),
-  ).rejects.toThrow('already running')
+  ).rejects.toThrow('already in Downloads')
 
   productInfo.resolve(products())
   await waitForTerminal(queue)
+})
+
+test('queues another app and starts it after the current operation', async () => {
+  const fixture = await setup()
+  const productInfo = deferred<ProductInfoResult>()
+  const secondAppId = 30
+  const secondPath = join(fixture.root, 'second-install')
+  await mkdir(secondPath)
+  fixture.database.addLibraryEntry(secondAppId)
+  fixture.database.reserveInstallPath(secondAppId, secondPath)
+  const queue = new DownloadQueueCoordinator(
+    {
+      getProductInfoWithDlc: async () => productInfo.promise,
+      reconcileApplication: successfulReconciliation,
+    },
+    fixture.database,
+  )
+
+  await queue.start({
+    appId: APP_ID,
+    installPath: fixture.installPath,
+    depotIds: [DEPOTS[0].depotId],
+  })
+  const queued = await queue.queueDepotUpdate({
+    appId: secondAppId,
+    desiredDepotIds: [],
+  })
+
+  expect(queued.pending).toHaveLength(1)
+  expect(queued.pending[0]).toMatchObject({
+    appId: secondAppId,
+    kind: 'reconcile',
+  })
+  productInfo.resolve(products())
+  await waitForTerminal(queue)
+  while (queue.getOperationState().status === 'active')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(queue.getOperationState()).toMatchObject({
+    status: 'completed',
+    appId: secondAppId,
+  })
+  expect(queue.getDownloadQueue().pending).toEqual([])
 })
 
 test('cancellation aborts precommit work and yields cancelled typed state', async () => {

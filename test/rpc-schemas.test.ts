@@ -1,5 +1,6 @@
 import { expect, mock, test } from 'bun:test'
 import {
+  downloadQueueSnapshotSchema,
   operationStateSchema,
   parseRpcRequest,
   rpcRequestSchemas,
@@ -11,6 +12,39 @@ test('defines request and response schemas for every RPC method', () => {
   expect(Object.keys(rpcRequestSchemas).sort()).toEqual(
     Object.keys(rpcResponseSchemas).sort(),
   )
+})
+
+test('validates complete download queue snapshots', () => {
+  expect(
+    downloadQueueSnapshotSchema.parse({
+      operation: { status: 'idle' },
+      repairRequiredAppIds: [20],
+      pending: [
+        {
+          id: 'queue-item',
+          appId: 10,
+          kind: 'reconcile',
+          installPath: '/games/example',
+          desiredDepotIds: [],
+          createdAt: 1,
+        },
+      ],
+    }).pending,
+  ).toHaveLength(1)
+  expect(() =>
+    downloadQueueSnapshotSchema.parse({
+      operation: { status: 'idle' },
+      repairRequiredAppIds: [],
+      pending: [{ id: '', unexpected: true }],
+    }),
+  ).toThrow()
+  expect(() =>
+    downloadQueueSnapshotSchema.parse({
+      operation: { status: 'idle' },
+      repairRequiredAppIds: [20, 20],
+      pending: [],
+    }),
+  ).toThrow()
 })
 
 test('validates RPC parameters before invoking a handler', () => {

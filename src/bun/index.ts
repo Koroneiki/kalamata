@@ -158,8 +158,11 @@ const rpc = BrowserView.defineRPC<AppRpc>({
       resumeOperation() {
         return queue.resume()
       },
-      getOperationState() {
-        return queue.getOperationState()
+      getDownloadQueue() {
+        return queue.getDownloadQueue()
+      },
+      removeQueuedOperation({ id }) {
+        return queue.removeQueuedOperation(id)
       },
     }),
   },
@@ -169,8 +172,9 @@ let lastOperationEvent = 'idle'
 queue = new DownloadQueueCoordinator(
   steam,
   database,
-  (state) => {
-    if (rpcReady) rpc.send.operationStateChanged(state)
+  (snapshot) => {
+    if (rpcReady) rpc.send.downloadQueueChanged(snapshot)
+    const state = snapshot.operation
     const operationEvent =
       state.status === 'active'
         ? `${state.status}:${state.phase}`
@@ -264,7 +268,11 @@ startup = (async () => {
         })
       }
       // Pending staging and repair evidence keep first-install paths reserved.
-      if (!resumable && !repairFallback)
+      if (
+        !resumable &&
+        !repairFallback &&
+        !database.hasQueuedApplication(entry.appId)
+      )
         database.clearUnusedInstallPath(entry.appId)
     } catch (error) {
       diagnostics.error({
@@ -281,6 +289,7 @@ startup = (async () => {
   await queue.restoreInterrupted()
   for (const recoveryFailure of recoveryFailures)
     queue.markRepairRequired(recoveryFailure.appId, recoveryFailure.installPath)
+  await queue.startPending()
 })()
 await startup
 

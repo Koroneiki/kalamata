@@ -9,9 +9,14 @@ import { useOperationStore } from '@/stores/operation'
 import type { AppSummary } from '@/types/rpc'
 import { operationCompletionMessage } from '@/utils/operation'
 
+function appName(summary: AppSummary | null, appId: number) {
+  return summary ? summary.name : `App ${appId}`
+}
+
 export function useOperationToasts() {
   const operation = useOperationStore()
   const queryCache = useQueryCache()
+  let lastFailureKey = ''
 
   async function appSummary(appId: number): Promise<AppSummary | null> {
     const cached =
@@ -28,6 +33,25 @@ export function useOperationToasts() {
 
   watch(
     () => operation.state,
+    async (state) => {
+      if (!operation.initialized || state.status !== 'failed') {
+        lastFailureKey = ''
+        return
+      }
+      const failureKey = `${state.appId}\0${state.error.kind}\0${state.error.message}`
+      if (failureKey === lastFailureKey) return
+      lastFailureKey = failureKey
+
+      const summary = await appSummary(state.appId)
+      toast.error(`${appName(summary, state.appId)} failed`, {
+        description: state.error.message,
+      })
+    },
+    { flush: 'sync' },
+  )
+
+  watch(
+    () => operation.state,
     async (state, previous) => {
       if (
         !operation.initialized ||
@@ -41,7 +65,7 @@ export function useOperationToasts() {
       const summary = await appSummary(state.appId)
       toast.custom(GameCompletionToast, {
         componentProps: {
-          name: summary?.name ?? `App ${state.appId}`,
+          name: appName(summary, state.appId),
           iconUrl: summary?.iconUrls[0] ?? null,
           message: operationCompletionMessage(
             state.kind,

@@ -74,8 +74,8 @@ A normal browser lacks Electrobun's injected RPC bridge. For browser UI tests:
 
 - Use `page.addInitScript` before hash-route navigation to mock `window.__electrobun` and `window.__electrobunBunBridge.postMessage`.
 - Return RPC responses through `window.__electrobun.receiveMessageFromBun`; derive methods and payloads from `src/types/rpc.ts` and `src/api`.
-- Emit Bun messages with `{ type: 'message', id: 'operationStateChanged', payload }`.
-- Startup needs `getLibrary` and `getOperationState`. App routes also need their summary and details requests.
+- Emit Bun messages with `{ type: 'message', id: 'downloadQueueChanged', payload }` containing the full queue snapshot.
+- Startup needs `getLibrary` and `getDownloadQueue`. App routes also need their summary and details requests.
 - Keep the mock inside Playwright. Do not add RPC bypasses to production code.
 - Clear `sidebar_state` when screenshots require an expanded sidebar, and stop any Vite server started for the test.
 - Playwright covers UI state only. Verify native dialogs, filesystem behavior, Steam access, downloads, and real RPC separately.

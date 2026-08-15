@@ -157,6 +157,15 @@ export interface AcquiredDepotKeys {
 
 export type OperationKind = 'download' | 'reconcile' | 'repair'
 
+export interface PendingDownload {
+  id: string
+  appId: number
+  kind: OperationKind
+  installPath: string
+  desiredDepotIds: number[]
+  createdAt: number
+}
+
 export type OperationPhase =
   | 'planning'
   | 'staging'
@@ -244,6 +253,12 @@ export type OperationState =
       error: { kind: 'recovery'; message: string }
     }
 
+export interface DownloadQueueSnapshot {
+  operation: OperationState
+  pending: PendingDownload[]
+  repairRequiredAppIds: number[]
+}
+
 export type CancelOperationResult =
   | { accepted: true }
   | {
@@ -315,11 +330,11 @@ export type AppRpc = {
       }
       startDownload: {
         params: StartDownloadRequest
-        response: ActiveOperationState
+        response: DownloadQueueSnapshot
       }
       queueDepotUpdate: {
         params: QueueDepotUpdateRequest
-        response: ActiveOperationState
+        response: DownloadQueueSnapshot
       }
       previewApplicationOperation: {
         params: PreviewApplicationOperationRequest
@@ -327,7 +342,7 @@ export type AppRpc = {
       }
       repairApplication: {
         params: RepairApplicationRequest
-        response: ActiveOperationState
+        response: DownloadQueueSnapshot
       }
       acquireManifest: {
         params: AcquireManifestRequest
@@ -349,9 +364,13 @@ export type AppRpc = {
         params: Record<string, never>
         response: ResumeOperationResult
       }
-      getOperationState: {
+      getDownloadQueue: {
         params: Record<string, never>
-        response: OperationState
+        response: DownloadQueueSnapshot
+      }
+      removeQueuedOperation: {
+        params: { id: string }
+        response: DownloadQueueSnapshot
       }
     }
     messages: Record<never, never>
@@ -359,7 +378,7 @@ export type AppRpc = {
   webview: {
     requests: Record<never, never>
     messages: {
-      operationStateChanged: OperationState
+      downloadQueueChanged: DownloadQueueSnapshot
     }
   }
 }

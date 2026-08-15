@@ -105,11 +105,7 @@ const canStart = computed(
     !previewLoading.value &&
     !previewError.value &&
     (!isFirstInstall.value || props.selectedDepotIds.length > 0) &&
-    !['active', 'paused', 'resumable'].includes(operation.state.status) &&
-    !(
-      operation.state.status === 'repair-required' &&
-      operation.state.appId === props.app.appId
-    ) &&
+    !operation.isAppInDownloads(props.app.appId) &&
     !starting.value,
 )
 

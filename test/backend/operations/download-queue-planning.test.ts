@@ -60,7 +60,9 @@ test('planning failure is a terminal typed state and does not reject start', asy
       installPath: fixture.installPath,
       depotIds: [DEPOTS[0].depotId],
     }),
-  ).resolves.toMatchObject({ status: 'active', phase: 'planning' })
+  ).resolves.toMatchObject({
+    operation: { status: 'active', phase: 'planning' },
+  })
   await waitForTerminal(queue)
 
   expect(queue.getOperationState()).toEqual({
@@ -209,7 +211,7 @@ test('queueDepotUpdate persists selections and reconciles the returned metadata 
     appId: APP_ID,
     desiredDepotIds: [...desiredDepotIds].reverse(),
   })
-  expect(active.status).toBe('active')
+  expect(active.operation.status).toBe('active')
 
   await waitForTerminal(queue)
   expect(options.desiredDepots.map(({ depotId }) => depotId)).toEqual(
@@ -399,7 +401,7 @@ test('repair uses the persisted installed version and mount order', async () => 
   )
 
   const active = await queue.repairApplication({ appId: APP_ID })
-  expect(active).toMatchObject({
+  expect(active.operation).toMatchObject({
     kind: 'repair',
     desiredDepotIds: [DEPOTS[0].depotId],
   })
