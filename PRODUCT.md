@@ -4,51 +4,37 @@
 
 ## Platform
 
-desktop (macOS and Windows)
+web
 
-## Product Purpose
+## Product purpose
 
-Kalamata is a private desktop utility for anonymously looking up public Steam application information and installing public-branch depot content from resources managed locally by the user.
+Kalamata lets users inspect public Steam application metadata and install public-branch depot content without signing in to Steam. It stores library records, managed manifests and keys, installation state, and downloaded content on the user's computer.
 
-## Operating Context
+## Operating context
 
-- A user starts with a Steam App ID or an app already recorded in the local library.
-- Steam product identity remains live metadata rather than persisted user data.
-- Kalamata can acquire displayed public-branch manifests through an external request-code service and Steam CDN, and depot keys from a configured public repository.
-- Core screens must remain operable in narrow, resizable desktop windows.
+- Kalamata ships as an Electrobun desktop application for macOS and Windows. Its interface uses a web design language.
+- A user starts with a Steam App ID or an application already recorded in the local library.
+- Steam product identity remains live metadata. Kalamata keeps only the records and files needed to manage installations.
+- The interface must work in narrow, resizable desktop windows.
 
-## Capabilities and Constraints
+## Capabilities and constraints
 
-Current capabilities:
+- Kalamata supports application lookup, depot readiness checks, operation previews, installation, updates, verification, and uninstallation.
+- Operations use one application-wide queue. `docs/download-behavior.md` defines download, recovery, and persistence behavior.
+- Kalamata handles only public-branch content. It does not acquire licenses, entitlements, account credentials, or alternate branches.
 
-- Look up and display public Steam app metadata by App ID.
-- Show installed apps from a local library and public-branch depot readiness.
-- Automatically acquire available depot keys for library apps, with local seeding as a fallback.
-- Automatically acquire missing or invalid public-branch manifests for library apps, with a persisted opt-out and manual per-depot acquisition.
-- Let the user choose an install directory for a new app.
-- Preview depot actions and size bounds before confirming an operation.
-- Let the user install, update, uninstall, and verify selected depots through one application-wide operation queue.
-- Show active operation progress and controls inline and persist successful installation state locally.
-
-Durable constraints:
-
-- Kalamata does not acquire licenses, entitlements, or account credentials.
-- The foundation exposes only public-branch manifests and does not provide branch selection.
-- The foundation does not include parallel depot-content downloads, download history, retries, automatic rollback, or partial file selection.
-
-## Brand Commitments
+## Brand commitments
 
 - The product name is Kalamata.
 - `DESIGN.md` defines the approved visual system; no logo, custom typography, or product artwork has been approved.
 
-## Evidence on Hand
+## Evidence and claims
 
-- `plan/IMPLEMENTATION_PLAN_FOUNDATION.md` is the implemented foundation baseline.
-- `plan/FEATURE_LIST.md` records features outside that foundation and must not be presented as available.
-- The repository contains no testimonials, benchmarks, customer claims, or product artwork; future UI work must not fabricate them.
+- The repository contains no testimonials, benchmarks, customer claims, or product artwork. Do not add any without a source.
+- Do not present planned or unsupported capabilities as available.
 
-## Product Principles
+## Product principles
 
-1. Keep ownership local: installation state, managed resources, and downloads stay on the user's machine.
-2. Make readiness explicit: distinguish missing, outdated, invalid, installed, and selectable depot states before download.
-3. Do not imply capabilities outside the implemented scope.
+1. Keep installation data and downloaded content on the user's computer.
+2. Show depot readiness and recovery requirements before an operation starts.
+3. Prefer explicit status and measured values over implied capability.

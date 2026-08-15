@@ -36,7 +36,7 @@ unknown-publisher warning.
 Install the package for the newer release. Existing application data is
 preserved.
 
-## Local Data
+## Local data
 
 Kalamata stores its data and diagnostic logs in:
 
