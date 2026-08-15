@@ -5,7 +5,9 @@
   >
     <div class="text-center">
       <h1 id="library-title" class="text-lg font-semibold">Library</h1>
-      <p class="text-muted-foreground mt-1 text-sm">WIP</p>
+      <p class="text-muted-foreground mt-1 text-sm">
+        The library page is not available yet.
+      </p>
     </div>
   </section>
 </template>

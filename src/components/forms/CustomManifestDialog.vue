@@ -91,7 +91,7 @@ function submit() {
             :disabled="acquiring"
             @click="emit('remove')"
           >
-            Remove Pinning
+            Unpin manifest
           </Button>
           <Button
             type="button"
@@ -102,7 +102,7 @@ function submit() {
             Cancel
           </Button>
           <Button type="submit" :disabled="acquiring">
-            {{ acquiring ? 'Acquiring…' : 'Use Manifest' }}
+            {{ acquiring ? 'Acquiring…' : 'Use manifest' }}
           </Button>
         </DialogFooter>
       </form>

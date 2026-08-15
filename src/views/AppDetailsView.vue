@@ -440,7 +440,7 @@ async function getDepotResources(depot: AppDepot) {
     }
 
     if (!depot.eligible || depot.manifestStatus !== 'ready') {
-      // Manifest acquisition does not require a key; encrypted filenames can
+      // Manifest acquisition does not require a key. Encrypted filenames can
       // be validated after the key becomes available.
       await getManifest(depot, undefined, keyError, targetAppId)
     } else {

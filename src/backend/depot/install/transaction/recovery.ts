@@ -285,7 +285,7 @@ async function discardPrecommitApplicationTransactionUnlocked(
     if (journal.phase !== 'staging')
       throw new ApplicationTransactionError(
         'recovery',
-        'Commit-ready transaction cannot be cancelled',
+        'A commit-ready transaction cannot be cancelled',
       )
     await rm(transactionRoot, { recursive: true, force: true })
   }

@@ -316,8 +316,8 @@ export function parseRpcRequest<K extends keyof Requests>(
 export function validatedRpcHandlers(
   handlers: RequestHandlers,
 ): RequestHandlers {
-  // SAFETY: every key is required by `RequestHandlers`; only the correlated key/value
-  // relationship is erased here so the wrappers can be generated uniformly.
+  // SAFETY: `RequestHandlers` requires every key. This assertion erases only the
+  // correlated key/value relationship so one loop can generate the wrappers.
   const untypedHandlers = handlers as Record<
     keyof Requests,
     (

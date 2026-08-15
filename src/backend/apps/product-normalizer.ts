@@ -364,8 +364,8 @@ function classifyDepot(
   )
     return 'Unused'
   if (hasDlcOwner && !ownerKnown) return 'Unknown'
-  // DLC is identified either explicitly by dlcappid or by the depot belonging
-  // to a separately fetched DLC product.
+  // DLC comes from dlcappid or from a depot owned by a separately fetched DLC
+  // product.
   if (hasDlcOwner) return 'DLC'
   return ownedByBase ? 'Base Game' : 'DLC'
 }

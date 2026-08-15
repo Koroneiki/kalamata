@@ -34,7 +34,7 @@ const isDisplayedManifestPinned = computed(
 )
 const editable = computed(() => props.depot.eligible && !props.readOnly)
 const manifestLabel = computed(() =>
-  isLatestManifest.value ? 'Latest Manifest GID' : 'Manifest GID',
+  isLatestManifest.value ? 'Latest manifest GID' : 'Manifest GID',
 )
 const manifestId = computed(() => displayedManifestId.value ?? 'Unavailable')
 const acquiring = computed(() => props.acquiring ?? false)

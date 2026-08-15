@@ -70,7 +70,7 @@ function updateDepot(depotId: number, checked: boolean | 'indeterminate') {
 }
 
 function groupSelectionState(depots: AppDepot[]): boolean | 'indeterminate' {
-  // Installed depots stay actionable so unavailable content can still be removed or reselected.
+  // Keep installed depots enabled so users can remove or reselect unavailable content.
   const actionable = installableDepots(depots).filter(
     (depot) =>
       depot.selectable ||

@@ -16,7 +16,7 @@ onmessage = async (event: MessageEvent<unknown>) => {
   }
 
   try {
-    if (!key) throw new Error('Worker was not initialized')
+    if (!key) throw new Error('Initialize the worker before sending chunks')
     const chunk = await processChunkData(
       Buffer.from(message.encrypted),
       key,

@@ -55,8 +55,8 @@ watch(open, (isOpen) => {
         <DialogHeader>
           <DialogTitle>Add a game</DialogTitle>
           <DialogDescription>
-            Enter a Steam App ID to inspect its available content before
-            installing it.
+            Enter a Steam App ID to inspect its depots and manifests before
+            installation.
           </DialogDescription>
         </DialogHeader>
 

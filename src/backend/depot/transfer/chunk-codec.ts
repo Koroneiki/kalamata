@@ -87,7 +87,7 @@ function decompressZip(data: Buffer, expectedSize?: number): Buffer {
   if (entry.header?.size !== undefined)
     validateDeclaredSize('ZIP', entry.header.size, expectedSize)
   const result = archive.readFile(entry)
-  if (!result) throw new Error('ZIP chunk could not be decompressed')
+  if (!result) throw new Error('The ZIP decoder could not decompress the chunk')
   return result
 }
 

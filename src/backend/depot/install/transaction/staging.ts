@@ -172,7 +172,7 @@ export async function estimateDownloadPayload(
   changedFiles: ProjectionEntry[],
   outputDirectory: string,
 ): Promise<bigint> {
-  // Match staging: only installed-source chunks can be copied for partial reuse.
+  // Match staging behavior. Copy only installed-source chunks for partial reuse.
   const candidates = buildChunkCandidates(source, outputDirectory)
   const chunks = uniqueCompressedChunkSizes(changedFiles)
 

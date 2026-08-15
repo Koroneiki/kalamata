@@ -18,7 +18,7 @@ defineEmits<{
     role="alert"
   >
     <p class="text-destructive text-sm font-medium">
-      Couldn’t calculate changes
+      Couldn't calculate changes
     </p>
     <p class="text-muted-foreground mt-1 text-sm">{{ previewError }}</p>
     <Button

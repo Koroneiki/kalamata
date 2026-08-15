@@ -45,7 +45,7 @@ defineEmits<{
           :disabled="actionPending"
           @click="$emit('update:open', false)"
         >
-          Keep Running
+          Keep running
         </Button>
         <Button
           type="button"
@@ -53,7 +53,7 @@ defineEmits<{
           :disabled="actionPending"
           @click="$emit('confirm')"
         >
-          {{ actionPending ? 'Cancelling…' : 'Cancel Operation' }}
+          {{ actionPending ? 'Cancelling…' : 'Cancel operation' }}
         </Button>
       </DialogFooter>
     </DialogContent>

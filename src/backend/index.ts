@@ -38,7 +38,7 @@ export class SteamService {
     this.#products = new ProductInfoService(this.#session)
   }
 
-  // These methods are consumed through structural service interfaces that Fallow cannot trace.
+  // Fallow cannot trace calls to these methods through structural service interfaces.
   // fallow-ignore-next-line unused-class-member
   connect(): Promise<void> {
     return this.#session.connect()

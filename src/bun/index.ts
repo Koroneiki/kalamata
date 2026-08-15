@@ -106,20 +106,24 @@ const rpc = BrowserView.defineRPC<AppRpc>({
       },
       removeLibraryEntry({ appId }) {
         if (queue.isBusyForApp(appId)) {
-          throw new Error('A game cannot be removed while it is downloading')
+          throw new Error(
+            'Wait for the download to finish before removing this game',
+          )
         }
         database.removeLibraryEntry(appId)
       },
       setSelectedDepots({ appId, depotIds }) {
         if (queue.isBusyForApp(appId))
           throw new Error(
-            'Depot selection cannot change while the game is downloading',
+            'Wait for the download to finish before changing the depot selection',
           )
         return appService.setSelectedDepots(appId, depotIds)
       },
       setDepotPinned({ appId, depotId, pinned }) {
         if (queue.isBusyForApp(appId))
-          throw new Error('A depot cannot be pinned while it is downloading')
+          throw new Error(
+            'Wait for the download to finish before pinning a depot',
+          )
         return database.setDepotPinned(appId, depotId, pinned)
       },
       async selectInstallDirectory({ startingPath }) {

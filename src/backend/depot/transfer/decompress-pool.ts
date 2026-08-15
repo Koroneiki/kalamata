@@ -122,7 +122,9 @@ export class DecompressPool {
     worker.onmessageerror = () =>
       this.#handleWorkerFailure(
         slot,
-        new Error('Worker message could not be deserialized'),
+        new Error(
+          'The decompression pool could not deserialize the worker message',
+        ),
       )
     worker.addEventListener('close', () =>
       this.#handleWorkerFailure(slot, new Error('Worker exited unexpectedly')),

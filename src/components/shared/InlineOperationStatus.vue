@@ -119,7 +119,7 @@ const canCancel = computed(
 
 function rejectionMessage(reason: string) {
   if (reason === 'commit-in-progress')
-    return 'The operation is already committing and cannot be cancelled.'
+    return 'Files or metadata are already being committed, so this operation cannot be cancelled.'
   if (reason === 'invalid-phase')
     return 'The operation can no longer be paused.'
   if (reason === 'no-resumable-operation')
@@ -239,7 +239,7 @@ defineExpose({
           v-if="state.status === 'repair-required'"
           class="text-destructive"
         >
-          Installation broken. Please verify game files.
+          This installation could not be verified. Verify the game files.
         </span>
         <p
           v-else-if="state.status === 'failed'"

@@ -71,7 +71,7 @@ test('planning failure is a terminal typed state and does not reject start', asy
     desiredDepotIds: [DEPOTS[0].depotId],
     error: {
       kind: 'steam',
-      message: 'Steam could not be reached or did not authorize the request.',
+      message: 'Could not reach Steam, or Steam denied the request.',
     },
   })
   const serialized = JSON.stringify(queue.getOperationState())
@@ -81,7 +81,7 @@ test('planning failure is a terminal typed state and does not reject start', asy
   const reportedError = reportError.mock.calls[0]![0]
   expect(reportedError).toMatchObject({
     name: 'OperationError:steam',
-    message: 'Steam could not be reached or did not authorize the request.',
+    message: 'Could not reach Steam, or Steam denied the request.',
   })
   expect(reportedError.stack).not.toContain(secret)
   expect(reportedError.stack).not.toContain(DEPOTS[0].key)

@@ -12,7 +12,7 @@ export function validateDepotIds(
   allowEmpty: boolean,
 ): void {
   if (!allowEmpty && depotIds.length === 0)
-    throw new Error('At least one depot must be selected')
+    throw new Error('Select at least one depot')
   uniqueSteamIdsSchema.parse(depotIds)
 }
 
@@ -30,14 +30,14 @@ export function serializeOperationError(
     'unavailable-resource': 'A required manifest or depot key is unavailable.',
     'insufficient-space':
       'There is not enough temporary disk space for the installation.',
-    steam: 'Steam could not be reached or did not authorize the request.',
+    steam: 'Could not reach Steam, or Steam denied the request.',
     'unavailable-content': 'Required depot content is unavailable.',
     'transfer-exhausted': 'All eligible content servers failed.',
     integrity: 'Downloaded or staged content failed integrity verification.',
     filesystem: 'The installation filesystem operation failed.',
-    cancellation: 'The operation was cancelled.',
-    recovery: 'The interrupted installation could not be recovered safely.',
-    persistence: 'Installation metadata could not be finalized.',
+    cancellation: 'The operation stopped after a cancellation request.',
+    recovery: 'Could not safely recover the interrupted installation.',
+    persistence: 'Could not finalize the installation metadata.',
   } satisfies Record<OperationErrorKind, string>
   return { kind, message: messages[kind] }
 }
@@ -87,7 +87,7 @@ export function repairRequiredState(
     error: {
       kind: 'recovery',
       message:
-        'The interrupted installation cannot be verified. Repair is required.',
+        'The interrupted installation cannot be verified. Repair the game files before continuing.',
     },
   }
 }

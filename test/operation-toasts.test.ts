@@ -19,3 +19,9 @@ test('labels completed reconcile operations without depots as uninstalls', () =>
     'Finished uninstalling',
   )
 })
+
+test('labels completed repair operations as verifications', () => {
+  expect(operationCompletionMessage('repair', [228980])).toBe(
+    'Files have been verified',
+  )
+})

@@ -34,7 +34,7 @@ const emit = defineEmits<{
           :disabled="verifyDisabled"
           @click="emit('verify')"
         >
-          Verify Integrity of Game Files
+          Verify game files
         </Button>
       </div>
     </DialogContent>

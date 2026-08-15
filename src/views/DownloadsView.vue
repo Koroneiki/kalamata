@@ -5,7 +5,9 @@
   >
     <div class="text-center">
       <h1 id="downloads-title" class="text-lg font-semibold">Downloads</h1>
-      <p class="text-muted-foreground mt-1 text-sm">WIP</p>
+      <p class="text-muted-foreground mt-1 text-sm">
+        The downloads page is not available yet.
+      </p>
     </div>
   </section>
 </template>

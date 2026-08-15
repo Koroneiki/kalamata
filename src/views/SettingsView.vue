@@ -180,7 +180,7 @@ async function openUserDataFolder() {
       @click="openUserDataFolder"
     >
       <FolderOpen aria-hidden="true" />
-      Open User Data Folder
+      Open user data folder
     </Button>
 
     <p v-if="hasError" class="text-destructive mt-3 text-sm" role="alert">

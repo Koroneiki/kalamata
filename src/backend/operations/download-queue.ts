@@ -310,7 +310,7 @@ export class DownloadQueueCoordinator {
     // Confirmation may open only after writes checkpoint and state becomes paused.
     await runPromise
     if (this.getOperationState().status !== 'paused')
-      throw new Error('Operation could not be paused durably')
+      throw new Error('Could not save the paused operation state')
     return { accepted: true }
   }
 
@@ -439,7 +439,7 @@ export class DownloadQueueCoordinator {
       this.assertAvailable()
     if (!allowRepair && this.#repairRequirements.has(appId))
       throw new Error(
-        'The application must be repaired before another operation',
+        'Repair this application before starting another operation',
       )
     this.#acceptingAppId = appId
     this.#acceptanceDone = new Promise((resolve) => {

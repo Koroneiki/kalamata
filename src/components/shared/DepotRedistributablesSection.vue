@@ -73,7 +73,7 @@ function isAcquiring(depotId: number) {
               <dl class="mt-4 grid min-w-0 gap-x-6 gap-y-3 sm:grid-cols-3">
                 <div class="min-w-0 space-y-1">
                   <dt class="text-muted-foreground text-xs">
-                    Latest Manifest GID
+                    Latest manifest GID
                   </dt>
                   <dd class="flex min-w-0 items-center gap-2">
                     <span class="min-w-0 font-mono text-sm break-all">

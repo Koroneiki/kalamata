@@ -102,7 +102,7 @@ function depotCountSummary(value: ApplicationOperationPreview) {
       class="bg-muted/40 mt-2 rounded-lg border px-4 py-5 text-sm"
       role="status"
     >
-      Everything is already up to date. No operation is needed.
+      No depot changes are needed.
     </p>
   </section>
 </template>

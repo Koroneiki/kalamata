@@ -40,7 +40,7 @@ const isActive = computed(
         :aria-current="isActive ? 'page' : undefined"
         :aria-label="
           error
-            ? `Open App ${entry.appId}; Steam metadata unavailable`
+            ? `Open app ${entry.appId}; Steam metadata unavailable`
             : undefined
         "
         @click="setOpenMobile(false)"

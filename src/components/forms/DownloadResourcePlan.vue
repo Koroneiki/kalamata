@@ -24,7 +24,9 @@ function formattedBytes(value: string | null) {
 
 <template>
   <section class="min-w-0" aria-labelledby="resource-plan-title">
-    <h3 id="resource-plan-title" class="text-sm font-medium">Resource plan</h3>
+    <h3 id="resource-plan-title" class="text-sm font-medium">
+      Download and disk space
+    </h3>
     <div
       v-if="loading"
       class="bg-muted/40 mt-2 grid gap-px overflow-hidden rounded-lg border sm:grid-cols-2"
@@ -41,7 +43,9 @@ function formattedBytes(value: string | null) {
       >
         <Skeleton v-for="index in 3" :key="index" class="h-7 w-14" />
       </div>
-      <span class="sr-only">Calculating operation requirements.</span>
+      <span class="sr-only"
+        >Calculating download size and temporary disk space.</span
+      >
     </div>
     <div
       v-else-if="preview"

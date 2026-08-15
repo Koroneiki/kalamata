@@ -13,13 +13,13 @@ function formattedBytes(value: string | null) {
 
 <template>
   <div class="space-y-1">
-    <dt class="text-muted-foreground text-xs">Download Size</dt>
+    <dt class="text-muted-foreground text-xs">Download size</dt>
     <dd class="text-sm font-medium tabular-nums">
       {{ formattedBytes(downloadBytes) }}
     </dd>
   </div>
   <div class="space-y-1">
-    <dt class="text-muted-foreground text-xs">Size on Disk</dt>
+    <dt class="text-muted-foreground text-xs">Size on disk</dt>
     <dd class="text-sm font-medium tabular-nums">
       {{ formattedBytes(sizeBytes) }}
     </dd>

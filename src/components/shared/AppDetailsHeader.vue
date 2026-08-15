@@ -62,7 +62,7 @@ const publishers = computed(
           <dd class="min-w-0 break-words">{{ developers }}</dd>
         </div>
         <div class="min-w-0 space-y-1">
-          <dt class="text-muted-foreground">Release Date</dt>
+          <dt class="text-muted-foreground">Release date</dt>
           <dd>{{ releaseDate }}</dd>
         </div>
         <div class="min-w-0 space-y-1">

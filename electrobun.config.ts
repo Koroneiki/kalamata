@@ -7,7 +7,7 @@ export default {
     identifier: 'com.koroneiki.kalamata',
     version: packageJson.version,
     description:
-      'Install public Steam depot content from locally managed resources.',
+      'Download public Steam depot files using depot keys and manifests stored on this computer.',
   },
   build: {
     targets: process.env.KALAMATA_BUILD_TARGET ?? 'current',

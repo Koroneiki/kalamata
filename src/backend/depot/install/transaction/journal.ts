@@ -263,7 +263,7 @@ export async function loadResumableJournal(
   if (journal.phase !== 'staging')
     throw new ApplicationTransactionError(
       'recovery',
-      'Commit-ready transaction must be reconciled before resuming',
+      'Reconcile the commit-ready transaction before resuming',
     )
   const matches =
     journal.id === entries[0]!.name &&
