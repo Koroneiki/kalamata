@@ -1,16 +1,21 @@
-import type { AppDetails, AppSummary } from '../../types/rpc.ts'
+import type {
+  AppDetails,
+  AppSummary,
+  AvailableUpdateResult,
+} from '../../types/rpc.ts'
 import type { KalamataDatabase } from '../../db/database.ts'
 import type { SteamService } from '../index.ts'
 import {
   normalizeAppDetails,
   normalizeAppSummary,
 } from './product-normalizer.ts'
+import { AvailableUpdateService } from './available-update-service.ts'
 
 export class AppService {
   constructor(
     readonly steam: Pick<
       SteamService,
-      'getProductInfo' | 'getProductInfoWithDlc'
+      'getProductInfo' | 'getProductInfoWithDlc' | 'getProductInfoWithDlcBatch'
     >,
     readonly database: KalamataDatabase,
   ) {}
@@ -23,6 +28,18 @@ export class AppService {
     return normalizeAppDetails(
       await this.steam.getProductInfoWithDlc(appId),
       this.database,
+    )
+  }
+
+  async checkAvailableUpdate(appId: number): Promise<AvailableUpdateResult> {
+    return new AvailableUpdateService(this.steam, this.database).check(appId)
+  }
+
+  async checkAvailableUpdates(
+    appIds: number[],
+  ): Promise<AvailableUpdateResult[]> {
+    return new AvailableUpdateService(this.steam, this.database).checkBatch(
+      appIds,
     )
   }
 }

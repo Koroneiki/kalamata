@@ -28,6 +28,7 @@ import type {
 } from '@/types/rpc'
 import {
   acceptedIntentAppIds,
+  isAppInDownloads as appIsInDownloads,
   resolveAcceptedDesiredDepotIds,
 } from '@/utils/depot-operation'
 
@@ -153,15 +154,11 @@ export const useOperationStore = defineStore('operation', () => {
   }
 
   function isAppInDownloads(appId: number) {
-    return (
-      repairRequiredAppIds.value.includes(appId) ||
-      pending.value.some((item) => item.appId === appId) ||
-      (state.value.status !== 'idle' &&
-        'appId' in state.value &&
-        state.value.appId === appId &&
-        ['active', 'paused', 'resumable', 'repair-required'].includes(
-          state.value.status,
-        ))
+    return appIsInDownloads(
+      state.value,
+      pending.value,
+      repairRequiredAppIds.value,
+      appId,
     )
   }
 

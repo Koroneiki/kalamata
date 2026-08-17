@@ -20,6 +20,24 @@ export function acceptedIntentAppIds(snapshot: DownloadQueueSnapshot) {
   return appIds
 }
 
+export function isAppInDownloads(
+  state: OperationState,
+  pending: PendingDownload[],
+  repairRequiredAppIds: number[],
+  appId: number,
+) {
+  return (
+    repairRequiredAppIds.includes(appId) ||
+    pending.some((item) => item.appId === appId) ||
+    (state.status !== 'idle' &&
+      'appId' in state &&
+      state.appId === appId &&
+      ['active', 'paused', 'resumable', 'failed', 'repair-required'].includes(
+        state.status,
+      ))
+  )
+}
+
 export function resolveAcceptedDesiredDepotIds(
   state: OperationState,
   pending: PendingDownload[],

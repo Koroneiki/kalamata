@@ -75,6 +75,14 @@ export class SteamService {
     return this.#products.getProductInfoWithDlc(appId)
   }
 
+  // AppService calls this method through a structural Pick that Fallow cannot trace.
+  // fallow-ignore-next-line unused-class-member
+  getProductInfoWithDlcBatch(
+    appIds: number[],
+  ): Promise<Map<number, ProductInfoResult>> {
+    return this.#products.getProductInfoWithDlcBatch(appIds)
+  }
+
   acquireManifest(
     database: KalamataDatabase,
     request: AcquireManifestRequest,

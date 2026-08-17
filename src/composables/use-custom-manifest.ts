@@ -20,6 +20,7 @@ export function useCustomManifest(options: {
     pinned: boolean,
   ) => Promise<void>
   invalidateDetails: (appId: number) => Promise<void>
+  onPinChanged?: (appId: number) => Promise<void>
 }) {
   const customManifestTargets = computed(() =>
     toValue(options.customManifestTargets),
@@ -72,6 +73,7 @@ export function useCustomManifest(options: {
     if (depot.pinned) return
     await options.setDepotPinned(targetAppId, depot.depotId, true)
     await options.invalidateDetails(targetAppId)
+    await options.onPinChanged?.(targetAppId)
   }
 
   async function selectInstalledManifest(
@@ -146,6 +148,7 @@ export function useCustomManifest(options: {
     try {
       await options.setDepotPinned(targetAppId, depot.depotId, false)
       await options.invalidateDetails(targetAppId)
+      await options.onPinChanged?.(targetAppId)
       if (isCurrentApp(targetAppId)) customManifestDialogOpen.value = false
     } catch (error) {
       if (isCurrentApp(targetAppId))

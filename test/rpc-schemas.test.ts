@@ -1,5 +1,6 @@
 import { expect, mock, test } from 'bun:test'
 import {
+  availableUpdateResultSchema,
   downloadQueueSnapshotSchema,
   operationStateSchema,
   parseRpcRequest,
@@ -70,4 +71,59 @@ test('rejects unknown fields and malformed operation states', () => {
   expect(
     operationStateSchema.safeParse({ status: 'active', appId: 10 }).success,
   ).toBe(false)
+})
+
+test('validates every available update result variant and decimal data', () => {
+  expect(
+    availableUpdateResultSchema.parse({
+      status: 'current',
+      appId: 10,
+      checkedAt: 1,
+    }).status,
+  ).toBe('current')
+  expect(
+    availableUpdateResultSchema.parse({
+      status: 'error',
+      appId: 10,
+      message: 'Unavailable',
+      checkedAt: 2,
+    }).status,
+  ).toBe('error')
+  expect(
+    availableUpdateResultSchema.parse({
+      status: 'available',
+      checkedAt: 3,
+      candidate: {
+        app: {
+          appId: 10,
+          name: 'Example',
+          developers: [],
+          publishers: [],
+          releaseDate: null,
+          iconUrls: [],
+          artworkUrl: null,
+        },
+        installedDepotIds: [20],
+        outdatedDepots: [
+          {
+            depotId: 20,
+            ownerAppId: 10,
+            installedManifestId: '9007199254740993',
+            targetManifestId: '9007199254740994',
+            sizeBytes: null,
+            downloadBytes: '9007199254740995',
+          },
+        ],
+        totalDownloadBytes: '9007199254740995',
+      },
+    }).status,
+  ).toBe('available')
+  expect(() =>
+    availableUpdateResultSchema.parse({
+      status: 'current',
+      appId: 10,
+      checkedAt: 1,
+      unexpected: true,
+    }),
+  ).toThrow()
 })

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ConfigProvider } from 'reka-ui'
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import { RouterView } from 'vue-router'
 import 'vue-sonner/style.css'
 
@@ -12,11 +12,34 @@ import { Toaster } from '@/components/ui/sonner'
 import { useManifestQueueToasts } from '@/composables/use-manifest-queue-toasts'
 import { useOperationToasts } from '@/composables/use-operation-toasts'
 import { useOperationStore } from '@/stores/operation'
+import { useAvailableUpdates } from '@/composables/use-available-updates'
 
 const operation = useOperationStore()
+const availableUpdates = useAvailableUpdates()
 useOperationToasts()
 const { active: manifestQueueActive } = useManifestQueueToasts()
 const notificationOffset = computed(() => (manifestQueueActive.value ? 94 : 20))
+
+watch(
+  () => operation.initialized,
+  (initialized) => {
+    if (initialized) void availableUpdates.refreshAll()
+  },
+  { immediate: true },
+)
+
+watch(
+  () => operation.state,
+  (state, previous) => {
+    if (
+      state.status !== 'completed' ||
+      (previous?.status === 'completed' && previous.appId === state.appId)
+    )
+      return
+    queueMicrotask(() => void availableUpdates.syncApp(state.appId))
+  },
+  { flush: 'sync' },
+)
 </script>
 
 <template>

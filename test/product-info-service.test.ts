@@ -69,6 +69,25 @@ describe('ProductInfoService', () => {
     )
   })
 
+  test('rejects product information returned without an access token', async () => {
+    const { service } = createService({
+      apps: {
+        440: {
+          changenumber: 42,
+          missingToken: true,
+          appinfo: appInfo(),
+        },
+      },
+      packages: {},
+      unknownApps: [],
+      unknownPackages: [],
+    })
+
+    await expect(service.getProductInfo(440)).rejects.toThrow(
+      'Steam returned incomplete product information for app 440',
+    )
+  })
+
   test('propagates Steam request errors', async () => {
     const error = new Error('PICS unavailable')
     const getProductInfo = mock(async () => {
@@ -111,6 +130,27 @@ describe('ProductInfoService', () => {
       [[10], [], true],
       [[20, 30], [], true],
     ])
+  })
+
+  test('omits only the base app that owns an unavailable direct DLC', async () => {
+    const base10 = appInfo({ extended: { listofdlc: '20' } })
+    const base11 = appInfo({ extended: { listofdlc: '30' } })
+    const dlc30 = appInfo()
+    const getProductInfo = mock(async (appIds: number[]) =>
+      appIds.includes(10)
+        ? productResult({ 10: product(base10), 11: product(base11) })
+        : {
+            ...productResult({ 30: product(dlc30) }),
+            unknownApps: [20],
+          },
+    )
+    const client = { getProductInfo } as unknown as SteamContentUser
+    const service = new ProductInfoService({ getClient: async () => client })
+
+    const result = await service.getProductInfoWithDlcBatch([10, 11])
+
+    expect(result.has(10)).toBe(false)
+    expect(result.get(11)?.dlcProducts.map(({ appId }) => appId)).toEqual([30])
   })
 })
 

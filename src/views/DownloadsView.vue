@@ -1,19 +1,48 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
 
+import AvailableUpdatesSection from '@/components/shared/AvailableUpdatesSection.vue'
 import InlineOperationStatus from '@/components/shared/InlineOperationStatus.vue'
 import { Button } from '@/components/ui/button'
+import { useAvailableUpdates } from '@/composables/use-available-updates'
 import { useOperationStore } from '@/stores/operation'
 import type { OperationState, PendingDownload } from '@/types/rpc'
 
 const operation = useOperationStore()
+const availableUpdates = useAvailableUpdates()
+const { running: updatesRunning } = availableUpdates
 const removing = reactive(new Set<string>())
 const removalError = ref('')
 
 const current = computed(() =>
   isVisibleOperation(operation.state) ? operation.state : null,
 )
-const empty = computed(() => !current.value && operation.pending.length === 0)
+const visibleCandidates = computed(() =>
+  availableUpdates.candidates.value.filter(
+    ({ app }) => !operation.isAppInDownloads(app.appId),
+  ),
+)
+const empty = computed(
+  () =>
+    !current.value &&
+    operation.pending.length === 0 &&
+    visibleCandidates.value.length === 0,
+)
+const updateChecksFailed = computed(
+  () =>
+    Boolean(availableUpdates.scanError.value) ||
+    availableUpdates.failures.value.length > 0,
+)
+const emptyTitle = computed(() => {
+  if (updatesRunning.value) return 'Checking for updates'
+  if (updateChecksFailed.value) return 'Update status unavailable'
+  return 'No downloads or available updates'
+})
+const emptyDescription = computed(() =>
+  updateChecksFailed.value
+    ? 'Retry the failed checks before assuming all apps are current.'
+    : 'Work started from an app page will appear here.',
+)
 
 function isVisibleOperation(
   state: OperationState,
@@ -83,10 +112,18 @@ async function remove(id: string) {
       </ul>
     </div>
 
+    <AvailableUpdatesSection />
+
     <div v-if="empty" class="mt-6 rounded-md border border-dashed p-6">
-      <p class="text-sm font-medium">No downloads</p>
+      <p class="text-sm font-medium">
+        {{ emptyTitle }}
+      </p>
       <p class="text-muted-foreground mt-1 text-sm">
-        Work started from an app page will appear here.
+        {{
+          updatesRunning
+            ? 'Current download controls remain available while checks run.'
+            : emptyDescription
+        }}
       </p>
     </div>
 

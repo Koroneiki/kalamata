@@ -122,21 +122,36 @@ export class KalamataDatabase {
 
   getLibrary(): LibraryEntry[] {
     return this.sqlite
-      .query<LibraryEntry, []>(
-        'SELECT app_id AS appId, install_path AS installPath, created_at AS createdAt FROM library ORDER BY created_at, app_id',
+      .query<
+        Omit<LibraryEntry, 'hasInstalledDepots'> & {
+          hasInstalledDepots: number
+        },
+        []
+      >(
+        'SELECT app_id AS appId, install_path AS installPath, EXISTS (SELECT 1 FROM library_depot_installs WHERE library_depot_installs.app_id = library.app_id) AS hasInstalledDepots, created_at AS createdAt FROM library ORDER BY created_at, app_id',
       )
       .all()
+      .map((entry) => ({
+        ...entry,
+        hasInstalledDepots: Boolean(entry.hasInstalledDepots),
+      }))
   }
 
   getLibraryEntry(appId: number): LibraryEntry | null {
     validateId(appId, 'appId')
-    return (
-      this.sqlite
-        .query<LibraryEntry, [number]>(
-          'SELECT app_id AS appId, install_path AS installPath, created_at AS createdAt FROM library WHERE app_id = ?',
-        )
-        .get(appId) ?? null
-    )
+    const entry = this.sqlite
+      .query<
+        Omit<LibraryEntry, 'hasInstalledDepots'> & {
+          hasInstalledDepots: number
+        },
+        [number]
+      >(
+        'SELECT app_id AS appId, install_path AS installPath, EXISTS (SELECT 1 FROM library_depot_installs WHERE library_depot_installs.app_id = library.app_id) AS hasInstalledDepots, created_at AS createdAt FROM library WHERE app_id = ?',
+      )
+      .get(appId)
+    return entry
+      ? { ...entry, hasInstalledDepots: Boolean(entry.hasInstalledDepots) }
+      : null
   }
 
   addLibraryEntry(appId: number, now = Date.now()): LibraryEntry {

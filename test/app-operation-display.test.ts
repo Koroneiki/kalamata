@@ -13,6 +13,7 @@ import {
 } from '../src/stores/depot-operation-drafts.ts'
 import {
   acceptedIntentAppIds,
+  isAppInDownloads,
   resolveAcceptedDesiredDepotIds,
 } from '../src/utils/depot-operation.ts'
 import type {
@@ -234,6 +235,20 @@ test('repair and terminal states do not expose desired depot intent', () => {
       440,
     ),
   ).toBeNull()
+})
+
+test('failed current operations remain part of Downloads', () => {
+  const failed: OperationState = {
+    status: 'failed',
+    kind: 'reconcile',
+    appId: 440,
+    installPath: '/games/440',
+    desiredDepotIds: [442],
+    error: { kind: 'planning', message: 'failed' },
+  }
+
+  expect(isAppInDownloads(failed, [], [], 440)).toBe(true)
+  expect(isAppInDownloads(failed, [], [], 441)).toBe(false)
 })
 
 function depot(overrides: Partial<EligibleAppDepot> = {}): EligibleAppDepot {

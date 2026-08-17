@@ -77,6 +77,12 @@ const rpc = BrowserView.defineRPC<AppRpc>({
       async getAppDetails({ appId }) {
         return appService.getAppDetails(appId)
       },
+      async checkAvailableUpdate({ appId }) {
+        return appService.checkAvailableUpdate(appId)
+      },
+      async checkAvailableUpdates({ appIds }) {
+        return appService.checkAvailableUpdates(appIds)
+      },
       openInstallDirectory({ appId }) {
         const installPath = database.getLibraryEntry(appId)?.installPath
         if (!installPath || !Utils.openPath(installPath))

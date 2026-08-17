@@ -13,16 +13,18 @@ import AppDetailsQueryState from '@/components/shared/AppDetailsQueryState.vue'
 import DepotAccordion from '@/components/shared/DepotAccordion.vue'
 import {
   appQueryKeys,
+  appDetailsQuery,
   libraryQueryKey,
   useSettingsQuery,
 } from '@/composables/queries'
 import { useFallbackImage } from '@/composables/use-fallback-image'
 import { useAppOperationDisplay } from '@/composables/use-app-operation-display'
 import { useCustomManifest } from '@/composables/use-custom-manifest'
+import { useAvailableUpdates } from '@/composables/use-available-updates'
+import { useDepotResourceAcquisition } from '@/composables/use-depot-resource-acquisition'
 import {
   acquireDepotKeys,
   acquireManifest,
-  getAppDetails,
   openInstallDirectory,
 } from '@/api/apps'
 import {
@@ -35,7 +37,6 @@ import {
   useDepotOperationDraftStore,
 } from '@/stores/depot-operation-drafts'
 import { useOperationStore } from '@/stores/operation'
-import { useManifestQueueStore } from '@/stores/manifest-queue'
 import type { AppDepot } from '@/types/rpc'
 import { filterDepots, matchesDepotPlatform } from '@/utils/depots'
 
@@ -43,8 +44,9 @@ import { steamIdStringSchema } from '@/types/schemas'
 
 const route = useRoute()
 const operation = useOperationStore()
+const availableUpdates = useAvailableUpdates()
 const depotDrafts = useDepotOperationDraftStore()
-const manifestQueue = useManifestQueueStore()
+const resourceAcquisition = useDepotResourceAcquisition()
 const queryCache = useQueryCache()
 const { data: settings } = useSettingsQuery()
 const parsedAppId = computed(() =>
@@ -56,8 +58,7 @@ const appId = computed(() =>
 const validAppId = computed(() => parsedAppId.value.success)
 
 const { data, error, isPending, refetch } = useQuery(() => ({
-  key: appQueryKeys.details(appId.value),
-  query: () => getAppDetails(appId.value),
+  ...appDetailsQuery(appId.value),
   enabled: validAppId.value,
 }))
 
@@ -169,6 +170,7 @@ const {
       exact: true,
     })
   },
+  onPinChanged: (id) => availableUpdates.refreshApp(id),
 })
 
 watch(
@@ -366,6 +368,7 @@ async function removeFromLibrary() {
   removeError.value = ''
   try {
     await removeMutation.mutateAsync(targetAppId)
+    availableUpdates.removeApp(targetAppId)
     depotDrafts.clear(targetAppId)
     if (appId.value === targetAppId) {
       removeDialogOpen.value = false
@@ -384,17 +387,17 @@ async function getManifest(
   targetAppId = appId.value,
 ) {
   if (!depot.manifestId) return
-  const manifestQueueId = queueId ?? manifestQueue.begin(1)
   const targetManifestId = depot.manifestId
   const key = manifestKey(targetAppId, depot)
   manifestError.value = precedingError
   acquiringManifests.add(key)
   try {
-    await manifestMutation.mutateAsync({
-      appId: depot.ownerAppId,
-      depotId: depot.depotId,
-      manifestId: targetManifestId,
-    })
+    await resourceAcquisition.acquireManifestResource(
+      depot.ownerAppId,
+      depot.depotId,
+      targetManifestId,
+      queueId,
+    )
     await queryCache.invalidateQueries({
       key: appQueryKeys.details(targetAppId),
       exact: true,
@@ -415,7 +418,6 @@ async function getManifest(
     }
   } finally {
     acquiringManifests.delete(key)
-    manifestQueue.settle(manifestQueueId)
   }
 }
 
@@ -427,10 +429,9 @@ async function getDepotResources(depot: AppDepot) {
   try {
     if (depot.eligible && depot.keyStatus !== 'present') {
       try {
-        const result = await depotKeysMutation.mutateAsync({
-          appId: targetAppId,
-          depotIds: [depot.depotId],
-        })
+        const result = await resourceAcquisition.acquireKeys(targetAppId, [
+          depot.depotId,
+        ])
         if (result.missingDepotIds.includes(depot.depotId)) {
           keyError = `Depot key ${depot.depotId} is unavailable.`
         }
@@ -477,7 +478,7 @@ watch(
         !attemptedManifests.has(manifestKey(app.appId, depot)),
     )
     if (pending.length > 0) {
-      const queueId = manifestQueue.begin(pending.length)
+      const queueId = resourceAcquisition.beginManifestBatch(pending.length)
       for (const depot of pending) {
         const key = manifestKey(app.appId, depot)
         // Attempt each manifest version once per app view to avoid reactive refetch loops.

@@ -6,6 +6,7 @@ import {
   steamIdSchema,
   uniqueSteamIdsSchema,
 } from './schemas.ts'
+import { AVAILABLE_UPDATE_BATCH_SIZE } from './available-updates.ts'
 
 type Requests = AppRpc['bun']['requests']
 type RequestSchemas = {
@@ -181,9 +182,42 @@ const appDetailsSchema = strict({
   installedDepotIds: z.array(steamIdSchema),
   depots: z.array(appDepotSchema),
 })
+export const availableUpdateResultSchema = z.discriminatedUnion('status', [
+  strict({
+    status: z.literal('current'),
+    appId: steamIdSchema,
+    checkedAt: z.number().int().nonnegative(),
+  }),
+  strict({
+    status: z.literal('available'),
+    candidate: strict({
+      app: appSummarySchema,
+      installedDepotIds: uniqueSteamIdsSchema,
+      outdatedDepots: z.array(
+        strict({
+          depotId: steamIdSchema,
+          ownerAppId: steamIdSchema,
+          installedManifestId: manifestIdSchema,
+          targetManifestId: manifestIdSchema,
+          sizeBytes: manifestIdSchema.nullable(),
+          downloadBytes: manifestIdSchema.nullable(),
+        }),
+      ),
+      totalDownloadBytes: manifestIdSchema.nullable(),
+    }),
+    checkedAt: z.number().int().nonnegative(),
+  }),
+  strict({
+    status: z.literal('error'),
+    appId: steamIdSchema,
+    message: z.string(),
+    checkedAt: z.number().int().nonnegative(),
+  }),
+])
 const libraryEntrySchema = strict({
   appId: steamIdSchema,
   installPath: z.string().nullable(),
+  hasInstalledDepots: z.boolean(),
   createdAt: z.number().int(),
 })
 const acceptedResultSchema = strict({ accepted: z.literal(true) })
@@ -191,6 +225,10 @@ const acceptedResultSchema = strict({ accepted: z.literal(true) })
 export const rpcRequestSchemas = {
   getAppSummary: idRequestSchema,
   getAppDetails: idRequestSchema,
+  checkAvailableUpdate: idRequestSchema,
+  checkAvailableUpdates: strict({
+    appIds: uniqueSteamIdsSchema.min(1).max(AVAILABLE_UPDATE_BATCH_SIZE),
+  }),
   openInstallDirectory: idRequestSchema,
   getLibrary: emptySchema,
   getSettings: emptySchema,
@@ -235,6 +273,8 @@ export const rpcRequestSchemas = {
 export const rpcResponseSchemas = {
   getAppSummary: appSummarySchema,
   getAppDetails: appDetailsSchema,
+  checkAvailableUpdate: availableUpdateResultSchema,
+  checkAvailableUpdates: z.array(availableUpdateResultSchema),
   openInstallDirectory: z.void(),
   getLibrary: z.array(libraryEntrySchema),
   getSettings: appSettingsSchema,

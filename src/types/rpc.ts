@@ -67,9 +67,33 @@ export interface AppDetails extends AppSummary {
   depots: AppDepot[]
 }
 
+export interface AvailableUpdateCandidate {
+  app: AppSummary
+  installedDepotIds: number[]
+  outdatedDepots: Array<{
+    depotId: number
+    ownerAppId: number
+    installedManifestId: string
+    targetManifestId: string
+    sizeBytes: string | null
+    downloadBytes: string | null
+  }>
+  totalDownloadBytes: string | null
+}
+
+export type AvailableUpdateResult =
+  | { status: 'current'; appId: number; checkedAt: number }
+  | {
+      status: 'available'
+      candidate: AvailableUpdateCandidate
+      checkedAt: number
+    }
+  | { status: 'error'; appId: number; message: string; checkedAt: number }
+
 export interface LibraryEntry {
   appId: number
   installPath: string | null
+  hasInstalledDepots: boolean
   createdAt: number
 }
 
@@ -287,6 +311,14 @@ export type AppRpc = {
       getAppDetails: {
         params: { appId: number }
         response: AppDetails
+      }
+      checkAvailableUpdate: {
+        params: { appId: number }
+        response: AvailableUpdateResult
+      }
+      checkAvailableUpdates: {
+        params: { appIds: number[] }
+        response: AvailableUpdateResult[]
       }
       openInstallDirectory: {
         params: { appId: number }

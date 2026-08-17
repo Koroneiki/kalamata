@@ -1,0 +1,1 @@
+export const AVAILABLE_UPDATE_BATCH_SIZE = 8
