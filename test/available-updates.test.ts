@@ -182,6 +182,7 @@ function products(
 ): ProductInfoResult {
   return {
     baseProduct: product(APP_ID, 'Example', baseDepots),
+    listedDlcAppIds: includeDlc ? [20] : [],
     dlcProducts: includeDlc ? [product(20, 'Expansion', dlcDepots)] : [],
     eligibleBaseDepotIds,
     eligibleDlcDepotIds: new Map(),

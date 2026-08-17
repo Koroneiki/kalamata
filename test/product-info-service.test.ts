@@ -128,6 +128,7 @@ describe('ProductInfoService', () => {
     const result = await service.getProductInfoWithDlc(10)
 
     expect(result.baseProduct).toMatchObject({ appId: 10, appinfo: base })
+    expect(result.listedDlcAppIds).toEqual([20, 30])
     expect(result.dlcProducts.map(({ appId }) => appId)).toEqual([20, 30])
     expect(getProductInfo.mock.calls).toEqual([
       [[10], [], true],
@@ -180,6 +181,7 @@ describe('ProductInfoService', () => {
 
     await expect(service.getProductInfoWithDlc(10)).resolves.toMatchObject({
       baseProduct: { appId: 10 },
+      listedDlcAppIds: [920569],
       dlcProducts: [],
     })
   })

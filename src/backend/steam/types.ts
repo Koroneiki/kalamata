@@ -27,6 +27,7 @@ export interface ProductInfo {
 
 export interface ProductInfoResult {
   baseProduct: ProductInfo
+  listedDlcAppIds: number[]
   dlcProducts: ProductInfo[]
   eligibleBaseDepotIds: ReadonlySet<number> | null
   eligibleDlcDepotIds: ReadonlyMap<number, ReadonlySet<number>>

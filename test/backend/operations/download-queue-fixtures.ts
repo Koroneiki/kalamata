@@ -274,6 +274,7 @@ export function products(
     baseProduct: product(APP_ID, `${APP_ID}`, {
       [DEPOTS[0].depotId]: depotMetadata(DEPOTS[0].manifestId),
     }),
+    listedDlcAppIds: [DLC_APP_ID],
     dlcProducts: [
       product(DLC_APP_ID, `${DLC_APP_ID}`, {
         [DEPOTS[1].depotId]: depotMetadata(dlcManifestId),

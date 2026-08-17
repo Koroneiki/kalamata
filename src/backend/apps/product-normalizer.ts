@@ -70,12 +70,16 @@ export function extractPublicDepots(
   const result: PublicDepot[] = []
   const seen = new Set<number>()
   const allProducts = [products.baseProduct, ...products.dlcProducts]
-  const productNames = new Map(
-    allProducts.map((product) => [
+  // The base app's DLC list remains authoritative when PICS omits DLC product details.
+  const productNames = new Map<number, string | null>(
+    products.listedDlcAppIds.map((appId) => [appId, null]),
+  )
+  for (const product of allProducts) {
+    productNames.set(
       product.appId,
       stringValue(asRecord(product.appinfo.common).name),
-    ]),
-  )
+    )
+  }
   for (const product of allProducts) {
     for (const { depotId, rawDepot } of publicDepotEntries(product)) {
       if (seen.has(depotId)) continue

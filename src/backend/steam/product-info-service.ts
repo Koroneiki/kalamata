@@ -48,6 +48,7 @@ export class ProductInfoService {
     ])
     return {
       baseProduct,
+      listedDlcAppIds: dlcAppIds,
       dlcProducts,
       eligibleBaseDepotIds: eligibleBaseDepotIds(appId, basePackages),
       eligibleDlcDepotIds: eligibleDlcDepotIds(
@@ -98,6 +99,7 @@ export class ProductInfoService {
             appId,
             {
               baseProduct,
+              listedDlcAppIds: dlcIds,
               dlcProducts: dlcIds.flatMap((dlcId) => {
                 const product = dlcProducts.get(dlcId)
                 return product ? [product] : []

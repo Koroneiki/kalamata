@@ -277,6 +277,22 @@ test('classifies unresolved DLC owners as Unknown', async () => {
   ])
 })
 
+test('classifies listed DLCs as DLC when product information is incomplete', () => {
+  const base = makeProductWithDepots(883710, {
+    '920569': { ...depotMetadata('1'), dlcappid: '920569' },
+    '920570': { ...depotMetadata('2'), dlcappid: '920570' },
+  })
+
+  expect(
+    extractPublicDepots(
+      products(base, [], null, new Map(), [920569, 920570]),
+    ).map(({ depotId, ownerAppName, group }) => [depotId, ownerAppName, group]),
+  ).toEqual([
+    [920569, null, 'DLC'],
+    [920570, null, 'DLC'],
+  ])
+})
+
 test('classifies every Steamworks range boundary before ownership', () => {
   const steamworks = [
     228981, 228990, 229000, 229007, 229010, 229012, 229020, 229030, 229033,
@@ -569,9 +585,11 @@ function products(
   dlcProducts: ProductInfo[] = [],
   eligibleBaseDepotIds: ReadonlySet<number> | null = null,
   eligibleDlcDepotIds: ReadonlyMap<number, ReadonlySet<number>> = new Map(),
+  listedDlcAppIds: number[] = dlcProducts.map(({ appId }) => appId),
 ): ProductInfoResult {
   return {
     baseProduct,
+    listedDlcAppIds,
     dlcProducts,
     eligibleBaseDepotIds,
     eligibleDlcDepotIds,
