@@ -17,6 +17,7 @@ import {
   subscribeToDownloadQueue,
 } from '@/api/transport'
 import { appQueryKeys, libraryQueryKey } from '@/composables/queries'
+import { useDepotOperationDraftStore } from '@/stores/depot-operation-drafts'
 import type {
   DownloadQueueSnapshot,
   OperationState,
@@ -25,6 +26,10 @@ import type {
   RepairApplicationRequest,
   StartDownloadRequest,
 } from '@/types/rpc'
+import {
+  acceptedIntentAppIds,
+  resolveAcceptedDesiredDepotIds,
+} from '@/utils/depot-operation'
 
 const persistedTransitionStates = new Set([
   'completed',
@@ -35,6 +40,7 @@ const persistedTransitionStates = new Set([
 
 export const useOperationStore = defineStore('operation', () => {
   const queryCache = useQueryCache()
+  const depotDrafts = useDepotOperationDraftStore()
   const state = shallowRef<OperationState>({ status: 'idle' })
   const pending = shallowRef<PendingDownload[]>([])
   const repairRequiredAppIds = shallowRef<number[]>([])
@@ -63,6 +69,7 @@ export const useOperationStore = defineStore('operation', () => {
     state.value = next
     pending.value = snapshot.pending
     repairRequiredAppIds.value = snapshot.repairRequiredAppIds
+    for (const appId of acceptedIntentAppIds(snapshot)) depotDrafts.clear(appId)
     if (
       next.status !== 'idle' &&
       'appId' in next &&
@@ -158,6 +165,10 @@ export const useOperationStore = defineStore('operation', () => {
     )
   }
 
+  function acceptedDesiredDepotIds(appId: number): number[] | null {
+    return resolveAcceptedDesiredDepotIds(state.value, pending.value, appId)
+  }
+
   function isRepairRequired(appId: number) {
     return repairRequiredAppIds.value.includes(appId)
   }
@@ -182,6 +193,7 @@ export const useOperationStore = defineStore('operation', () => {
     resume,
     cancel,
     isAppInDownloads,
+    acceptedDesiredDepotIds,
     isRepairRequired,
     removePending,
   }

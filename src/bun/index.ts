@@ -112,13 +112,6 @@ const rpc = BrowserView.defineRPC<AppRpc>({
         }
         database.removeLibraryEntry(appId)
       },
-      setSelectedDepots({ appId, depotIds }) {
-        if (queue.isBusyForApp(appId))
-          throw new Error(
-            'Wait for the download to finish before changing the depot selection',
-          )
-        return appService.setSelectedDepots(appId, depotIds)
-      },
       setDepotPinned({ appId, depotId, pinned }) {
         if (queue.isBusyForApp(appId))
           throw new Error(

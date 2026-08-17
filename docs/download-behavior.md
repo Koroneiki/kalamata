@@ -38,9 +38,9 @@ At startup, Kalamata rolls forward each unambiguous commit-ready transaction and
 
 ## Persistence boundaries
 
-Before first installation, user-driven depot selection edits are saved immediately. Automatic preview corrections remain in memory until the user confirms installation. Starting that installation reserves its output path even though no depot is installed yet. The UI derives installation state and Verify availability from installed-depot records, not from the path reservation. For an installed application, selection edits remain in memory until the user confirms Update or Uninstall. Reconciliation saves the selection after planning and before staging, so a later staging failure does not discard it. Stored selections are not pruned when Steam metadata temporarily omits a depot.
+Depot selection edits and automatic preview corrections remain in an in-memory app draft until the user confirms an operation. The draft survives route navigation and metadata refetches in the current webview, but not a reload or restart. Accepted pending or active work supplies the displayed selection; otherwise the UI falls back to installed depots in mount order. Starting a first installation reserves its output path even though no depot is installed yet. The UI derives installation state and Verify availability from installed-depot records, not from the path reservation.
 
-The live filesystem commits before installed-depot metadata is replaced atomically in SQLite. Reconciling to an empty selection removes installed-depot metadata and releases the install path. Transaction evidence and backups remain available until that metadata update succeeds.
+The live filesystem commits before installed-depot metadata is replaced atomically in SQLite. Reconciling to an empty draft removes installed-depot metadata and releases the install path. Transaction evidence and backups remain available until that metadata update succeeds.
 
 ## Operation preview
 

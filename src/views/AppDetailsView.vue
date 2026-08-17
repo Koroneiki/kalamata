@@ -29,8 +29,11 @@ import {
   addLibraryEntry,
   removeLibraryEntry,
   setDepotPinned,
-  setSelectedDepots,
 } from '@/api/library'
+import {
+  normalizeDepotDraftEdit,
+  useDepotOperationDraftStore,
+} from '@/stores/depot-operation-drafts'
 import { useOperationStore } from '@/stores/operation'
 import { useManifestQueueStore } from '@/stores/manifest-queue'
 import type { AppDepot } from '@/types/rpc'
@@ -40,6 +43,7 @@ import { steamIdStringSchema } from '@/types/schemas'
 
 const route = useRoute()
 const operation = useOperationStore()
+const depotDrafts = useDepotOperationDraftStore()
 const manifestQueue = useManifestQueueStore()
 const queryCache = useQueryCache()
 const { data: settings } = useSettingsQuery()
@@ -62,7 +66,6 @@ const artworkFailed = ref(false)
 const dialogOpen = ref(false)
 const gameSettingsOpen = ref(false)
 const removeDialogOpen = ref(false)
-const selectedDepotIds = ref<number[]>([])
 const mutationError = ref('')
 const manifestError = ref('')
 const acquiringManifests = reactive(new Set<string>())
@@ -71,17 +74,12 @@ const attemptedDepotKeys = new Set<number>()
 const removeError = ref('')
 const operationPanel = ref<{ focusHeading: () => void } | null>(null)
 const loadedAppId = ref<number | null>(null)
-const draftDirty = ref(false)
 
 const addMutation = useMutation({
   mutation: (id: number) => addLibraryEntry(id),
 })
 const removeMutation = useMutation({
   mutation: (id: number) => removeLibraryEntry(id),
-})
-const selectionMutation = useMutation({
-  mutation: ({ appId, depotIds }: { appId: number; depotIds: number[] }) =>
-    setSelectedDepots(appId, depotIds),
 })
 const manifestMutation = useMutation({
   mutation: ({
@@ -112,8 +110,27 @@ const pinMutation = useMutation({
 const openInstallDirectoryMutation = useMutation({
   mutation: (id: number) => openInstallDirectory(id),
 })
+const acceptedDepotIds = computed(() =>
+  operation.acceptedDesiredDepotIds(appId.value),
+)
+const baselineDepotIds = computed(
+  () => acceptedDepotIds.value ?? data.value?.installedDepotIds ?? [],
+)
+const selectedDepotIds = computed(
+  () =>
+    acceptedDepotIds.value ??
+    depotDrafts.get(appId.value)?.depotIds ??
+    baselineDepotIds.value,
+)
+const customManifestTargets = computed(
+  () =>
+    new Map(
+      (depotDrafts.get(appId.value)?.manifestTargets ?? []).map(
+        ({ depotId, manifestId }) => [depotId, manifestId],
+      ),
+    ),
+)
 const {
-  customManifestTargets,
   customManifestDialogOpen,
   customManifestDepot,
   customManifestError,
@@ -124,9 +141,15 @@ const {
   removeCustomManifest,
 } = useCustomManifest({
   appId,
-  selectedDepotIds,
+  customManifestTargets,
   acquiringManifests,
-  updateSelectedDepots,
+  setCustomManifestTarget: (depotId, manifestId) =>
+    depotDrafts.setManifestTarget(appId.value, baselineDepotIds.value, {
+      depotId,
+      manifestId,
+    }),
+  removeCustomManifestTarget: (depotId) =>
+    depotDrafts.removeManifestTarget(appId.value, depotId),
   acquireDepotKeys: async (id, depotIds) =>
     (
       await depotKeysMutation.mutateAsync({
@@ -155,7 +178,6 @@ watch(
       const appChanged = loadedAppId.value !== app.appId
       loadedAppId.value = app.appId
       if (appChanged) {
-        draftDirty.value = false
         gameSettingsOpen.value = false
         selectedPath.value = app.installPath ?? ''
         manifestError.value = ''
@@ -165,8 +187,12 @@ watch(
       } else if (app.installPath) {
         selectedPath.value = app.installPath
       }
-      if (appChanged || !draftDirty.value)
-        selectedDepotIds.value = [...app.selectedDepotIds]
+      const retainedDepotIds = new Set([
+        ...app.depots.map(({ depotId }) => depotId),
+        ...app.installedDepotIds,
+        ...(operation.acceptedDesiredDepotIds(app.appId) ?? []),
+      ])
+      depotDrafts.prune(app.appId, retainedDepotIds)
     }
   },
   { immediate: true },
@@ -232,15 +258,14 @@ const hasDepotAdditionsOrRemovals = computed(() =>
   ),
 )
 const hasInstalledDepots = computed(() =>
-  Boolean(
-    data.value?.depots.some(
-      (depot) => depot.eligible && depot.installStatus !== 'not-installed',
-    ),
-  ),
+  Boolean(data.value?.installedDepotIds.length),
+)
+const hasEligibleDepotControl = computed(() =>
+  Boolean(data.value?.depots.some((depot) => depot.eligible)),
 )
 const customManifestRemovable = computed(() =>
   customManifestDepot.value
-    ? customManifestTargets.has(customManifestDepot.value.depotId) ||
+    ? customManifestTargets.value.has(customManifestDepot.value.depotId) ||
       customManifestDepot.value.pinned
     : false,
 )
@@ -248,9 +273,10 @@ const customManifestRemovable = computed(() =>
 const primaryActionLabel = computed(() => {
   if (operation.isAppInDownloads(appId.value)) return 'In Downloads'
   if (!hasInstalledDepots.value) return 'Install'
+  if (!hasEligibleDepotControl.value) return 'Uninstall'
   if (selectedDepotIds.value.length === 0) return 'Uninstall'
   return hasDepotAdditionsOrRemovals.value ||
-    [...customManifestTargets].some(
+    [...customManifestTargets.value].some(
       ([depotId, manifestId]) =>
         selectedIdSet.value.has(depotId) &&
         data.value?.depots.find((depot) => depot.depotId === depotId)
@@ -280,7 +306,7 @@ const canOpenDownload = computed(() => {
   if (!data.value.installPath)
     return selectedDepotIds.value.some(
       (depotId) =>
-        customManifestTargets.has(depotId) ||
+        customManifestTargets.value.has(depotId) ||
         data.value?.depots.find((depot) => depot.depotId === depotId)
           ?.selectable,
     )
@@ -288,14 +314,13 @@ const canOpenDownload = computed(() => {
 })
 
 function openDownload() {
+  if (hasInstalledDepots.value && !hasEligibleDepotControl.value)
+    depotDrafts.editDepotIds(appId.value, [])
   dialogOpen.value = true
 }
 
 function setDownloadDialogOpen(open: boolean) {
   dialogOpen.value = open
-  if (!open) {
-    customManifestTargets.clear()
-  }
 }
 
 async function invalidateDetailsAndLibrary(id = appId.value) {
@@ -321,43 +346,19 @@ async function addToLibrary() {
   }
 }
 
-async function updateSelectedDepots(depotIds: number[]) {
-  // Installed-app selections remain drafts until confirmed planning persists them.
-  if (data.value?.installPath) {
-    selectedDepotIds.value = depotIds
-    draftDirty.value = true
-    mutationError.value = ''
-    return
-  }
-  const targetAppId = appId.value
-  const previous = selectedDepotIds.value
-  selectedDepotIds.value = depotIds
+function updateSelectedDepots(depotIds: number[]) {
+  const eligibleDepotIds = new Set(
+    data.value?.depots
+      .filter((depot) => depot.eligible)
+      .map(({ depotId }) => depotId),
+  )
+  const next = normalizeDepotDraftEdit(depotIds, eligibleDepotIds)
+  depotDrafts.editDepotIds(appId.value, next)
   mutationError.value = ''
-  try {
-    const selected = await selectionMutation.mutateAsync({
-      appId: targetAppId,
-      depotIds,
-    })
-    await queryCache.invalidateQueries({
-      key: appQueryKeys.details(targetAppId),
-      exact: true,
-    })
-    if (appId.value === targetAppId) selectedDepotIds.value = selected
-    draftDirty.value = false
-  } catch (error) {
-    if (appId.value === targetAppId) {
-      selectedDepotIds.value = previous
-      mutationError.value =
-        error instanceof Error ? error.message : String(error)
-    }
-  }
 }
 
 function correctSelectedDepots(depotIds: number[]) {
-  // Preview corrections remain drafts until the confirmed operation persists them.
-  selectedDepotIds.value = depotIds
-  draftDirty.value = true
-  mutationError.value = ''
+  updateSelectedDepots(depotIds)
 }
 
 async function removeFromLibrary() {
@@ -365,9 +366,9 @@ async function removeFromLibrary() {
   removeError.value = ''
   try {
     await removeMutation.mutateAsync(targetAppId)
+    depotDrafts.clear(targetAppId)
     if (appId.value === targetAppId) {
       removeDialogOpen.value = false
-      selectedDepotIds.value = []
     }
     await invalidateDetailsAndLibrary(targetAppId)
   } catch (error) {
@@ -516,7 +517,6 @@ watch(
 )
 
 async function focusDownloadQueue() {
-  customManifestTargets.clear()
   await nextTick()
   operationPanel.value?.focusHeading()
 }
@@ -598,9 +598,7 @@ async function browseLocalFiles() {
             :depots="visibleDepots"
             :selected-depot-ids="selectedDepotIds"
             :read-only="!data.inLibrary"
-            :selection-pending="
-              selectionMutation.isLoading.value || operationBusy
-            "
+            :selection-pending="operationBusy"
             :acquiring-depot-ids="acquiringDepotIds"
             :automatic-resource-acquisition="automaticResourceAcquisition"
             :custom-manifest-targets="customManifestTargets"

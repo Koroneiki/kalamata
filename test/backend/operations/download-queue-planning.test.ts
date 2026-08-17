@@ -191,7 +191,7 @@ test('custom targets are always pinned', async () => {
   })
 })
 
-test('queueDepotUpdate persists selections and reconciles the returned metadata order', async () => {
+test('queueDepotUpdate reconciles installed depots in metadata order', async () => {
   const fixture = await setup()
   await install(fixture, DEPOTS[0])
   let options!: ReconcileApplicationOptions
@@ -217,9 +217,6 @@ test('queueDepotUpdate persists selections and reconciles the returned metadata 
   expect(options.desiredDepots.map(({ depotId }) => depotId)).toEqual(
     desiredDepotIds,
   )
-  expect(fixture.database.getSelectedDepotIds(APP_ID)).toEqual(
-    [...desiredDepotIds].sort((left, right) => left - right),
-  )
   expect(fixture.database.getInstalls(APP_ID)).toEqual([
     expect.objectContaining({
       depotId: DEPOTS[0].depotId,
@@ -235,7 +232,6 @@ test('queueDepotUpdate persists selections and reconciles the returned metadata 
 test('queueDepotUpdate rejects unavailable new depots without removing installs', async () => {
   const fixture = await setup()
   await install(fixture, DEPOTS[0])
-  fixture.database.replaceSelectedDepotIds(APP_ID, [DEPOTS[0].depotId])
   const reconcileApplication = mock(successfulReconciliation)
   const queue = new DownloadQueueCoordinator(
     {
@@ -258,16 +254,12 @@ test('queueDepotUpdate rejects unavailable new depots without removing installs'
   expect(
     fixture.database.getInstalls(APP_ID).map(({ depotId }) => depotId),
   ).toEqual([DEPOTS[0].depotId])
-  expect(fixture.database.getSelectedDepotIds(APP_ID)).toEqual([
-    DEPOTS[0].depotId,
-  ])
   expect(reconcileApplication).not.toHaveBeenCalled()
 })
 
-test('queueDepotUpdate preserves selections when local inputs are unavailable', async () => {
+test('queueDepotUpdate preserves installs when local inputs are unavailable', async () => {
   const fixture = await setup()
   await install(fixture, DEPOTS[0])
-  fixture.database.replaceSelectedDepotIds(APP_ID, [DEPOTS[0].depotId])
   const row = fixture.database.getManifestRows(DEPOTS[1].depotId)[0]!
   await rm(join(fixture.root, row.relativePath))
   const queue = new DownloadQueueCoordinator(
@@ -288,15 +280,14 @@ test('queueDepotUpdate preserves selections when local inputs are unavailable', 
     status: 'failed',
     error: { kind: 'unavailable-resource' },
   })
-  expect(fixture.database.getSelectedDepotIds(APP_ID)).toEqual([
-    DEPOTS[0].depotId,
-  ])
+  expect(
+    fixture.database.getInstalls(APP_ID).map(({ depotId }) => depotId),
+  ).toEqual([DEPOTS[0].depotId])
 })
 
-test('queueDepotUpdate preserves selections when a manifest is malformed', async () => {
+test('queueDepotUpdate preserves installs when a manifest is malformed', async () => {
   const fixture = await setup()
   await install(fixture, DEPOTS[0])
-  fixture.database.replaceSelectedDepotIds(APP_ID, [DEPOTS[0].depotId])
   const row = fixture.database.getManifestRows(DEPOTS[1].depotId)[0]!
   await writeFile(join(fixture.root, row.relativePath), 'malformed')
   const reconcileApplication = mock(successfulReconciliation)
@@ -318,9 +309,9 @@ test('queueDepotUpdate preserves selections when a manifest is malformed', async
     status: 'failed',
     error: { kind: 'unavailable-resource' },
   })
-  expect(fixture.database.getSelectedDepotIds(APP_ID)).toEqual([
-    DEPOTS[0].depotId,
-  ])
+  expect(
+    fixture.database.getInstalls(APP_ID).map(({ depotId }) => depotId),
+  ).toEqual([DEPOTS[0].depotId])
   expect(reconcileApplication).not.toHaveBeenCalled()
 })
 
@@ -387,7 +378,6 @@ test('startDownload is additive and preserves an omitted installed manifest', as
 test('repair uses the persisted installed version and mount order', async () => {
   const fixture = await setup()
   await install(fixture, DEPOTS[0])
-  fixture.database.replaceSelectedDepotIds(APP_ID, [DEPOTS[1].depotId])
   let options!: ReconcileApplicationOptions
   const queue = new DownloadQueueCoordinator(
     {

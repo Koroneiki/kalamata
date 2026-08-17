@@ -328,7 +328,7 @@ queueTest(
       ])
       expect(previewPath).toBe(fixture.installPath)
       expect(fixture.database.getLibraryEntry(APP_ID)?.installPath).toBeNull()
-      expect(fixture.database.getSelectedDepotIds(APP_ID)).toEqual([])
+      expect(fixture.database.getInstalls(APP_ID)).toEqual([])
       expect(queue.getOperationState()).toEqual({ status: 'idle' })
     } finally {
       await fixture.cleanup()

@@ -63,7 +63,7 @@ export type AppDepot = EligibleAppDepot | IneligibleAppDepot
 export interface AppDetails extends AppSummary {
   inLibrary: boolean
   installPath: string | null
-  selectedDepotIds: number[]
+  installedDepotIds: number[]
   depots: AppDepot[]
 }
 
@@ -315,10 +315,6 @@ export type AppRpc = {
       removeLibraryEntry: {
         params: { appId: number }
         response: void
-      }
-      setSelectedDepots: {
-        params: { appId: number; depotIds: number[] }
-        response: number[]
       }
       setDepotPinned: {
         params: { appId: number; depotId: number; pinned: boolean }

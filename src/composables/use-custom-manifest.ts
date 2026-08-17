@@ -1,12 +1,13 @@
-import { reactive, ref, toValue, type MaybeRefOrGetter, type Ref } from 'vue'
+import { computed, ref, toValue, type MaybeRefOrGetter } from 'vue'
 
 import type { EligibleAppDepot } from '../types/rpc'
 
 export function useCustomManifest(options: {
   appId: MaybeRefOrGetter<number>
-  selectedDepotIds: Ref<number[]>
+  customManifestTargets: MaybeRefOrGetter<ReadonlyMap<number, string>>
   acquiringManifests: Set<string>
-  updateSelectedDepots: (depotIds: number[]) => Promise<void>
+  setCustomManifestTarget: (depotId: number, manifestId: string) => void
+  removeCustomManifestTarget: (depotId: number) => void
   acquireDepotKeys: (appId: number, depotIds: number[]) => Promise<number[]>
   acquireManifest: (
     appId: number,
@@ -20,7 +21,9 @@ export function useCustomManifest(options: {
   ) => Promise<void>
   invalidateDetails: (appId: number) => Promise<void>
 }) {
-  const customManifestTargets = reactive(new Map<number, string>())
+  const customManifestTargets = computed(() =>
+    toValue(options.customManifestTargets),
+  )
   const customManifestDialogOpen = ref(false)
   const customManifestDepot = ref<EligibleAppDepot | null>(null)
   const customManifestError = ref('')
@@ -37,7 +40,7 @@ export function useCustomManifest(options: {
   }
 
   function clearCustomManifest(depot: EligibleAppDepot) {
-    customManifestTargets.delete(depot.depotId)
+    options.removeCustomManifestTarget(depot.depotId)
   }
 
   function resetCustomManifests() {
@@ -45,7 +48,6 @@ export function useCustomManifest(options: {
     customManifestDepot.value = null
     customManifestError.value = ''
     customManifestAcquiring.value = false
-    customManifestTargets.clear()
   }
 
   async function acquireResources(
@@ -78,7 +80,7 @@ export function useCustomManifest(options: {
   ) {
     await pinInstalledManifest(targetAppId, depot)
     if (!isCurrentApp(targetAppId)) return
-    customManifestTargets.delete(depot.depotId)
+    options.removeCustomManifestTarget(depot.depotId)
     customManifestDialogOpen.value = false
   }
 
@@ -88,12 +90,7 @@ export function useCustomManifest(options: {
     manifestId: string,
   ) {
     if (!isCurrentApp(targetAppId)) return
-    customManifestTargets.set(depot.depotId, manifestId)
-    if (!options.selectedDepotIds.value.includes(depot.depotId))
-      await options.updateSelectedDepots([
-        ...options.selectedDepotIds.value,
-        depot.depotId,
-      ])
+    options.setCustomManifestTarget(depot.depotId, manifestId)
     customManifestDialogOpen.value = false
   }
 
@@ -132,7 +129,7 @@ export function useCustomManifest(options: {
     const depot = customManifestDepot.value
     if (!depot) return
     const targetAppId = toValue(options.appId)
-    if (customManifestTargets.has(depot.depotId)) {
+    if (customManifestTargets.value.has(depot.depotId)) {
       clearCustomManifest(depot)
       customManifestDialogOpen.value = false
       return

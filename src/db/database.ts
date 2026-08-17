@@ -207,37 +207,6 @@ export class KalamataDatabase {
     appSettingsSchema.parse(settings)
   }
 
-  getSelectedDepotIds(appId: number): number[] {
-    validateId(appId, 'appId')
-    return this.sqlite
-      .query<{ depotId: number }, [number]>(
-        'SELECT depot_id AS depotId FROM library_depot_selections WHERE app_id = ? ORDER BY depot_id',
-      )
-      .all(appId)
-      .map(({ depotId }) => depotId)
-  }
-
-  replaceSelectedDepotIds(appId: number, depotIds: number[]): number[] {
-    validateId(appId, 'appId')
-    const uniqueDepotIds = new Set(depotIds)
-    if (uniqueDepotIds.size !== depotIds.length) {
-      throw new Error('depotIds must not contain duplicates')
-    }
-    for (const depotId of depotIds) validateId(depotId, 'depotId')
-    if (!this.getLibraryEntry(appId)) throw new Error('App is not in library')
-
-    this.sqlite.transaction(() => {
-      this.sqlite
-        .query('DELETE FROM library_depot_selections WHERE app_id = ?')
-        .run(appId)
-      const insert = this.sqlite.query(
-        'INSERT INTO library_depot_selections (app_id, depot_id) VALUES (?, ?)',
-      )
-      for (const depotId of uniqueDepotIds) insert.run(appId, depotId)
-    })()
-    return this.getSelectedDepotIds(appId)
-  }
-
   getManifestRows(depotId: number): ManifestRow[] {
     return this.sqlite
       .query<ManifestRow, [number]>(

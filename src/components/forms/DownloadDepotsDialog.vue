@@ -66,12 +66,7 @@ const manifestTargets = computed(() =>
       manifestId,
     })),
 )
-const isFirstInstall = computed(
-  () =>
-    !props.app.depots.some(
-      (depot) => depot.eligible && depot.installStatus !== 'not-installed',
-    ),
-)
+const isFirstInstall = computed(() => props.app.installedDepotIds.length === 0)
 const confirmationLabel = computed(() => {
   if (isFirstInstall.value) return 'Install'
   return props.selectedDepotIds.length === 0 ? 'Uninstall' : 'Update'

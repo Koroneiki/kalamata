@@ -25,26 +25,4 @@ export class AppService {
       this.database,
     )
   }
-
-  async setSelectedDepots(
-    appId: number,
-    depotIds: number[],
-  ): Promise<number[]> {
-    const details = await this.getAppDetails(appId)
-    const eligibleDepotIds = new Set(
-      details.depots
-        .filter((depot) => depot.eligible)
-        .map((depot) => depot.depotId),
-    )
-    if (depotIds.some((depotId) => !eligibleDepotIds.has(depotId))) {
-      throw new Error('Depot is not available for this app')
-    }
-    const selected = new Set(depotIds)
-    return this.database.replaceSelectedDepotIds(
-      appId,
-      details.depots
-        .map(({ depotId }) => depotId)
-        .filter((depotId) => selected.has(depotId)),
-    )
-  }
 }

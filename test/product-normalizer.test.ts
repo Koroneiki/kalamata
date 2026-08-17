@@ -13,7 +13,6 @@ import type {
   ProductInfoResult,
 } from '../src/backend/steam/types.ts'
 import { KalamataDatabase } from '../src/db/database.ts'
-import { AppService } from '../src/backend/apps/app-service.ts'
 import { removeTemporaryDirectory } from './helpers/filesystem.ts'
 
 const DEPOT_ID = 2379781
@@ -116,7 +115,6 @@ test.skipIf(!(await Bun.file(MANIFEST_FIXTURE_PATH).exists()))(
 
     db.setDepotKey(DEPOT_ID, KEY)
     db.addLibraryEntry(10)
-    db.replaceSelectedDepotIds(10, [DEPOT_ID])
     const selectedDetails = await normalizeAppDetails(
       products(makeProduct()),
       db,
@@ -124,7 +122,7 @@ test.skipIf(!(await Bun.file(MANIFEST_FIXTURE_PATH).exists()))(
     expect(selectedDetails).toMatchObject({
       inLibrary: true,
       installPath: null,
-      selectedDepotIds: [DEPOT_ID],
+      installedDepotIds: [],
     })
     depot = selectedDetails.depots[0]!
     expect(depot).toMatchObject({
@@ -169,33 +167,17 @@ test.skipIf(!(await Bun.file(MANIFEST_FIXTURE_PATH).exists()))(
   },
 )
 
-test('persists only depots belonging to the app', async () => {
+test('exposes installed depot IDs in mount order independent of metadata', async () => {
   const db = await setup()
   db.addLibraryEntry(10)
-  const service = new AppService(
-    {
-      getProductInfo: async () => makeProduct(),
-      getProductInfoWithDlc: async () => products(makeProduct()),
-    },
-    db,
-  )
-
-  await expect(service.setSelectedDepots(10, [20])).rejects.toThrow(
-    'not available for this app',
-  )
-  await expect(service.setSelectedDepots(10, [DEPOT_ID])).resolves.toEqual([
-    DEPOT_ID,
-  ])
-})
-
-test('drops selected depot IDs that are neither published nor installed', async () => {
-  const db = await setup()
-  db.addLibraryEntry(10)
-  db.replaceSelectedDepotIds(10, [DEPOT_ID, 999])
+  db.addManifest(999, '123')
+  db.addManifest(DEPOT_ID, MANIFEST_ID)
+  db.recordInstalledDepot(10, root!, 999, '123')
+  db.recordInstalledDepot(10, root!, DEPOT_ID, MANIFEST_ID)
 
   const details = await normalizeAppDetails(products(makeProduct()), db)
 
-  expect(details.selectedDepotIds).toEqual([DEPOT_ID])
+  expect(details.installedDepotIds).toEqual([999, DEPOT_ID])
 })
 
 test('exposes installed depots hidden from current Steam metadata', async () => {
@@ -203,11 +185,10 @@ test('exposes installed depots hidden from current Steam metadata', async () => 
   db.addLibraryEntry(10)
   db.addManifest(999, '123')
   db.recordInstalledDepot(10, root!, 999, '123')
-  db.replaceSelectedDepotIds(10, [999])
 
   const details = await normalizeAppDetails(products(makeProduct()), db)
 
-  expect(details.selectedDepotIds).toEqual([999])
+  expect(details.installedDepotIds).toEqual([999])
   expect(details.depots).toContainEqual(
     expect.objectContaining({
       depotId: 999,
@@ -294,18 +275,6 @@ test('classifies unresolved DLC owners as Unknown', async () => {
       selectable: false,
     }),
   ])
-
-  db.addLibraryEntry(2531310)
-  const service = new AppService(
-    {
-      getProductInfo: async () => base,
-      getProductInfoWithDlc: async () => products(base),
-    },
-    db,
-  )
-  await expect(service.setSelectedDepots(2531310, [2537700])).rejects.toThrow(
-    'not available for this app',
-  )
 })
 
 test('classifies every Steamworks range boundary before ownership', () => {

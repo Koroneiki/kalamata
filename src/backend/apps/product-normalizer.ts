@@ -121,18 +121,11 @@ export async function normalizeAppDetails(
       await normalizeHiddenInstall(installed, product.appId, database),
     )
   }
-  const availableSelectionIds = new Set(
-    depots.filter((depot) => depot.eligible).map(({ depotId }) => depotId),
-  )
   return {
     ...normalizeAppSummary(product),
     inLibrary: library !== null,
     installPath: library?.installPath ?? null,
-    selectedDepotIds: library
-      ? database
-          .getSelectedDepotIds(product.appId)
-          .filter((depotId) => availableSelectionIds.has(depotId))
-      : [],
+    installedDepotIds: installedRows.map(({ depotId }) => depotId),
     depots,
   }
 }

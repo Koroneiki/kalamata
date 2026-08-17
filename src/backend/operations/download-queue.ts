@@ -506,20 +506,16 @@ export class DownloadQueueCoordinator {
     request: ApplicationPlanRequest,
     signal: AbortSignal,
   ): Promise<void> {
-    const { installedDepots, desiredDepots, desiredDepotIds } =
-      await planApplication(
-        request,
-        this.steam,
-        this.database,
-        signal,
-        (depotIds) => {
-          if (this.#state.status === 'active')
-            this.#state = { ...this.#state, desiredDepotIds: depotIds }
-        },
-      )
-    // Selection is user intent and persists before transactional file changes.
-    if (request.kind === 'reconcile')
-      this.database.replaceSelectedDepotIds(request.appId, desiredDepotIds)
+    const { installedDepots, desiredDepots } = await planApplication(
+      request,
+      this.steam,
+      this.database,
+      signal,
+      (depotIds) => {
+        if (this.#state.status === 'active')
+          this.#state = { ...this.#state, desiredDepotIds: depotIds }
+      },
+    )
     const result = await this.steam.reconcileApplication({
       kind: request.kind,
       appId: request.appId,

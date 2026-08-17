@@ -25,21 +25,6 @@ export const library = sqliteTable(
   ],
 )
 
-export const libraryDepotSelections = sqliteTable(
-  'library_depot_selections',
-  {
-    appId: integer('app_id')
-      .notNull()
-      .references(() => library.appId, { onDelete: 'cascade' }),
-    depotId: integer('depot_id').notNull(),
-  },
-  (table) => [
-    primaryKey({ columns: [table.appId, table.depotId] }),
-    check('library_depot_selections_app_id_valid', validId(table.appId)),
-    check('library_depot_selections_depot_id_valid', validId(table.depotId)),
-  ],
-)
-
 export const manifestFiles = sqliteTable(
   'manifest_files',
   {

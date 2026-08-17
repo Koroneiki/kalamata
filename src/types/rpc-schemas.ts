@@ -178,7 +178,7 @@ const appDetailsSchema = strict({
   ...summaryFields,
   inLibrary: z.boolean(),
   installPath: z.string().nullable(),
-  selectedDepotIds: z.array(steamIdSchema),
+  installedDepotIds: z.array(steamIdSchema),
   depots: z.array(appDepotSchema),
 })
 const libraryEntrySchema = strict({
@@ -198,10 +198,6 @@ export const rpcRequestSchemas = {
   openUserDataFolder: emptySchema,
   addLibraryEntry: idRequestSchema,
   removeLibraryEntry: idRequestSchema,
-  setSelectedDepots: strict({
-    appId: steamIdSchema,
-    depotIds: uniqueSteamIdsSchema,
-  }),
   setDepotPinned: strict({
     appId: steamIdSchema,
     depotId: steamIdSchema,
@@ -246,7 +242,6 @@ export const rpcResponseSchemas = {
   openUserDataFolder: z.void(),
   addLibraryEntry: libraryEntrySchema,
   removeLibraryEntry: z.void(),
-  setSelectedDepots: z.array(steamIdSchema),
   setDepotPinned: z.void(),
   selectInstallDirectory: z.string().nullable(),
   startDownload: downloadQueueSnapshotSchema,

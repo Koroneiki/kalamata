@@ -89,7 +89,7 @@ describe('foundation database', () => {
     expect(tables).toContain('manifest_files')
     expect(tables).toContain('depot_keys')
     expect(tables).toContain('library_depot_installs')
-    expect(tables).toContain('library_depot_selections')
+    expect(tables).not.toContain('library_depot_selections')
     expect(tables).toContain('settings')
     expect(db.sqlite.query('PRAGMA foreign_keys').get()).toEqual({
       foreign_keys: 1,
@@ -98,14 +98,6 @@ describe('foundation database', () => {
       journal_mode: 'wal',
     })
     expect(db.sqlite.query('PRAGMA foreign_key_check').all()).toEqual([])
-    expect(
-      db.sqlite
-        .query<{ table: string }, []>(
-          'PRAGMA foreign_key_list(library_depot_selections)',
-        )
-        .all()
-        .map(({ table }) => table),
-    ).toEqual(['library'])
   })
 
   test('preserves installed depots when upgrading a populated database', async () => {
@@ -168,6 +160,56 @@ describe('foundation database', () => {
         )
         .get(20),
     ).toEqual({ createdAt: 1000 })
+    expect(db.sqlite.query('PRAGMA foreign_key_check').all()).toEqual([])
+  })
+
+  test('drops only permanent selections when upgrading migration 0010', async () => {
+    let db = await openDatabaseAtMigration(10)
+    db.addLibraryEntry(10, 1000)
+    db.addManifest(20, '123')
+    db.recordInstalledDepot(10, root!, 20, '123')
+    db.setDepotPinned(10, 20, true)
+    db.sqlite
+      .query(
+        'INSERT INTO library_depot_selections (app_id, depot_id) VALUES (?, ?)',
+      )
+      .run(10, 30)
+    db.appendApplicationQueueItem({
+      id: 'queued-update',
+      appId: 10,
+      kind: 'reconcile',
+      installPath: root!,
+      depotIds: [20],
+      manifestTargets: [{ depotId: 20, manifestId: '123' }],
+      createdAt: 2000,
+    })
+    db.close()
+    database = undefined
+
+    db = await KalamataDatabase.open(
+      root!,
+      join(import.meta.dir, '..', 'src', 'db', 'migrations'),
+    )
+    database = db
+
+    expect(db.getLibraryEntry(10)).not.toBeNull()
+    expect(db.getInstalls(10)).toEqual([
+      expect.objectContaining({ depotId: 20, pinned: true }),
+    ])
+    expect(db.getApplicationQueueItems()).toEqual([
+      expect.objectContaining({
+        id: 'queued-update',
+        depotIds: [20],
+        manifestTargets: [{ depotId: 20, manifestId: '123' }],
+      }),
+    ])
+    expect(
+      db.sqlite
+        .query<{ count: number }, []>(
+          "SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'library_depot_selections'",
+        )
+        .get(),
+    ).toEqual({ count: 0 })
     expect(db.sqlite.query('PRAGMA foreign_key_check').all()).toEqual([])
   })
 
@@ -330,31 +372,6 @@ describe('foundation database', () => {
     expect(db.getLibraryEntry(10)?.installPath).toBe(install)
     db.clearUnusedInstallPath(10)
     expect(db.getLibraryEntry(10)?.installPath).toBeNull()
-  })
-
-  test('persists independent library selections and cascades their removal', async () => {
-    let db = await openDatabase()
-    expect(db.addLibraryEntry(10, 1000)).toEqual({
-      appId: 10,
-      installPath: null,
-      createdAt: 1000,
-    })
-    expect(db.replaceSelectedDepotIds(10, [30, 20])).toEqual([20, 30])
-
-    db.close()
-    database = undefined
-    db = await KalamataDatabase.open(
-      root!,
-      join(import.meta.dir, '..', 'src', 'db', 'migrations'),
-    )
-    database = db
-    expect(db.getSelectedDepotIds(10)).toEqual([20, 30])
-    expect(db.replaceSelectedDepotIds(10, [40])).toEqual([40])
-    expect(() => db.replaceSelectedDepotIds(10, [40, 40])).toThrow('duplicates')
-
-    db.removeLibraryEntry(10)
-    expect(db.getLibraryEntry(10)).toBeNull()
-    expect(db.getSelectedDepotIds(10)).toEqual([])
   })
 
   test('persists settings after applying native defaults once', async () => {
