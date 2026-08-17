@@ -12,6 +12,7 @@ import {
   archiveUnresolvedApplicationTransaction,
   clearRepairFallback,
   discardPrecommitApplicationTransaction,
+  discardQueuedPrecommitApplicationTransaction,
   getResumableApplicationTransaction,
   hasCommitReadyApplicationTransaction,
 } from '../depot/install/transaction/recovery.ts'
@@ -86,10 +87,12 @@ export class DownloadQueueCoordinator {
   #operationId = 0
   #progressQueued = false
   #currentRequest: ApplicationPlanRequest | undefined
+  #displacedQueueItemId: string | undefined
   #pausing = false
   #cancelRequested = false
   readonly #repairRequirements = new Map<number, string>()
   readonly #queuePreparationFailures = new Set<string>()
+  readonly #removingQueueItems = new Set<string>()
 
   constructor(
     private readonly steam: QueueSteamService,
@@ -110,7 +113,11 @@ export class DownloadQueueCoordinator {
   getDownloadQueue(): DownloadQueueSnapshot {
     return {
       operation: this.getOperationState(),
-      pending: this.database.getApplicationQueueItems().map(queueItemSnapshot),
+      pending: this.database
+        .getApplicationQueueItems()
+        // The displaced row mirrors current work until pause transfers ownership.
+        .filter(({ id }) => id !== this.#displacedQueueItemId)
+        .map(queueItemSnapshot),
       repairRequiredAppIds: [...this.#repairRequirements.keys()],
     }
   }
@@ -176,7 +183,9 @@ export class DownloadQueueCoordinator {
         manifestTargets: request.manifestTargets,
         createdAt: Date.now(),
       }
-      return this.acceptQueueItem(item)
+      return request.priority
+        ? this.acceptPriorityQueueItem(item)
+        : this.acceptQueueItem(item)
     })
   }
 
@@ -254,13 +263,32 @@ export class DownloadQueueCoordinator {
   async removeQueuedOperation(id: string): Promise<DownloadQueueSnapshot> {
     return this.serializeAcceptance(async () => {
       if (this.#shuttingDown) throw new Error('Application is shutting down')
-      const removed = this.database.removeApplicationQueueItem(id)
-      if (!removed) throw new Error('Queued operation was not found')
+      const item = this.database.getApplicationQueueItem(id)
+      if (!item) throw new Error('Queued operation was not found')
+      this.#removingQueueItems.add(id)
+      try {
+        await discardQueuedPrecommitApplicationTransaction(
+          item.installPath,
+          item.appId,
+        )
+        const removed = this.database.removeApplicationQueueItem(id)
+        if (!removed) throw new Error('Queued operation was not found')
+      } catch (error) {
+        this.#queuePreparationFailures.add(id)
+        this.emitState()
+        throw error
+      } finally {
+        this.#removingQueueItems.delete(id)
+      }
       this.#queuePreparationFailures.delete(id)
       this.emitState()
       await this.pump()
       return this.getDownloadQueue()
     })
+  }
+
+  async prioritizeQueuedOperation(id: string): Promise<DownloadQueueSnapshot> {
+    return this.serializeAcceptance(async () => this.prioritizeQueueItem(id))
   }
 
   async startPending(): Promise<void> {
@@ -351,6 +379,8 @@ export class DownloadQueueCoordinator {
   async restoreInterrupted(): Promise<void> {
     for (const entry of this.database.getLibrary()) {
       if (!entry.installPath) continue
+      // A queue row owns its staging journal and must retain queue order.
+      if (this.database.hasQueuedApplication(entry.appId)) continue
       const resumable = await getResumableApplicationTransaction(
         entry.installPath,
         entry.appId,
@@ -485,6 +515,118 @@ export class DownloadQueueCoordinator {
     const failure = await this.pump()
     if (failure?.itemId === item.id) throw failure.error
     return this.getDownloadQueue()
+  }
+
+  private async acceptPriorityQueueItem(
+    item: ApplicationQueueItem,
+  ): Promise<DownloadQueueSnapshot> {
+    this.database.appendApplicationQueueItem(item)
+    return this.prioritizeQueueItem(item.id)
+  }
+
+  private async prioritizeQueueItem(
+    id: string,
+  ): Promise<DownloadQueueSnapshot> {
+    if (this.#shuttingDown) throw new Error('Application is shutting down')
+    const selected = this.database.getApplicationQueueItem(id)
+    if (!selected) throw new Error('Queued operation was not found')
+    this.#queuePreparationFailures.delete(id)
+
+    if (this.canPauseCurrentForPriority())
+      return this.preemptCurrentOperation(id, selected.appId)
+
+    if (
+      (this.#state.status === 'paused' || this.#state.status === 'resumable') &&
+      this.#currentRequest
+    ) {
+      const displaced = this.queueItemForCurrentRequest()
+      this.database.prioritizeApplicationQueueItem(id, displaced)
+      return this.startSelectedAfterDisplacement(id)
+    }
+
+    this.database.prioritizeApplicationQueueItem(id)
+    this.emitState()
+    const failure = await this.pump()
+    if (failure?.itemId === id) throw failure.error
+    return this.getDownloadQueue()
+  }
+
+  private async preemptCurrentOperation(
+    selectedId: string,
+    selectedAppId: number,
+  ): Promise<DownloadQueueSnapshot> {
+    const displaced = this.queueItemForCurrentRequest()
+    // Persist current work before pausing so a crash cannot orphan its progress.
+    this.database.prioritizeApplicationQueueItem(selectedId, displaced)
+    this.#displacedQueueItemId = displaced.id
+    try {
+      const paused = await this.pause()
+      if (!paused.accepted)
+        throw new Error('The current operation could not be paused')
+    } catch (error) {
+      // Pause can lose a race with completion and its queue pump.
+      this.#displacedQueueItemId = undefined
+      if (this.hasResumableCurrent())
+        return this.startSelectedAfterDisplacement(selectedId)
+      this.database.removeApplicationQueueItem(displaced.id, false)
+      const failure = await this.pump()
+      if (failure?.itemId === selectedId) throw failure.error
+      if (this.isCurrentApp(selectedAppId)) return this.getDownloadQueue()
+      throw error
+    }
+    this.#displacedQueueItemId = undefined
+    return this.startSelectedAfterDisplacement(selectedId)
+  }
+
+  private async startSelectedAfterDisplacement(
+    selectedId: string,
+  ): Promise<DownloadQueueSnapshot> {
+    this.#currentRequest = undefined
+    this.#state = { status: 'idle' }
+    this.emitState()
+    const failure = await this.pump()
+    if (failure?.itemId === selectedId) throw failure.error
+    return this.getDownloadQueue()
+  }
+
+  private isCurrentApp(appId: number): boolean {
+    return (
+      this.#state.status !== 'idle' &&
+      'appId' in this.#state &&
+      this.#state.appId === appId
+    )
+  }
+
+  private hasResumableCurrent(): boolean {
+    return (
+      (this.#state.status === 'paused' || this.#state.status === 'resumable') &&
+      Boolean(this.#currentRequest)
+    )
+  }
+
+  private canPauseCurrentForPriority(): boolean {
+    return (
+      this.#state.status === 'active' &&
+      Boolean(this.#currentRequest) &&
+      !this.#commitStarted &&
+      ['staging', 'downloading', 'verifying'].includes(this.#state.phase)
+    )
+  }
+
+  private queueItemForCurrentRequest(): ApplicationQueueItem {
+    const request = this.#currentRequest
+    if (!request) throw new Error('Current operation request is unavailable')
+    return {
+      id: randomUUID(),
+      kind: request.kind,
+      appId: request.appId,
+      installPath: request.installPath,
+      depotIds: [
+        ...(request.desiredDepotIds ?? request.requestedDepotIds ?? []),
+      ],
+      manifestTargets: request.manifestTargets,
+      createdAt: Date.now(),
+    }
   }
 
   private async run(
@@ -778,9 +920,14 @@ export class DownloadQueueCoordinator {
     const pumping = (async (): Promise<QueuePreparationFailure | undefined> => {
       let firstFailure: QueuePreparationFailure | undefined
       while (!this.#shuttingDown) {
+        // A finishing run may pump while queue acceptance awaits pause or cleanup.
         const item = this.database.claimFirstApplicationQueueItem(
           new Set(this.#repairRequirements.keys()),
-          this.#queuePreparationFailures,
+          new Set([
+            ...this.#queuePreparationFailures,
+            ...this.#removingQueueItems,
+            ...(this.#displacedQueueItemId ? [this.#displacedQueueItemId] : []),
+          ]),
         )
         if (!item) return firstFailure
         try {
@@ -803,7 +950,7 @@ export class DownloadQueueCoordinator {
     })()
     this.#pumpPromise = pumping
     try {
-      await pumping
+      return await pumping
     } finally {
       if (this.#pumpPromise === pumping) this.#pumpPromise = undefined
     }
@@ -812,6 +959,8 @@ export class DownloadQueueCoordinator {
   private async requestForQueueItem(
     item: ApplicationQueueItem,
   ): Promise<ApplicationPlanRequest> {
+    const resumed = await this.resumableRequestForQueueItem(item)
+    if (resumed) return resumed
     const request: ApplicationPlanRequest = {
       kind: item.kind,
       appId: item.appId,
@@ -835,6 +984,28 @@ export class DownloadQueueCoordinator {
           this.#state = { status: 'idle' }
       }
     }
+    return request
+  }
+
+  private async resumableRequestForQueueItem(
+    item: ApplicationQueueItem,
+  ): Promise<ApplicationPlanRequest | null> {
+    const resumable = await getResumableApplicationTransaction(
+      item.installPath,
+      item.appId,
+    )
+    if (!resumable) return null
+    if (resumable.kind !== item.kind)
+      throw new Error('Queued operation does not match its saved progress')
+    const request: ApplicationPlanRequest = {
+      kind: resumable.kind,
+      appId: resumable.appId,
+      installPath: resumable.installPath,
+      desiredDepotIds: resumable.desiredDepotIds,
+      fixedDesired: resumable.desired,
+    }
+    if (resumable.kind === 'download')
+      request.requestedDepotIds = resumable.desiredDepotIds
     return request
   }
 }

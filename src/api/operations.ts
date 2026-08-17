@@ -14,6 +14,10 @@ export function removeQueuedOperation(id: string) {
   return rpcRequest('removeQueuedOperation', { id })
 }
 
+export function prioritizeQueuedOperation(id: string) {
+  return rpcRequest('prioritizeQueuedOperation', { id })
+}
+
 export function queueDepotUpdate(request: QueueDepotUpdateRequest) {
   return rpcRequest('queueDepotUpdate', request)
 }

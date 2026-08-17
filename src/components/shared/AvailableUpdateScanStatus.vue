@@ -1,8 +1,12 @@
 <script setup lang="ts">
+import { RefreshCw } from '@lucide/vue'
 import { computed, onMounted } from 'vue'
 
 import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 import { useAvailableUpdates } from '@/composables/use-available-updates'
+
+defineProps<{ candidateCount: number }>()
 
 const availableUpdates = useAvailableUpdates()
 const failureMessage = computed(() => {
@@ -22,28 +26,42 @@ onMounted(() => void availableUpdates.refreshAll())
 </script>
 
 <template>
-  <div class="mb-3 flex items-center justify-between gap-4">
-    <h2 class="text-sm font-medium">Available updates</h2>
+  <div class="flex items-center justify-between gap-4 border-b pb-3">
+    <h2
+      id="available-updates-heading"
+      class="flex min-w-0 items-baseline gap-2 text-lg font-semibold"
+    >
+      Available updates
+      <span
+        v-if="candidateCount"
+        class="text-muted-foreground font-mono text-xs font-normal tabular-nums"
+      >
+        {{ candidateCount }}
+      </span>
+    </h2>
     <Button
       type="button"
       variant="ghost"
-      size="sm"
+      size="icon-sm"
+      aria-label="Refresh available updates"
+      title="Refresh available updates"
       :disabled="availableUpdates.running.value"
       @click="availableUpdates.refreshAll()"
     >
-      Refresh
+      <RefreshCw aria-hidden="true" />
     </Button>
   </div>
-  <p
+  <div
     v-if="availableUpdates.running.value"
-    class="text-muted-foreground mb-3 text-sm"
+    class="border-b py-4"
+    role="status"
+    aria-label="Checking for available updates"
   >
-    Checking {{ availableUpdates.checked.value }} of
-    {{ availableUpdates.total.value }}
-  </p>
+    <Skeleton class="h-4 w-40 max-w-full" />
+  </div>
   <div
     v-if="failureMessage"
-    class="mb-3 flex items-center justify-between gap-4"
+    class="flex flex-col items-start gap-2 border-b py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
   >
     <p class="text-destructive text-sm" role="alert">
       {{ failureMessage }}

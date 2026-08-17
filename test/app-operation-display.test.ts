@@ -16,6 +16,7 @@ import {
   isAppInDownloads,
   resolveAcceptedDesiredDepotIds,
 } from '../src/utils/depot-operation.ts'
+import { operationLabel } from '../src/utils/operation.ts'
 import type {
   ActiveOperationState,
   EligibleAppDepot,
@@ -69,6 +70,39 @@ test('operation progress remains monotonic across replanning', () => {
     reusedLocalBytes: '75',
     networkBytes: '90',
   })
+})
+
+test('resuming preserves displayed counters while accepting the active state', () => {
+  const paused = {
+    ...operation({
+      installedBytesCompleted: '100',
+      installedBytesTotal: '500',
+      reusedLocalBytes: '75',
+      networkBytes: '80',
+    }),
+    status: 'paused' as const,
+  }
+  const resumed = operation({
+    installedBytesCompleted: '0',
+    installedBytesTotal: '0',
+    reusedLocalBytes: '0',
+    networkBytes: '0',
+  })
+
+  expect(mergeOperationProgress(resumed, paused)).toMatchObject({
+    status: 'active',
+    installedBytesCompleted: '100',
+    installedBytesTotal: '500',
+    reusedLocalBytes: '75',
+    networkBytes: '80',
+  })
+})
+
+test('operation labels distinguish install, update, uninstall, and verify', () => {
+  expect(operationLabel('download', [1])).toBe('Install')
+  expect(operationLabel('reconcile', [1])).toBe('Update')
+  expect(operationLabel('reconcile', [])).toBe('Uninstall')
+  expect(operationLabel('repair', [])).toBe('Verify')
 })
 
 test('completed operation remains visible for three seconds in total', () => {

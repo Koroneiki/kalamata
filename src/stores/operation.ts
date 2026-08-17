@@ -7,6 +7,7 @@ import {
   cancelOperation,
   getDownloadQueue,
   pauseOperation,
+  prioritizeQueuedOperation,
   queueDepotUpdate,
   repairApplication,
   removeQueuedOperation,
@@ -177,6 +178,13 @@ export const useOperationStore = defineStore('operation', () => {
     return result
   }
 
+  async function prioritizePending(id: string) {
+    const sequence = getDownloadQueueMessageSequence()
+    const result = await prioritizeQueuedOperation(id)
+    if (getDownloadQueueMessageSequence() === sequence) applySnapshot(result)
+    return result
+  }
+
   return {
     state,
     pending,
@@ -193,5 +201,6 @@ export const useOperationStore = defineStore('operation', () => {
     acceptedDesiredDepotIds,
     isRepairRequired,
     removePending,
+    prioritizePending,
   }
 })

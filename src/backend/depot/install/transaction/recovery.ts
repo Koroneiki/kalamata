@@ -272,8 +272,23 @@ export async function discardPrecommitApplicationTransaction(
   )
 }
 
+export async function discardQueuedPrecommitApplicationTransaction(
+  outputDirectory: string,
+  expectedAppId: number,
+): Promise<void> {
+  await withOutputLock(outputDirectory, () =>
+    discardPrecommitApplicationTransactionUnlocked(
+      outputDirectory,
+      expectedAppId,
+      true,
+    ),
+  )
+}
+
 async function discardPrecommitApplicationTransactionUnlocked(
   outputDirectory: string,
+  expectedAppId?: number,
+  discardMalformed = false,
 ): Promise<void> {
   const root = join(outputDirectory, CONFIG_DIRECTORY, 'transactions')
   const entries = await readDirectoryIfExists(root)
@@ -281,7 +296,14 @@ async function discardPrecommitApplicationTransactionUnlocked(
   for (const entry of entries) {
     if (!entry.isDirectory()) continue
     const transactionRoot = join(root, entry.name)
-    const journal = await readJournal(join(transactionRoot, 'journal.json'))
+    const journalPath = join(transactionRoot, 'journal.json')
+    // Queue removal may discard malformed state only when no commit evidence exists.
+    const journal = discardMalformed
+      ? await readRecoverableJournal(transactionRoot, journalPath)
+      : await readJournal(journalPath)
+    if (!journal) continue
+    if (expectedAppId !== undefined)
+      assertJournalIdentity(journal, expectedAppId, outputDirectory)
     if (journal.phase !== 'staging')
       throw new ApplicationTransactionError(
         'recovery',

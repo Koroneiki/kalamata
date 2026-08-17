@@ -73,6 +73,22 @@ test('rejects unknown fields and malformed operation states', () => {
   ).toBe(false)
 })
 
+test('validates priority queue requests', () => {
+  expect(
+    parseRpcRequest('prioritizeQueuedOperation', { id: 'queued' }),
+  ).toEqual({ id: 'queued' })
+  expect(
+    parseRpcRequest('queueDepotUpdate', {
+      appId: 10,
+      desiredDepotIds: [20],
+      priority: true,
+    }),
+  ).toMatchObject({ priority: true })
+  expect(() =>
+    parseRpcRequest('prioritizeQueuedOperation', { id: '' }),
+  ).toThrow()
+})
+
 test('validates every available update result variant and decimal data', () => {
   expect(
     availableUpdateResultSchema.parse({

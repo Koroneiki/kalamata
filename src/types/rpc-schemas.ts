@@ -248,7 +248,10 @@ export const rpcRequestSchemas = {
     depotIds: uniqueSteamIdsSchema.min(1),
     manifestTargets: z.array(manifestTargetSchema).optional(),
   }),
-  queueDepotUpdate: strict(operationRequestFields),
+  queueDepotUpdate: strict({
+    ...operationRequestFields,
+    priority: z.boolean().optional(),
+  }),
   previewApplicationOperation: strict({
     ...operationRequestFields,
     installPath: z.string().optional(),
@@ -268,6 +271,7 @@ export const rpcRequestSchemas = {
   resumeOperation: emptySchema,
   getDownloadQueue: emptySchema,
   removeQueuedOperation: strict({ id: z.string().min(1) }),
+  prioritizeQueuedOperation: strict({ id: z.string().min(1) }),
 } satisfies RequestSchemas
 
 export const rpcResponseSchemas = {
@@ -353,6 +357,7 @@ export const rpcResponseSchemas = {
   ]),
   getDownloadQueue: downloadQueueSnapshotSchema,
   removeQueuedOperation: downloadQueueSnapshotSchema,
+  prioritizeQueuedOperation: downloadQueueSnapshotSchema,
 } satisfies ResponseSchemas
 
 export function parseRpcRequest<K extends keyof Requests>(

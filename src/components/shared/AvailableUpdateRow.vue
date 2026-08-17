@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
+import DownloadAppIdentity from '@/components/shared/DownloadAppIdentity.vue'
 import { Button } from '@/components/ui/button'
 import type { AvailableUpdateCandidate } from '@/types/rpc'
 import { formatBytes } from '@/utils/bytes'
@@ -17,7 +18,7 @@ const depotLabel = computed(() =>
 )
 const actionLabel = computed(() => {
   if (props.reviewing) return 'Preparing...'
-  return props.error ? 'Retry' : 'Review update'
+  return props.error ? 'Retry' : 'Download'
 })
 
 defineEmits<{ review: [] }>()
@@ -25,23 +26,34 @@ defineEmits<{ review: [] }>()
 
 <template>
   <li
-    class="flex min-w-0 flex-wrap items-center justify-between gap-3 px-4 py-3"
+    class="grid min-w-0 gap-4 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
   >
-    <div class="min-w-0">
-      <p class="truncate text-sm font-medium">{{ candidate.app.name }}</p>
-      <p class="text-muted-foreground text-xs">
-        {{ candidate.outdatedDepots.length }} {{ depotLabel }}
-        <template v-if="candidate.totalDownloadBytes !== null">
-          - {{ formatBytes(candidate.totalDownloadBytes) }}
-        </template>
-      </p>
-      <p v-if="error" class="text-destructive mt-1 text-xs" role="alert">
-        {{ error }}
-      </p>
+    <div
+      class="grid min-w-0 gap-3 md:grid-cols-[minmax(17rem,1fr)_minmax(0,1fr)] md:items-center"
+    >
+      <DownloadAppIdentity
+        :app-id="candidate.app.appId"
+        :app="candidate.app"
+        artwork="wide"
+      />
+      <div class="min-w-0 text-xs">
+        <p class="text-muted-foreground">Update contents</p>
+        <p class="mt-1 tabular-nums">
+          {{ candidate.outdatedDepots.length }} outdated {{ depotLabel }}
+          <template v-if="candidate.totalDownloadBytes !== null">
+            <span aria-hidden="true"> · </span>
+            <span class="sr-only">, download size </span>
+            {{ formatBytes(candidate.totalDownloadBytes) }}
+          </template>
+        </p>
+        <p v-if="error" class="text-destructive mt-2 text-sm" role="alert">
+          {{ error }}
+        </p>
+      </div>
     </div>
     <Button
+      class="w-full sm:w-auto"
       type="button"
-      variant="ghost"
       size="sm"
       :disabled="disabled"
       @click="$emit('review')"

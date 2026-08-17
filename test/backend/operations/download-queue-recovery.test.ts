@@ -140,6 +140,60 @@ test('startup pauses a download interrupted while running until resumed', async 
   await waitForTerminal(queue)
 })
 
+test('startup leaves a queued paused journal under queue ownership', async () => {
+  const fixture = await setup()
+  fixture.database.reserveInstallPath(APP_ID, fixture.installPath)
+  await writeQueueStagingJournal(restoreOptions(fixture), true)
+  fixture.database.appendApplicationQueueItem({
+    id: 'queued-paused',
+    appId: APP_ID,
+    kind: 'download',
+    installPath: fixture.installPath,
+    depotIds: [DEPOTS[0].depotId],
+    createdAt: 1,
+  })
+  const queue = new DownloadQueueCoordinator(
+    {
+      getProductInfoWithDlc: async () => products(),
+      reconcileApplication: successfulReconciliation,
+    },
+    fixture.database,
+  )
+
+  await queue.restoreInterrupted()
+
+  expect(queue.getOperationState()).toEqual({ status: 'idle' })
+  expect(queue.getDownloadQueue().pending).toHaveLength(1)
+})
+
+test('removing queued paused work discards its journal first', async () => {
+  const fixture = await setup()
+  fixture.database.reserveInstallPath(APP_ID, fixture.installPath)
+  await writeQueueStagingJournal(restoreOptions(fixture), true)
+  fixture.database.appendApplicationQueueItem({
+    id: 'queued-paused',
+    appId: APP_ID,
+    kind: 'download',
+    installPath: fixture.installPath,
+    depotIds: [DEPOTS[0].depotId],
+    createdAt: 1,
+  })
+  const queue = new DownloadQueueCoordinator(
+    {
+      getProductInfoWithDlc: async () => products(),
+      reconcileApplication: successfulReconciliation,
+    },
+    fixture.database,
+  )
+
+  await queue.removeQueuedOperation('queued-paused')
+
+  expect(
+    await getResumableApplicationTransaction(fixture.installPath, APP_ID),
+  ).toBeNull()
+  expect(fixture.database.getLibraryEntry(APP_ID)?.installPath).toBeNull()
+})
+
 test('commit-ready failures require repair and keep the app protected', async () => {
   const fixture = await setup()
   const queue = new DownloadQueueCoordinator(

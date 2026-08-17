@@ -108,6 +108,7 @@ export interface QueueDepotUpdateRequest {
   appId: number
   desiredDepotIds: number[]
   manifestTargets?: DepotManifestTarget[]
+  priority?: boolean
 }
 
 export interface PreviewApplicationOperationRequest {
@@ -397,6 +398,10 @@ export type AppRpc = {
         response: DownloadQueueSnapshot
       }
       removeQueuedOperation: {
+        params: { id: string }
+        response: DownloadQueueSnapshot
+      }
+      prioritizeQueuedOperation: {
         params: { id: string }
         response: DownloadQueueSnapshot
       }

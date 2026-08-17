@@ -15,7 +15,7 @@ import type {
   ResumableOperationState,
 } from '../types/rpc'
 
-type ProgressOperation =
+export type ProgressOperation =
   | ActiveOperationState
   | PausedOperationState
   | ResumableOperationState
@@ -35,7 +35,7 @@ type DisplayTransition =
   | { kind: 'clear' }
   | { kind: 'complete' }
 
-function isProgressOperation(
+export function isProgressOperation(
   state: OperationState,
 ): state is ProgressOperation {
   return ['active', 'paused', 'resumable'].includes(state.status)

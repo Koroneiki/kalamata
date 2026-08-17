@@ -101,3 +101,35 @@ test('claims the first item whose app is not blocked', async () => {
   expect(db.claimFirstApplicationQueueItem(new Set([10]))?.id).toBe('eligible')
   expect(db.getApplicationQueueItems().map(({ id }) => id)).toEqual(['blocked'])
 })
+
+test('prioritizes one item and places displaced work directly behind it', async () => {
+  const db = await setup()
+  for (const appId of [10, 20, 30]) db.addLibraryEntry(appId)
+  for (const [id, appId] of [
+    ['first', 10],
+    ['selected', 20],
+  ] as const)
+    db.appendApplicationQueueItem({
+      id,
+      appId,
+      kind: 'reconcile',
+      installPath: `/tmp/${id}`,
+      depotIds: [],
+      createdAt: appId,
+    })
+
+  db.prioritizeApplicationQueueItem('selected', {
+    id: 'displaced',
+    appId: 30,
+    kind: 'download',
+    installPath: '/tmp/displaced',
+    depotIds: [301],
+    createdAt: 30,
+  })
+
+  expect(db.getApplicationQueueItems().map(({ id }) => id)).toEqual([
+    'selected',
+    'displaced',
+    'first',
+  ])
+})

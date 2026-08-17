@@ -1,5 +1,5 @@
 import { afterEach, expect, mock } from 'bun:test'
-import { mkdir, realpath } from 'node:fs/promises'
+import { mkdir, realpath, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ProductInfoResult } from '../../../src/backend/steam/types.ts'
 import { getResumableApplicationTransaction } from '../../../src/backend/depot/install/transaction/recovery.ts'
@@ -28,6 +28,17 @@ afterEach(async () => {
 async function setup(): Promise<DownloadQueueFixture> {
   currentFixture = await setupDownloadQueue()
   return currentFixture
+}
+
+async function waitForCompletedApp(
+  queue: DownloadQueueCoordinator,
+  appId: number,
+): Promise<void> {
+  while (true) {
+    const state = queue.getOperationState()
+    if (state.status === 'completed' && state.appId === appId) return
+    await Bun.sleep(1)
+  }
 }
 
 test('start returns active operation state before product planning completes', async () => {
@@ -108,9 +119,7 @@ test('queues another app and starts it after the current operation', async () =>
     kind: 'reconcile',
   })
   productInfo.resolve(products())
-  await waitForTerminal(queue)
-  while (queue.getOperationState().status === 'active')
-    await new Promise((resolve) => setTimeout(resolve, 0))
+  await waitForCompletedApp(queue, secondAppId)
   expect(queue.getOperationState()).toMatchObject({
     status: 'completed',
     appId: secondAppId,
@@ -313,6 +322,311 @@ test('pause keeps the queue occupied and resume continues the operation', async 
   await waitForTerminal(queue)
   expect(queue.getOperationState().status).toBe('completed')
   expect(calls).toBe(2)
+})
+
+test('priority pauses current work and starts the selected queued app', async () => {
+  const fixture = await setup()
+  const selectedAppId = 30
+  const selectedPath = join(fixture.root, 'selected-install')
+  await mkdir(selectedPath)
+  fixture.database.addLibraryEntry(selectedAppId)
+  fixture.database.reserveInstallPath(selectedAppId, selectedPath)
+  const currentStaging = deferred<void>()
+  const selectedStarted = deferred<void>()
+  const finishSelected = deferred<void>()
+  let currentCalls = 0
+  const queue = new DownloadQueueCoordinator(
+    {
+      getProductInfoWithDlc: async () => products(),
+      reconcileApplication: async (options) => {
+        if (options.appId === APP_ID && currentCalls++ === 0) {
+          await writeQueueStagingJournal(options)
+          options.onEvent?.({ type: 'phase', phase: 'staging' })
+          currentStaging.resolve()
+          await new Promise((_, reject) =>
+            options.signal!.addEventListener(
+              'abort',
+              () => {
+                void writeQueueStagingJournal(options, true).then(() =>
+                  reject(options.signal!.reason),
+                )
+              },
+              { once: true },
+            ),
+          )
+        }
+        if (options.appId === selectedAppId) {
+          selectedStarted.resolve()
+          await finishSelected.promise
+        }
+        return successfulReconciliation(options)
+      },
+    },
+    fixture.database,
+  )
+
+  await queue.start({
+    appId: APP_ID,
+    installPath: fixture.installPath,
+    depotIds: [DEPOTS[0].depotId],
+  })
+  await currentStaging.promise
+  const queued = await queue.queueDepotUpdate({
+    appId: selectedAppId,
+    desiredDepotIds: [],
+  })
+  await queue.prioritizeQueuedOperation(queued.pending[0]!.id)
+  await selectedStarted.promise
+
+  expect(queue.getOperationState()).toMatchObject({
+    status: 'active',
+    appId: selectedAppId,
+  })
+  expect(queue.getDownloadQueue().pending.map(({ appId }) => appId)).toEqual([
+    APP_ID,
+  ])
+  expect(
+    await getResumableApplicationTransaction(
+      await realpath(fixture.installPath),
+      APP_ID,
+    ),
+  ).not.toBeNull()
+
+  finishSelected.resolve()
+  await waitForCompletedApp(queue, APP_ID)
+  expect(queue.getDownloadQueue().pending).toEqual([])
+  expect(currentCalls).toBe(2)
+})
+
+test('priority waits when the current operation is committing', async () => {
+  const fixture = await setup()
+  const selectedAppId = 30
+  const selectedPath = join(fixture.root, 'selected-install')
+  await mkdir(selectedPath)
+  fixture.database.addLibraryEntry(selectedAppId)
+  fixture.database.reserveInstallPath(selectedAppId, selectedPath)
+  const committing = deferred<void>()
+  const finishCurrent = deferred<void>()
+  const queue = new DownloadQueueCoordinator(
+    {
+      getProductInfoWithDlc: async () => products(),
+      reconcileApplication: async (options) => {
+        if (options.appId === APP_ID) {
+          options.onEvent?.({ type: 'phase', phase: 'committing' })
+          committing.resolve()
+          await finishCurrent.promise
+        }
+        return successfulReconciliation(options)
+      },
+    },
+    fixture.database,
+  )
+
+  await queue.start({
+    appId: APP_ID,
+    installPath: fixture.installPath,
+    depotIds: [DEPOTS[0].depotId],
+  })
+  await committing.promise
+  const queued = await queue.queueDepotUpdate({
+    appId: selectedAppId,
+    desiredDepotIds: [],
+  })
+  const prioritized = await queue.prioritizeQueuedOperation(
+    queued.pending[0]!.id,
+  )
+
+  expect(prioritized.operation).toMatchObject({
+    status: 'active',
+    appId: APP_ID,
+    phase: 'committing',
+  })
+  expect(prioritized.pending.map(({ appId }) => appId)).toEqual([selectedAppId])
+  finishCurrent.resolve()
+  await waitForCompletedApp(queue, selectedAppId)
+})
+
+test('priority rejects preparation failure and keeps the selected row', async () => {
+  const fixture = await setup()
+  const selectedAppId = 30
+  const selectedPath = join(fixture.root, 'selected-install')
+  const transactionPath = join(
+    selectedPath,
+    '.Kalamata',
+    'transactions',
+    'broken',
+  )
+  await mkdir(transactionPath, { recursive: true })
+  await writeFile(join(transactionPath, 'journal.json'), '{broken')
+  fixture.database.addLibraryEntry(selectedAppId)
+  fixture.database.reserveInstallPath(selectedAppId, selectedPath)
+  fixture.database.appendApplicationQueueItem({
+    id: 'selected',
+    appId: selectedAppId,
+    kind: 'reconcile',
+    installPath: selectedPath,
+    depotIds: [],
+    createdAt: 1,
+  })
+  const queue = new DownloadQueueCoordinator(
+    {
+      getProductInfoWithDlc: async () => products(),
+      reconcileApplication: successfulReconciliation,
+    },
+    fixture.database,
+  )
+
+  await expect(queue.prioritizeQueuedOperation('selected')).rejects.toThrow()
+
+  expect(queue.getOperationState()).toEqual({ status: 'idle' })
+  expect(queue.getDownloadQueue().pending.map(({ id }) => id)).toEqual([
+    'selected',
+  ])
+})
+
+test('malformed precommit work can be removed from the queue', async () => {
+  const fixture = await setup()
+  const transactionPath = join(
+    fixture.installPath,
+    '.Kalamata',
+    'transactions',
+    'broken',
+  )
+  await mkdir(transactionPath, { recursive: true })
+  await writeFile(join(transactionPath, 'journal.json'), '{broken')
+  fixture.database.appendApplicationQueueItem({
+    id: 'malformed',
+    appId: APP_ID,
+    kind: 'reconcile',
+    installPath: fixture.installPath,
+    depotIds: [],
+    createdAt: 1,
+  })
+  const queue = new DownloadQueueCoordinator(
+    {
+      getProductInfoWithDlc: async () => products(),
+      reconcileApplication: successfulReconciliation,
+    },
+    fixture.database,
+  )
+
+  const snapshot = await queue.removeQueuedOperation('malformed')
+
+  expect(snapshot.pending).toEqual([])
+  expect(fixture.database.getApplicationQueueItem('malformed')).toBeNull()
+})
+
+test('failed priority preparation does not restart completed work', async () => {
+  const fixture = await setup()
+  const selectedAppId = 30
+  const selectedPath = join(fixture.root, 'selected-install')
+  const transactionPath = join(
+    selectedPath,
+    '.Kalamata',
+    'transactions',
+    'broken',
+  )
+  await mkdir(transactionPath, { recursive: true })
+  await writeFile(join(transactionPath, 'journal.json'), '{broken')
+  fixture.database.addLibraryEntry(selectedAppId)
+  fixture.database.reserveInstallPath(selectedAppId, selectedPath)
+  fixture.database.appendApplicationQueueItem({
+    id: 'selected',
+    appId: selectedAppId,
+    kind: 'reconcile',
+    installPath: selectedPath,
+    depotIds: [],
+    createdAt: 1,
+  })
+  const staging = deferred<void>()
+  let currentCalls = 0
+  const queue = new DownloadQueueCoordinator(
+    {
+      getProductInfoWithDlc: async () => products(),
+      reconcileApplication: async (options) => {
+        if (options.appId === APP_ID) {
+          currentCalls++
+          options.onEvent?.({ type: 'phase', phase: 'staging' })
+          staging.resolve()
+          await new Promise<void>((resolve) =>
+            options.signal!.addEventListener('abort', () => resolve(), {
+              once: true,
+            }),
+          )
+        }
+        return successfulReconciliation(options)
+      },
+    },
+    fixture.database,
+  )
+
+  await queue.start({
+    appId: APP_ID,
+    installPath: fixture.installPath,
+    depotIds: [DEPOTS[0].depotId],
+  })
+  await staging.promise
+  await expect(queue.prioritizeQueuedOperation('selected')).rejects.toThrow()
+
+  expect(queue.getOperationState()).toMatchObject({
+    status: 'completed',
+    appId: APP_ID,
+  })
+  expect(currentCalls).toBe(1)
+  expect(queue.getDownloadQueue().pending.map(({ id }) => id)).toEqual([
+    'selected',
+  ])
+})
+
+test('completed work is not left queued when a priority pause fails', async () => {
+  const fixture = await setup()
+  const selectedAppId = 30
+  const selectedPath = join(fixture.root, 'selected-install')
+  await mkdir(selectedPath)
+  fixture.database.addLibraryEntry(selectedAppId)
+  fixture.database.reserveInstallPath(selectedAppId, selectedPath)
+  const staging = deferred<void>()
+  const finishSelected = deferred<void>()
+  const queue = new DownloadQueueCoordinator(
+    {
+      getProductInfoWithDlc: async () => products(),
+      reconcileApplication: async (options) => {
+        if (options.appId === APP_ID) {
+          options.onEvent?.({ type: 'phase', phase: 'staging' })
+          staging.resolve()
+          await new Promise<void>((resolve) =>
+            options.signal!.addEventListener('abort', () => resolve(), {
+              once: true,
+            }),
+          )
+        } else {
+          await finishSelected.promise
+        }
+        return successfulReconciliation(options)
+      },
+    },
+    fixture.database,
+  )
+
+  await queue.start({
+    appId: APP_ID,
+    installPath: fixture.installPath,
+    depotIds: [DEPOTS[0].depotId],
+  })
+  await staging.promise
+  const queued = await queue.queueDepotUpdate({
+    appId: selectedAppId,
+    desiredDepotIds: [],
+  })
+  await queue.prioritizeQueuedOperation(queued.pending[0]!.id)
+
+  expect(queue.getOperationState()).toMatchObject({
+    status: 'active',
+    appId: selectedAppId,
+  })
+  expect(queue.getDownloadQueue().pending).toEqual([])
+  finishSelected.resolve()
+  await waitForCompletedApp(queue, selectedAppId)
 })
 
 test('cancel overrides a pending pause and discards resumable work', async () => {

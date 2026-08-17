@@ -28,6 +28,17 @@ const visibleCandidates = computed(() =>
     ({ app }) => !operation.isAppInDownloads(app.appId),
   ),
 )
+const hasScanFailure = computed(
+  () =>
+    Boolean(availableUpdates.scanError.value) ||
+    availableUpdates.failures.value.length > 0,
+)
+const showCurrent = computed(
+  () =>
+    !availableUpdates.running.value &&
+    !hasScanFailure.value &&
+    visibleCandidates.value.length === 0,
+)
 
 async function reviewUpdate(candidate: AvailableUpdateCandidate) {
   if (reviewingAppId.value !== null) return
@@ -80,12 +91,9 @@ function updateSubmitted() {
 </script>
 
 <template>
-  <div class="mt-8">
-    <AvailableUpdateScanStatus />
-    <ul
-      v-if="visibleCandidates.length"
-      class="divide-border divide-y rounded-md border"
-    >
+  <section class="mt-10" aria-labelledby="available-updates-heading">
+    <AvailableUpdateScanStatus :candidate-count="visibleCandidates.length" />
+    <ul class="divide-border divide-y" aria-label="Available updates">
       <AvailableUpdateRow
         v-for="candidate in visibleCandidates"
         :key="candidate.app.appId"
@@ -99,8 +107,15 @@ function updateSubmitted() {
         "
         @review="reviewUpdate(candidate)"
       />
+      <li
+        v-if="showCurrent"
+        class="text-muted-foreground py-5 text-sm"
+        role="status"
+      >
+        Your installed apps are up to date
+      </li>
     </ul>
-  </div>
+  </section>
   <DownloadDepotsDialog
     v-if="reviewDetails"
     :open="reviewDialogOpen"
@@ -108,6 +123,7 @@ function updateSubmitted() {
     :initial-path="reviewDetails.installPath ?? ''"
     :selected-depot-ids="reviewDepotIds"
     :custom-manifest-targets="emptyManifestTargets"
+    priority
     @update:open="reviewDialogOpen = $event"
     @update:selected-depot-ids="updateReviewDepotIds"
     @download-started="updateSubmitted"

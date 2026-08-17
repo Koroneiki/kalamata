@@ -346,6 +346,13 @@ export class KalamataDatabase {
     )
   }
 
+  getApplicationQueueItem(id: string): ApplicationQueueItem | null {
+    if (!id) throw new Error('Queue item id must not be empty')
+    return (
+      this.getApplicationQueueItems().find((item) => item.id === id) ?? null
+    )
+  }
+
   hasQueuedApplication(appId: number): boolean {
     validateId(appId, 'appId')
     return Boolean(
@@ -376,7 +383,10 @@ export class KalamataDatabase {
     })()
   }
 
-  removeApplicationQueueItem(id: string): ApplicationQueueItem | null {
+  removeApplicationQueueItem(
+    id: string,
+    releaseInstallPath = true,
+  ): ApplicationQueueItem | null {
     if (!id) throw new Error('Queue item id must not be empty')
     return this.sqlite.transaction(() => {
       const item = this.getApplicationQueueItems().find(
@@ -387,7 +397,7 @@ export class KalamataDatabase {
         .query('DELETE FROM application_queue_items WHERE id = ?')
         .run(id)
       this.compactQueue()
-      if (item.kind === 'download') {
+      if (releaseInstallPath && item.kind === 'download') {
         this.sqlite
           .query(
             'UPDATE library SET install_path = NULL WHERE app_id = ? AND install_path = ? AND NOT EXISTS (SELECT 1 FROM library_depot_installs WHERE app_id = ?)',
@@ -403,6 +413,25 @@ export class KalamataDatabase {
     this.sqlite.transaction(() => {
       const items = [item, ...this.getApplicationQueueItems()]
       this.rewriteApplicationQueue(items)
+    })()
+  }
+
+  prioritizeApplicationQueueItem(
+    id: string,
+    displaced?: ApplicationQueueItem,
+  ): void {
+    if (!id) throw new Error('Queue item id must not be empty')
+    if (displaced) validateQueueItem(displaced)
+    this.sqlite.transaction(() => {
+      const items = this.getApplicationQueueItems()
+      const selected = items.find((item) => item.id === id)
+      if (!selected) throw new Error('Queued operation was not found')
+      const remaining = items.filter((item) => item.id !== id)
+      this.rewriteApplicationQueue([
+        selected,
+        ...(displaced ? [displaced] : []),
+        ...remaining,
+      ])
     })()
   }
 

@@ -22,13 +22,17 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 
-const props = defineProps<{
-  open: boolean
-  app: AppDetails
-  initialPath: string
-  selectedDepotIds: number[]
-  customManifestTargets: ReadonlyMap<number, string>
-}>()
+const props = withDefaults(
+  defineProps<{
+    open: boolean
+    app: AppDetails
+    initialPath: string
+    selectedDepotIds: number[]
+    customManifestTargets: ReadonlyMap<number, string>
+    priority?: boolean
+  }>(),
+  { priority: false },
+)
 
 const emit = defineEmits<{
   'update:open': [value: boolean]
@@ -121,6 +125,7 @@ watch(
     previewError.value = ''
     downloadStarted.value = false
   },
+  { immediate: true },
 )
 
 // The selected directory affects reusable content and therefore the estimate.
@@ -140,7 +145,7 @@ watch(
       return
     void requestPreview()
   },
-  { deep: true },
+  { deep: true, immediate: true },
 )
 
 async function requestPreview() {
@@ -236,6 +241,7 @@ async function submit() {
         appId: props.app.appId,
         desiredDepotIds: props.selectedDepotIds,
         manifestTargets: manifestTargets.value,
+        priority: props.priority,
       })
     }
     downloadStarted.value = true

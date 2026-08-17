@@ -163,6 +163,9 @@ const rpc = BrowserView.defineRPC<AppRpc>({
       removeQueuedOperation({ id }) {
         return queue.removeQueuedOperation(id)
       },
+      prioritizeQueuedOperation({ id }) {
+        return queue.prioritizeQueuedOperation(id)
+      },
     }),
   },
 })
