@@ -69,6 +69,7 @@ export async function planApplication(
     signal,
     pureRemoval,
     needsOwnershipMetadata,
+    new Set(installedRows.map(({ depotId }) => depotId)),
   )
   signal.throwIfAborted()
   const metadata = new Map(publicDepots.map((depot) => [depot.depotId, depot]))
@@ -173,6 +174,7 @@ async function getPublicDepots(
   signal: AbortSignal,
   pureRemoval: boolean,
   needsOwnershipMetadata: boolean,
+  installedDepotIds: ReadonlySet<number>,
 ): Promise<PublicDepot[]> {
   const canPlanLocally =
     request.fixedDesired !== undefined ||
@@ -189,7 +191,7 @@ async function getPublicDepots(
     }),
     signal,
   )
-  return extractPublicDepots(product)
+  return extractPublicDepots(product, installedDepotIds)
 }
 
 function validateDesiredAvailability(

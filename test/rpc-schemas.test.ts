@@ -66,6 +66,42 @@ test('validates RPC parameters before invoking a handler', () => {
   expect(getAppSummary).not.toHaveBeenCalled()
 })
 
+test('accepts unavailable depots in app details', () => {
+  expect(
+    rpcResponseSchemas.getAppDetails.parse({
+      appId: 10,
+      name: 'Game',
+      developers: [],
+      publishers: [],
+      releaseDate: null,
+      iconUrls: [],
+      artworkUrl: null,
+      inLibrary: false,
+      installPath: null,
+      installedDepotIds: [],
+      depots: [
+        {
+          depotId: 11,
+          mountIndex: 0,
+          ownerAppId: 10,
+          ownerAppName: null,
+          group: 'Unavailable',
+          platform: null,
+          language: null,
+          manifestId: '1',
+          sizeBytes: '1',
+          downloadBytes: '1',
+          eligible: false,
+          manifestStatus: null,
+          keyStatus: null,
+          installStatus: null,
+          selectable: false,
+        },
+      ],
+    }).depots[0]?.group,
+  ).toBe('Unavailable')
+})
+
 test('rejects unknown fields and malformed operation states', () => {
   expect(() => parseRpcRequest('getLibrary', { unexpected: true })).toThrow()
   expect(

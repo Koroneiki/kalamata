@@ -45,7 +45,7 @@ const depotGroups = computed(() => [
         ]
       : []
   }),
-  ...(['Unknown', 'Unused'] as const).flatMap((name) => {
+  ...(['Unknown', 'Unused', 'Unavailable'] as const).flatMap((name) => {
     const depots = props.depots.filter((depot) => depot.group === name)
     return depots.length
       ? [{ name, depots, summary: null, installable: false as const }]

@@ -32,10 +32,20 @@ export class SteamService {
     ManifestAcquisitionService
   >()
 
-  constructor() {
+  constructor(
+    reportPackageFailure?: (
+      appIds: number[],
+      countryCode: string,
+      error: Error,
+    ) => void,
+  ) {
     this.#session = new SteamSession()
     this.#downloads = new DepotDownloadService(this.#session)
-    this.#products = new ProductInfoService(this.#session)
+    this.#products = new ProductInfoService(
+      this.#session,
+      undefined,
+      reportPackageFailure,
+    )
   }
 
   // Fallow cannot trace calls to these methods through structural service interfaces.
@@ -138,6 +148,12 @@ export class SteamService {
   }
 }
 
-export function createSteamService(): SteamService {
-  return new SteamService()
+export function createSteamService(
+  reportPackageFailure?: (
+    appIds: number[],
+    countryCode: string,
+    error: Error,
+  ) => void,
+): SteamService {
+  return new SteamService(reportPackageFailure)
 }

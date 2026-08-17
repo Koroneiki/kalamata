@@ -28,4 +28,6 @@ export interface ProductInfo {
 export interface ProductInfoResult {
   baseProduct: ProductInfo
   dlcProducts: ProductInfo[]
+  eligibleBaseDepotIds: ReadonlySet<number> | null
+  eligibleDlcDepotIds: ReadonlyMap<number, ReadonlySet<number>>
 }

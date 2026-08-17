@@ -43,7 +43,14 @@ async function getMainViewUrl(): Promise<string> {
 }
 
 const database = await openKalamataDatabase(Utils.paths.userData)
-const steam = createSteamService()
+const steam = createSteamService((appIds, countryCode, error) => {
+  diagnostics.error({
+    event: 'product-info.package-discovery-failed',
+    appIds,
+    countryCode,
+    error,
+  })
+})
 // Warm the shared fallback without delaying the main window.
 void steam.initializeDepotKeyCache(database).catch((error) => {
   diagnostics.error({
@@ -66,6 +73,7 @@ const defaultSettings: AppSettings = {
   hideRedistributables: true,
   hideUnknownDepots: true,
   hideUnusedDepots: true,
+  hideUnavailableDepots: true,
   platforms: [systemPlatform],
 }
 const rpc = BrowserView.defineRPC<AppRpc>({

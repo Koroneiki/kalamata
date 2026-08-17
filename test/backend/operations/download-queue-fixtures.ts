@@ -279,6 +279,8 @@ export function products(
         [DEPOTS[1].depotId]: depotMetadata(dlcManifestId),
       }),
     ],
+    eligibleBaseDepotIds: null,
+    eligibleDlcDepotIds: new Map(),
   }
 }
 

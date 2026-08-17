@@ -65,6 +65,7 @@ export function normalizeAppSummary(product: ProductInfo): AppSummary {
 
 export function extractPublicDepots(
   products: ProductInfoResult,
+  installedDepotIds: ReadonlySet<number> = new Set(),
 ): PublicDepot[] {
   const result: PublicDepot[] = []
   const seen = new Set<number>()
@@ -87,6 +88,9 @@ export function extractPublicDepots(
           products.baseProduct.appId,
           productNames,
           result.length,
+          products.eligibleBaseDepotIds,
+          products.eligibleDlcDepotIds,
+          installedDepotIds.has(depotId),
         ),
       )
     }
@@ -103,7 +107,7 @@ export async function normalizeAppDetails(
   const installedRows = database.getInstalls(product.appId)
   const installs = new Map(installedRows.map((row) => [row.depotId, row]))
   const depots: AppDepot[] = []
-  const publicDepots = extractPublicDepots(products)
+  const publicDepots = extractPublicDepots(products, new Set(installs.keys()))
   const publicDepotIds = new Set(publicDepots.map(({ depotId }) => depotId))
   for (const depot of publicDepots) {
     depots.push(
@@ -147,6 +151,9 @@ function normalizePublicDepot(
   baseAppId: number,
   productNames: Map<number, string | null>,
   mountIndex: number,
+  eligibleBaseDepotIds: ReadonlySet<number> | null,
+  eligibleDlcDepotIds: ReadonlyMap<number, ReadonlySet<number>>,
+  installed: boolean,
 ): PublicDepot {
   const depot = asRecord(rawDepot)
   const config = asRecord(depot.config)
@@ -154,14 +161,21 @@ function normalizePublicDepot(
   // Steam can list a DLC depot under the base app. In that case dlcappid is
   // the authoritative classification and download owner (for example 323320/353590).
   const dlcAppId = positiveId(depot.dlcappid)
+  const ownerAppId = dlcAppId ?? productAppId
+  const eligibleDlcDepots = eligibleDlcDepotIds.get(ownerAppId)
+  const shared =
+    positiveId(depot.depotfromapp) !== null || booleanValue(depot.sharedinstall)
   const group = classifyDepot(
     depotId,
     productAppId === baseAppId,
     dlcAppId !== null,
     dlcAppId === null || productNames.has(dlcAppId),
     publicManifest,
+    shared,
+    installed,
+    eligibleBaseDepotIds?.has(depotId) ?? true,
+    eligibleDlcDepots?.has(depotId) ?? true,
   )
-  const ownerAppId = dlcAppId ?? productAppId
   return {
     depotId,
     ownerAppId,
@@ -348,19 +362,38 @@ function classifyDepot(
   hasDlcOwner: boolean,
   ownerKnown: boolean,
   publicManifest: SteamRecord,
+  shared: boolean,
+  installed: boolean,
+  inBasePackage: boolean,
+  inDlcPackage: boolean,
 ): DepotGroup {
   if (isSteamworksDepot(depotId)) return 'Steamworks Common Redistributables'
-  if (
+  if (!hasPublicContent(publicManifest)) return 'Unused'
+  if (hasDlcOwner && !ownerKnown) return 'Unknown'
+  // DLC comes from dlcappid or from a depot owned by a separately fetched DLC product.
+  if (!ownedByBase || hasDlcOwner)
+    return packageExcludesDepot(shared, installed, inDlcPackage)
+      ? 'Unavailable'
+      : 'DLC'
+  if (packageExcludesDepot(shared, installed, inBasePackage))
+    return 'Unavailable'
+  return 'Base Game'
+}
+
+function hasPublicContent(publicManifest: SteamRecord): boolean {
+  return !(
     rawEmpty(publicManifest.gid) &&
     rawEmpty(publicManifest.size) &&
     rawEmpty(publicManifest.download)
   )
-    return 'Unused'
-  if (hasDlcOwner && !ownerKnown) return 'Unknown'
-  // DLC comes from dlcappid or from a depot owned by a separately fetched DLC
-  // product.
-  if (hasDlcOwner) return 'DLC'
-  return ownedByBase ? 'Base Game' : 'DLC'
+}
+
+function packageExcludesDepot(
+  shared: boolean,
+  installed: boolean,
+  inPublicPackage: boolean,
+): boolean {
+  return !shared && !installed && !inPublicPackage
 }
 
 function isSteamworksDepot(depotId: number): boolean {
@@ -411,6 +444,10 @@ function decimalString(value: SteamValue | undefined): string | null {
 
 function positiveId(value: SteamValue | undefined): number | null {
   return positiveIdSchema.parse(value)
+}
+
+function booleanValue(value: SteamValue | undefined): boolean {
+  return value === true || value === 1 || value === '1'
 }
 
 function restriction(value: SteamValue | undefined): string | null {

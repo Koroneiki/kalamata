@@ -34,6 +34,12 @@ type ErrorDiagnostic =
   | { event: 'operation.failed'; error: Error; appId: number; kind: string }
   | { event: 'app.shutdown-failed'; error: Error }
   | { event: 'recovery.failed'; error: Error; appId: number }
+  | {
+      event: 'product-info.package-discovery-failed'
+      error: Error
+      appIds: number[]
+      countryCode: string
+    }
 
 export class Diagnostics {
   readonly path: string

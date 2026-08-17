@@ -15,6 +15,7 @@ export interface AppSettings {
   hideRedistributables: boolean
   hideUnknownDepots: boolean
   hideUnusedDepots: boolean
+  hideUnavailableDepots: boolean
   platforms: DepotPlatform[]
 }
 
@@ -24,6 +25,7 @@ export type DepotGroup =
   | 'Unknown'
   | 'Steamworks Common Redistributables'
   | 'Unused'
+  | 'Unavailable'
 
 interface AppDepotBase {
   depotId: number
@@ -51,7 +53,11 @@ export interface EligibleAppDepot extends AppDepotBase {
 
 export interface IneligibleAppDepot extends AppDepotBase {
   eligible: false
-  group: 'Unknown' | 'Steamworks Common Redistributables' | 'Unused'
+  group:
+    | 'Unknown'
+    | 'Steamworks Common Redistributables'
+    | 'Unused'
+    | 'Unavailable'
   manifestStatus: null
   keyStatus: null
   installStatus: null

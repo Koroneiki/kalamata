@@ -23,6 +23,7 @@ export const appSettingsSchema: z.ZodType<AppSettings> = z
     hideRedistributables: z.boolean(),
     hideUnknownDepots: z.boolean(),
     hideUnusedDepots: z.boolean(),
+    hideUnavailableDepots: z.boolean(),
     platforms: z.array(depotPlatformSchema),
   })
   .strict()

@@ -120,12 +120,12 @@ test('filters restricted and redistributable depots using settings', () => {
   ]
 
   expect(
-    filterDepots(depots, true, true, true, ['linux']).map(
+    filterDepots(depots, true, true, true, true, ['linux']).map(
       ({ depotId }) => depotId,
     ),
   ).toEqual([1, 4])
   expect(
-    filterDepots(depots, false, true, true, ['windows', 'linux']).map(
+    filterDepots(depots, false, true, true, true, ['windows', 'linux']).map(
       ({ depotId }) => depotId,
     ),
   ).toEqual([1, 2, 4, 228981])
@@ -147,7 +147,7 @@ test('keeps selected and installed depots visible through every filter', () => {
     depot(2, { platform: 'windows', installStatus: 'current' }),
     {
       ...depot(3, { platform: 'windows' }),
-      group: 'Unused',
+      group: 'Unavailable',
       eligible: false,
       manifestStatus: null,
       keyStatus: null,
@@ -157,9 +157,15 @@ test('keeps selected and installed depots visible through every filter', () => {
   ]
 
   expect(
-    filterDepots(depots, true, true, true, ['linux'], new Set([1, 3])).map(
-      ({ depotId }) => depotId,
-    ),
+    filterDepots(
+      depots,
+      true,
+      true,
+      true,
+      true,
+      ['linux'],
+      new Set([1, 3]),
+    ).map(({ depotId }) => depotId),
   ).toEqual([1, 2, 3])
 })
 
@@ -174,14 +180,19 @@ test('shows unused depots when their filter is disabled', () => {
     selectable: false,
   } as AppDepot
 
-  expect(filterDepots([unused], false, false, true, ['macos'])).toEqual([])
-  expect(filterDepots([unused], false, false, false, ['macos'])).toEqual([
-    unused,
-  ])
+  expect(filterDepots([unused], false, false, true, false, ['macos'])).toEqual(
+    [],
+  )
+  expect(filterDepots([unused], false, false, false, false, ['macos'])).toEqual(
+    [unused],
+  )
 })
 
-test('filters unknown depots independently from unused depots', () => {
-  const ineligible = (depotId: number, group: 'Unknown' | 'Unused') =>
+test('filters ineligible depot groups independently', () => {
+  const ineligible = (
+    depotId: number,
+    group: 'Unknown' | 'Unused' | 'Unavailable',
+  ) =>
     ({
       ...depot(depotId),
       group,
@@ -193,11 +204,21 @@ test('filters unknown depots independently from unused depots', () => {
     }) as AppDepot
   const unknown = ineligible(1, 'Unknown')
   const unused = ineligible(2, 'Unused')
+  const unavailable = ineligible(3, 'Unavailable')
 
   expect(
-    filterDepots([unknown, unused], false, true, false, ['macos']),
-  ).toEqual([unused])
+    filterDepots([unknown, unused, unavailable], false, true, false, false, [
+      'macos',
+    ]),
+  ).toEqual([unused, unavailable])
   expect(
-    filterDepots([unknown, unused], false, false, true, ['macos']),
-  ).toEqual([unknown])
+    filterDepots([unknown, unused, unavailable], false, false, true, false, [
+      'macos',
+    ]),
+  ).toEqual([unknown, unavailable])
+  expect(
+    filterDepots([unknown, unused, unavailable], false, false, false, true, [
+      'macos',
+    ]),
+  ).toEqual([unknown, unused])
 })

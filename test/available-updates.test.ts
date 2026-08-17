@@ -112,6 +112,22 @@ test('uses direct DLC product ownership', async () => {
   }
 })
 
+test('checks an installed depot even when it is absent from public packages', async () => {
+  const service = createService(
+    [install(101, '1')],
+    products({ 101: depot('2') }, {}, false, new Set()),
+  )
+
+  const result = await service.check(APP_ID)
+
+  expect(result.status).toBe('available')
+  if (result.status === 'available') {
+    expect(result.candidate.outdatedDepots).toEqual([
+      expect.objectContaining({ depotId: 101, targetManifestId: '2' }),
+    ])
+  }
+})
+
 test('sanitizes product metadata failures', async () => {
   const service = new AvailableUpdateService(
     {
@@ -162,10 +178,13 @@ function products(
   baseDepots: Record<number, unknown>,
   dlcDepots: Record<number, unknown> = {},
   includeDlc = Object.keys(dlcDepots).length > 0,
+  eligibleBaseDepotIds: ReadonlySet<number> | null = null,
 ): ProductInfoResult {
   return {
     baseProduct: product(APP_ID, 'Example', baseDepots),
     dlcProducts: includeDlc ? [product(20, 'Expansion', dlcDepots)] : [],
+    eligibleBaseDepotIds,
+    eligibleDlcDepotIds: new Map(),
   }
 }
 

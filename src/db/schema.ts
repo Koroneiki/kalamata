@@ -180,6 +180,11 @@ export const settings = sqliteTable(
     })
       .notNull()
       .default(true),
+    hideUnavailableDepots: integer('hide_unavailable_depots', {
+      mode: 'boolean',
+    })
+      .notNull()
+      .default(true),
     showWindows: integer('show_windows', { mode: 'boolean' }).notNull(),
     showMacos: integer('show_macos', { mode: 'boolean' }).notNull(),
     showLinux: integer('show_linux', { mode: 'boolean' }).notNull(),

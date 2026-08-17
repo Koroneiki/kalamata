@@ -167,7 +167,12 @@ const appDepotSchema = z.discriminatedUnion('eligible', [
   strict({
     ...depotBaseFields,
     eligible: z.literal(false),
-    group: z.enum(['Unknown', 'Steamworks Common Redistributables', 'Unused']),
+    group: z.enum([
+      'Unknown',
+      'Steamworks Common Redistributables',
+      'Unused',
+      'Unavailable',
+    ]),
     manifestStatus: z.null(),
     keyStatus: z.null(),
     installStatus: z.null(),

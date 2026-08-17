@@ -1,0 +1,1 @@
+ALTER TABLE `settings` ADD `hide_unavailable_depots` integer DEFAULT true NOT NULL;

@@ -63,6 +63,7 @@ interface SettingsRow {
   hideRedistributables: number
   hideUnknownDepots: number
   hideUnusedDepots: number
+  hideUnavailableDepots: number
   showWindows: number
   showMacos: number
   showLinux: number
@@ -75,6 +76,7 @@ const settingsRowSchema = z
     hideRedistributables: z.union([z.literal(0), z.literal(1)]),
     hideUnknownDepots: z.union([z.literal(0), z.literal(1)]),
     hideUnusedDepots: z.union([z.literal(0), z.literal(1)]),
+    hideUnavailableDepots: z.union([z.literal(0), z.literal(1)]),
     showWindows: z.union([z.literal(0), z.literal(1)]),
     showMacos: z.union([z.literal(0), z.literal(1)]),
     showLinux: z.union([z.literal(0), z.literal(1)]),
@@ -85,6 +87,7 @@ const settingsRowSchema = z
       hideRedistributables: Boolean(row.hideRedistributables),
       hideUnknownDepots: Boolean(row.hideUnknownDepots),
       hideUnusedDepots: Boolean(row.hideUnusedDepots),
+      hideUnavailableDepots: Boolean(row.hideUnavailableDepots),
       platforms: depotPlatforms.filter((platform) => {
         if (platform === 'windows') return Boolean(row.showWindows)
         if (platform === 'macos') return Boolean(row.showMacos)
@@ -176,13 +179,14 @@ export class KalamataDatabase {
     this.validateSettings(defaults)
     this.sqlite
       .query(
-        'INSERT INTO settings (id, automatic_manifest_acquisition, hide_redistributables, hide_unknown_depots, hide_unused_depots, show_windows, show_macos, show_linux) VALUES (1, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING',
+        'INSERT INTO settings (id, automatic_manifest_acquisition, hide_redistributables, hide_unknown_depots, hide_unused_depots, hide_unavailable_depots, show_windows, show_macos, show_linux) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING',
       )
       .run(
         Number(defaults.automaticManifestAcquisition),
         Number(defaults.hideRedistributables),
         Number(defaults.hideUnknownDepots),
         Number(defaults.hideUnusedDepots),
+        Number(defaults.hideUnavailableDepots),
         Number(defaults.platforms.includes('windows')),
         Number(defaults.platforms.includes('macos')),
         Number(defaults.platforms.includes('linux')),
@@ -195,13 +199,14 @@ export class KalamataDatabase {
     this.validateSettings(settings)
     this.sqlite
       .query(
-        'INSERT INTO settings (id, automatic_manifest_acquisition, hide_redistributables, hide_unknown_depots, hide_unused_depots, show_windows, show_macos, show_linux) VALUES (1, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET automatic_manifest_acquisition = excluded.automatic_manifest_acquisition, hide_redistributables = excluded.hide_redistributables, hide_unknown_depots = excluded.hide_unknown_depots, hide_unused_depots = excluded.hide_unused_depots, show_windows = excluded.show_windows, show_macos = excluded.show_macos, show_linux = excluded.show_linux',
+        'INSERT INTO settings (id, automatic_manifest_acquisition, hide_redistributables, hide_unknown_depots, hide_unused_depots, hide_unavailable_depots, show_windows, show_macos, show_linux) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET automatic_manifest_acquisition = excluded.automatic_manifest_acquisition, hide_redistributables = excluded.hide_redistributables, hide_unknown_depots = excluded.hide_unknown_depots, hide_unused_depots = excluded.hide_unused_depots, hide_unavailable_depots = excluded.hide_unavailable_depots, show_windows = excluded.show_windows, show_macos = excluded.show_macos, show_linux = excluded.show_linux',
       )
       .run(
         Number(settings.automaticManifestAcquisition),
         Number(settings.hideRedistributables),
         Number(settings.hideUnknownDepots),
         Number(settings.hideUnusedDepots),
+        Number(settings.hideUnavailableDepots),
         Number(settings.platforms.includes('windows')),
         Number(settings.platforms.includes('macos')),
         Number(settings.platforms.includes('linux')),
@@ -212,7 +217,7 @@ export class KalamataDatabase {
   private readSettings(): AppSettings {
     const row = this.sqlite
       .query<SettingsRow, []>(
-        'SELECT automatic_manifest_acquisition AS automaticManifestAcquisition, hide_redistributables AS hideRedistributables, hide_unknown_depots AS hideUnknownDepots, hide_unused_depots AS hideUnusedDepots, show_windows AS showWindows, show_macos AS showMacos, show_linux AS showLinux FROM settings WHERE id = 1',
+        'SELECT automatic_manifest_acquisition AS automaticManifestAcquisition, hide_redistributables AS hideRedistributables, hide_unknown_depots AS hideUnknownDepots, hide_unused_depots AS hideUnusedDepots, hide_unavailable_depots AS hideUnavailableDepots, show_windows AS showWindows, show_macos AS showMacos, show_linux AS showLinux FROM settings WHERE id = 1',
       )
       .get()!
     return settingsRowSchema.parse(row)

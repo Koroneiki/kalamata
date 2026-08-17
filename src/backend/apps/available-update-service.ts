@@ -83,7 +83,10 @@ export class AvailableUpdateService {
     const installsByDepot = new Map(installed.map((row) => [row.depotId, row]))
     const outdatedDepots: AvailableUpdateCandidate['outdatedDepots'] = []
 
-    for (const depot of extractPublicDepots(products)) {
+    for (const depot of extractPublicDepots(
+      products,
+      new Set(installsByDepot.keys()),
+    )) {
       const install = installsByDepot.get(depot.depotId)
       if (
         !install ||

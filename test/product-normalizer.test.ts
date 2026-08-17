@@ -343,6 +343,146 @@ test('classifies depots without public content as Unused', () => {
   expect(groups.get(605)).toBe('Unused')
 })
 
+test('filters ordinary base depots using the public package grant set', () => {
+  const indianaJones = makeProductWithDepots(2677660, {
+    '2677661': depotMetadata('1'),
+    '2677662': depotMetadata('2'),
+    '2677663': depotMetadata('3'),
+  })
+  const residentEvil = makeProductWithDepots(883710, {
+    '883711': depotMetadata('1'),
+    '883712': depotMetadata('2'),
+    '883713': depotMetadata('3'),
+    '883714': depotMetadata('4'),
+  })
+
+  expect(
+    extractPublicDepots(
+      products(indianaJones, [], new Set([2677661, 2677662])),
+    ).map(({ depotId, group }) => [depotId, group]),
+  ).toEqual([
+    [2677661, 'Base Game'],
+    [2677662, 'Base Game'],
+    [2677663, 'Unavailable'],
+  ])
+  expect(
+    extractPublicDepots(
+      products(residentEvil, [], new Set([883711, 883713])),
+    ).map(({ depotId, group }) => [depotId, group]),
+  ).toEqual([
+    [883711, 'Base Game'],
+    [883712, 'Unavailable'],
+    [883713, 'Base Game'],
+    [883714, 'Unavailable'],
+  ])
+  expect(
+    extractPublicDepots(
+      products(residentEvil, [], new Set([883712, 883714])),
+    ).map(({ depotId, group }) => [depotId, group]),
+  ).toEqual([
+    [883711, 'Unavailable'],
+    [883712, 'Base Game'],
+    [883713, 'Unavailable'],
+    [883714, 'Base Game'],
+  ])
+})
+
+test('does not apply base package grants to special or DLC depots', () => {
+  const base = makeProductWithDepots(10, {
+    '100': { ...depotMetadata('1'), dlcappid: '20' },
+    '101': { ...depotMetadata('2'), depotfromapp: '30' },
+    '102': { ...depotMetadata('3'), sharedinstall: '1' },
+    '228981': depotMetadata('4'),
+  })
+  const dlc = makeProductWithDepots(20, { '200': depotMetadata('5') })
+
+  expect(
+    extractPublicDepots(products(base, [dlc], new Set())).map(
+      ({ depotId, group }) => [depotId, group],
+    ),
+  ).toEqual([
+    [100, 'DLC'],
+    [101, 'Base Game'],
+    [102, 'Base Game'],
+    [228981, 'Steamworks Common Redistributables'],
+    [200, 'DLC'],
+  ])
+})
+
+test('filters additional DLC depots using DLC package grants', () => {
+  const base = makeProductWithDepots(2050650, {
+    '2050655': { ...depotMetadata('1'), dlcappid: '2109300' },
+    '2109300': { ...depotMetadata('2'), dlcappid: '2109300' },
+  })
+  const dlc = makeProductWithDepots(2109300, {})
+
+  expect(
+    extractPublicDepots(
+      products(base, [dlc], null, new Map([[2109300, new Set([2109300])]])),
+    ).map(({ depotId, group }) => [depotId, group]),
+  ).toEqual([
+    [2050655, 'Unavailable'],
+    [2109300, 'DLC'],
+  ])
+  expect(
+    extractPublicDepots(
+      products(
+        base,
+        [dlc],
+        null,
+        new Map([[2109300, new Set([2109300, 2050655])]]),
+      ),
+    ).map(({ depotId, group }) => [depotId, group]),
+  ).toEqual([
+    [2050655, 'DLC'],
+    [2109300, 'DLC'],
+  ])
+})
+
+test('keeps an installed additional DLC depot eligible after package changes', async () => {
+  const db = await setup()
+  db.addLibraryEntry(2050650)
+  db.addManifest(2050655, '1')
+  db.recordInstalledDepot(2050650, root!, 2050655, '1')
+  const base = makeProductWithDepots(2050650, {
+    '2050655': { ...depotMetadata('1'), dlcappid: '2109300' },
+    '2109300': { ...depotMetadata('2'), dlcappid: '2109300' },
+  })
+  const dlc = makeProductWithDepots(2109300, {})
+
+  const details = await normalizeAppDetails(
+    products(base, [dlc], null, new Map([[2109300, new Set([2109300])]])),
+    db,
+  )
+
+  expect(
+    details.depots.find(({ depotId }) => depotId === 2050655),
+  ).toMatchObject({
+    group: 'DLC',
+    eligible: true,
+    installStatus: 'current',
+  })
+})
+
+test('keeps installed base depots eligible when package grants change', async () => {
+  const db = await setup()
+  db.addLibraryEntry(10)
+  db.addManifest(DEPOT_ID, MANIFEST_ID)
+  db.recordInstalledDepot(10, root!, DEPOT_ID, MANIFEST_ID)
+
+  const details = await normalizeAppDetails(
+    products(makeProduct(), [], new Set()),
+    db,
+  )
+
+  expect(details.depots[0]).toMatchObject({
+    depotId: DEPOT_ID,
+    group: 'Base Game',
+    eligible: true,
+    installStatus: 'current',
+  })
+})
+
 test('keeps ineligible groups visible without resource or install readiness', async () => {
   const db = await setup()
   const keyLookups: number[] = []
@@ -427,8 +567,15 @@ function makeProduct(manifestId = MANIFEST_ID): ProductInfo {
 function products(
   baseProduct: ProductInfo,
   dlcProducts: ProductInfo[] = [],
+  eligibleBaseDepotIds: ReadonlySet<number> | null = null,
+  eligibleDlcDepotIds: ReadonlyMap<number, ReadonlySet<number>> = new Map(),
 ): ProductInfoResult {
-  return { baseProduct, dlcProducts }
+  return {
+    baseProduct,
+    dlcProducts,
+    eligibleBaseDepotIds,
+    eligibleDlcDepotIds,
+  }
 }
 
 function makeProductWithDepots(

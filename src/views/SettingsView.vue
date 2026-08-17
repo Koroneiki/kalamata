@@ -36,6 +36,7 @@ type BooleanSettingKey =
   | 'hideRedistributables'
   | 'hideUnknownDepots'
   | 'hideUnusedDepots'
+  | 'hideUnavailableDepots'
 
 function settingValue(key: BooleanSettingKey) {
   return settings.value?.[key]
@@ -97,6 +98,11 @@ function setHideUnknownDepots(value: boolean | 'indeterminate') {
 function setHideUnusedDepots(value: boolean | 'indeterminate') {
   if (!settings.value || value === 'indeterminate') return
   void persist({ ...settings.value, hideUnusedDepots: value })
+}
+
+function setHideUnavailableDepots(value: boolean | 'indeterminate') {
+  if (!settings.value || value === 'indeterminate') return
+  void persist({ ...settings.value, hideUnavailableDepots: value })
 }
 
 async function openUserDataFolder() {
@@ -170,6 +176,13 @@ async function openUserDataFolder() {
         :model-value="settingValue('hideUnusedDepots')"
         :disabled="updateMutation.isLoading.value"
         @update:model-value="setHideUnusedDepots"
+      />
+      <SettingsCheckboxRow
+        id="hide-unavailable-depots"
+        label="Hide unavailable depots"
+        :model-value="settingValue('hideUnavailableDepots')"
+        :disabled="updateMutation.isLoading.value"
+        @update:model-value="setHideUnavailableDepots"
       />
     </section>
 

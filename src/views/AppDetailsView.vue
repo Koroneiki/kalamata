@@ -218,6 +218,7 @@ const visibleDepots = computed(() => {
         settings.value.hideRedistributables,
         settings.value.hideUnknownDepots,
         settings.value.hideUnusedDepots,
+        settings.value.hideUnavailableDepots,
         settings.value.platforms,
         selectedIdSet.value,
       )

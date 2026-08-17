@@ -27,6 +27,12 @@ test('appends structured diagnostic events and errors', async () => {
     appId: 440,
     kind: 'download',
   })
+  diagnostics.error({
+    event: 'product-info.package-discovery-failed',
+    error: new Error('invalid store response'),
+    appIds: [440],
+    countryCode: 'US',
+  })
 
   const lines = (await readFile(diagnostics.path, 'utf8')).trim().split('\n')
   expect(lines.map((line) => JSON.parse(line))).toMatchObject([
@@ -36,6 +42,13 @@ test('appends structured diagnostic events and errors', async () => {
       event: 'operation.failed',
       appId: 440,
       error: { name: 'Error', message: 'network unavailable' },
+    },
+    {
+      level: 'error',
+      event: 'product-info.package-discovery-failed',
+      appIds: [440],
+      countryCode: 'US',
+      error: { name: 'Error', message: 'invalid store response' },
     },
   ])
 })

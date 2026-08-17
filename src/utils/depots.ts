@@ -35,10 +35,19 @@ export function filterDepots(
   hideRedistributables: boolean,
   hideUnknownDepots: boolean,
   hideUnusedDepots: boolean,
+  hideUnavailableDepots: boolean,
   platforms: readonly DepotPlatform[],
   preservedDepotIds: ReadonlySet<number> = new Set(),
 ): AppDepot[] {
   const visiblePlatforms = new Set(platforms)
+  const hiddenGroups = {
+    'Base Game': false,
+    DLC: false,
+    'Steamworks Common Redistributables': hideRedistributables,
+    Unknown: hideUnknownDepots,
+    Unused: hideUnusedDepots,
+    Unavailable: hideUnavailableDepots,
+  } satisfies Record<DepotGroup, boolean>
 
   return depots.filter((depot) => {
     if (
@@ -46,13 +55,7 @@ export function filterDepots(
       (depot.eligible && depot.installStatus !== 'not-installed')
     )
       return true
-    if (
-      hideRedistributables &&
-      depot.group === 'Steamworks Common Redistributables'
-    )
-      return false
-    if (hideUnknownDepots && depot.group === 'Unknown') return false
-    if (hideUnusedDepots && depot.group === 'Unused') return false
+    if (hiddenGroups[depot.group]) return false
     return matchesDepotPlatform(depot, visiblePlatforms)
   })
 }

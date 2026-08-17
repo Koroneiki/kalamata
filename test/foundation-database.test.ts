@@ -382,6 +382,7 @@ describe('foundation database', () => {
         hideRedistributables: true,
         hideUnknownDepots: true,
         hideUnusedDepots: true,
+        hideUnavailableDepots: true,
         platforms: ['macos'],
       }),
     ).toEqual({
@@ -389,6 +390,7 @@ describe('foundation database', () => {
       hideRedistributables: true,
       hideUnknownDepots: true,
       hideUnusedDepots: true,
+      hideUnavailableDepots: true,
       platforms: ['macos'],
     })
 
@@ -398,6 +400,7 @@ describe('foundation database', () => {
         hideRedistributables: false,
         hideUnknownDepots: false,
         hideUnusedDepots: false,
+        hideUnavailableDepots: false,
         platforms: ['windows', 'linux'],
       }),
     ).toEqual({
@@ -405,6 +408,7 @@ describe('foundation database', () => {
       hideRedistributables: false,
       hideUnknownDepots: false,
       hideUnusedDepots: false,
+      hideUnavailableDepots: false,
       platforms: ['windows', 'linux'],
     })
 
@@ -421,6 +425,7 @@ describe('foundation database', () => {
         hideRedistributables: true,
         hideUnknownDepots: true,
         hideUnusedDepots: true,
+        hideUnavailableDepots: true,
         platforms: ['macos'],
       }),
     ).toEqual({
@@ -428,6 +433,7 @@ describe('foundation database', () => {
       hideRedistributables: false,
       hideUnknownDepots: false,
       hideUnusedDepots: false,
+      hideUnavailableDepots: false,
       platforms: ['windows', 'linux'],
     })
   })
@@ -439,6 +445,7 @@ describe('foundation database', () => {
       hideRedistributables: true,
       hideUnknownDepots: true,
       hideUnusedDepots: true,
+      hideUnavailableDepots: true,
       platforms: ['windows', 'windows'],
     }
     expect(() => db.updateSettings(settings as never)).toThrow()
@@ -472,6 +479,7 @@ describe('foundation database', () => {
         hideRedistributables: true,
         hideUnknownDepots: true,
         hideUnusedDepots: true,
+        hideUnavailableDepots: true,
         platforms: ['macos'],
       }),
     ).toEqual({
@@ -479,6 +487,7 @@ describe('foundation database', () => {
       hideRedistributables: false,
       hideUnknownDepots: true,
       hideUnusedDepots: false,
+      hideUnavailableDepots: true,
       platforms: ['windows', 'linux'],
     })
   })
