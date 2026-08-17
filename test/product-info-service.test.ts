@@ -384,6 +384,38 @@ describe('ProductInfoService', () => {
     },
   )
 
+  test('uses a base package grant when a DLC has no direct store package', async () => {
+    const base = appInfo({
+      extended: { listofdlc: '20' },
+      depots: {
+        20: { dlcappid: '20' },
+        21: { dlcappid: '20' },
+      },
+    })
+    const getProductInfo = mock(
+      async (appIds: number[], packageIds: number[]) => {
+        if (appIds.includes(10)) return productResult({ 10: product(base) })
+        if (appIds.includes(20))
+          return productResult({ 20: product(appInfo()) })
+        return packageResult({
+          [packageIds[0]!]: packageInfo([10, 20], [11]),
+        })
+      },
+    )
+    const client = { getProductInfo } as unknown as SteamContentUser
+    const service = new ProductInfoService(
+      { getClient: async () => client },
+      {
+        getPackageIds: async (appIds: number[]) =>
+          appIds.includes(10) ? new Map([[10, [100]]]) : new Map(),
+      },
+    )
+
+    const result = await service.getProductInfoWithDlc(10)
+
+    expect(result.eligibleDlcDepotIds.get(20)).toEqual(new Set([20]))
+  })
+
   test('includes depots declared by the fetched DLC product', async () => {
     const base = appInfo({
       extended: { listofdlc: '20' },

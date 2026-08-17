@@ -223,9 +223,10 @@ function qualifyingDlcGrants(
   baseDiscovery: PackageDiscovery | null,
   dlcDiscovery: PackageDiscovery | null,
 ): PackageGrant[] | null {
+  // A DLC may only be granted through a base package and have no direct package.
   if (
     !baseDiscovery?.packageIdsByApp.has(baseAppId) ||
-    !dlcDiscovery?.packageIdsByApp.has(dlcAppId)
+    !dlcDiscovery
   )
     return null
   const packageIds = new Set([
