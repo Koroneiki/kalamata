@@ -277,6 +277,21 @@ test('classifies unresolved DLC owners as Unknown', async () => {
   ])
 })
 
+test('classifies unresolved DLC owners without public content as Unknown', () => {
+  const base = makeProductWithDepots(2050650, {
+    '2109302': { dlcappid: '2109302' },
+  })
+
+  expect(extractPublicDepots(products(base))).toEqual([
+    expect.objectContaining({
+      depotId: 2109302,
+      ownerAppId: 2109302,
+      ownerAppName: 'Unknown App 2109302',
+      group: 'Unknown',
+    }),
+  ])
+})
+
 test('classifies listed DLCs as DLC when product information is incomplete', () => {
   const base = makeProductWithDepots(883710, {
     '920569': { ...depotMetadata('1'), dlcappid: '920569' },
@@ -314,7 +329,7 @@ test('classifies every Steamworks range boundary before ownership', () => {
   for (const depotId of adjacent) expect(groups.get(depotId)).toBe('Base Game')
 })
 
-test('applies Steamworks then Unused then owner classification precedence', () => {
+test('applies Steamworks then owner then Unused classification precedence', () => {
   const base = makeProductWithDepots(10, {
     '228981': {},
     '400': { config: { language: 'english' }, manifests: { public: {} } },

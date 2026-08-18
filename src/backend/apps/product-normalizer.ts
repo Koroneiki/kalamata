@@ -372,8 +372,8 @@ function classifyDepot(
   inDlcPackage: boolean,
 ): DepotGroup {
   if (isSteamworksDepot(depotId)) return 'Steamworks Common Redistributables'
-  if (!hasPublicContent(publicManifest)) return 'Unused'
   if (hasDlcOwner && !ownerKnown) return 'Unknown'
+  if (!hasPublicContent(publicManifest)) return 'Unused'
   // DLC comes from dlcappid or from a depot owned by a separately fetched DLC product.
   if (!ownedByBase || hasDlcOwner)
     return packageExcludesDepot(shared, installed, inDlcPackage)
