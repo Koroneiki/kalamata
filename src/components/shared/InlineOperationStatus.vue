@@ -26,6 +26,7 @@ const props = defineProps<{
     | Extract<OperationState, { status: 'failed' }>
     | Extract<OperationState, { status: 'repair-required' }>
   finished?: boolean
+  showInstalledProgress?: boolean
 }>()
 
 const operation = useOperationStore()
@@ -101,6 +102,17 @@ const progress = computed(() =>
       )
     : 0,
 )
+const downloadProgress = computed(() => {
+  const downloaded = formatBytes(progressState.value?.networkBytes ?? '0')
+  const estimate = progressState.value?.estimatedDownloadBytes
+  if (estimate === null || estimate === undefined)
+    return { text: downloaded, label: `Downloaded ${downloaded}` }
+  const estimated = formatBytes(estimate)
+  return {
+    text: `${downloaded} / ${estimated}`,
+    label: `Downloaded ${downloaded} out of an estimated ${estimated}`,
+  }
+})
 const canPause = computed(
   () =>
     !props.finished &&
@@ -257,12 +269,13 @@ defineExpose({
         >
           <span
             class="text-muted-foreground flex items-center gap-1 tabular-nums"
+            :aria-label="downloadProgress.label"
           >
             <Download class="size-3" aria-hidden="true" />
-            <span class="sr-only">Network payload:</span>
-            {{ formatBytes(progressState.networkBytes) }}
+            <span aria-hidden="true">{{ downloadProgress.text }}</span>
           </span>
           <span
+            v-if="showInstalledProgress"
             class="ml-auto flex min-w-0 items-center justify-end gap-1 tabular-nums"
           >
             <Computer class="size-3" aria-hidden="true" />

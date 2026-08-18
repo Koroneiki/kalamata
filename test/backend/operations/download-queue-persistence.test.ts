@@ -69,6 +69,7 @@ test('application transaction progress maps exact decimal counters', async () =>
           logicalInstalledTotal: '18014398509481987',
           reusedLocal: '9223372036854775808',
           actualNetwork: '18446744073709551617',
+          estimatedDownloadBytes: '36893488147419103234',
         })
         progressEmitted.resolve()
         await finish.promise
@@ -92,6 +93,7 @@ test('application transaction progress maps exact decimal counters', async () =>
     installedBytesTotal: '18014398509481987',
     reusedLocalBytes: '9223372036854775808',
     networkBytes: '18446744073709551617',
+    estimatedDownloadBytes: '36893488147419103234',
   })
   finish.resolve()
   await waitForTerminal(queue)

@@ -131,6 +131,7 @@ export async function getResumableApplicationTransaction(
     installedBytesTotal: journal.logicalInstalledTotal,
     reusedLocalBytes: progress.reused.toString(),
     networkBytes: progress.network.toString(),
+    estimatedDownloadBytes: journal.estimatedDownloadBytes ?? null,
   }
 }
 

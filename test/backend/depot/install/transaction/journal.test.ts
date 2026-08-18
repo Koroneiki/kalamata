@@ -22,6 +22,7 @@ test('parses and normalizes a valid transaction journal', async () => {
 
   expect(journal.source[0]?.pinned).toBe(false)
   expect(journal.desired[0]?.pinned).toBe(false)
+  expect(journal.estimatedDownloadBytes).toBe('7')
 })
 
 test('atomically writes a transaction journal', async () => {
@@ -90,6 +91,7 @@ function validJournal(): TransactionJournal {
     stagedFiles: [],
     completedChunks: {},
     logicalInstalledTotal: '0',
+    estimatedDownloadBytes: '7',
     retainedBytes: '0',
     oldMoves: [],
     installs: [],

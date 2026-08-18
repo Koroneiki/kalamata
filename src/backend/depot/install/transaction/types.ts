@@ -61,6 +61,7 @@ export interface ApplicationTransactionProgress {
   logicalInstalledTotal: string
   reusedLocal: string
   actualNetwork: string
+  estimatedDownloadBytes: string | null
 }
 
 export type ApplicationTransactionEvent =
@@ -111,6 +112,7 @@ export interface ApplicationTransactionResult {
   logicalInstalledBytes: string
   reusedLocalBytes: string
   networkBytes: string
+  estimatedDownloadBytes: string
 }
 
 export interface ResumableApplicationTransaction {
@@ -124,6 +126,7 @@ export interface ResumableApplicationTransaction {
   installedBytesTotal: string
   reusedLocalBytes: string
   networkBytes: string
+  estimatedDownloadBytes: string | null
 }
 
 export interface ProjectionEntry {
@@ -192,6 +195,7 @@ export interface TransactionJournal {
   stagedFiles: StagedFileLayout[]
   completedChunks: Record<string, CompletionRecord>
   logicalInstalledTotal: string
+  estimatedDownloadBytes?: string
   retainedBytes: string
   oldMoves: OldMove[]
   installs: InstallAction[]
@@ -203,6 +207,7 @@ export interface ProgressState {
   logicalInstalledTotal: bigint
   reusedLocal: bigint
   actualNetwork: bigint
+  estimatedDownload: bigint | null
 }
 
 export interface JournalContext {
@@ -222,6 +227,7 @@ export function emitProgress(
     logicalInstalledTotal: progress.logicalInstalledTotal.toString(),
     reusedLocal: progress.reusedLocal.toString(),
     actualNetwork: progress.actualNetwork.toString(),
+    estimatedDownloadBytes: progress.estimatedDownload?.toString() ?? null,
   })
 }
 

@@ -102,7 +102,7 @@ test('startup pauses a download interrupted while running until resumed', async 
   const fixture = await setup()
   const options = restoreOptions(fixture)
   fixture.database.reserveInstallPath(APP_ID, fixture.installPath)
-  await writeQueueStagingJournal(options)
+  await writeQueueStagingJournal(options, false, '12')
   const finish = deferred<void>()
   const resumed = deferred<void>()
   const reconcileApplication = mock(
@@ -126,6 +126,7 @@ test('startup pauses a download interrupted while running until resumed', async 
     status: 'paused',
     appId: APP_ID,
     installPath: fixture.installPath,
+    estimatedDownloadBytes: '12',
   })
   expect(reconcileApplication).not.toHaveBeenCalled()
 

@@ -25,6 +25,7 @@ import {
   sameManifestOwner,
   stagedFileLayout,
   sumProjectionFiles,
+  uniqueCompressedChunkSizes,
   validateDesiredDepots,
 } from './projection.ts'
 import { projectionEntryNeedsStaging } from './local-state.ts'
@@ -108,6 +109,7 @@ async function runUnlocked(
     logicalInstalledTotal: sumProjectionFiles(target),
     reusedLocal: 0n,
     actualNetwork: 0n,
+    estimatedDownload: null,
   }
   emitProgress(options, progress)
   if (options.kind === 'repair')
@@ -115,6 +117,10 @@ async function runUnlocked(
 
   const changed = await findChangedEntries(options, source, target, progress)
   const changedFiles = changed.filter((entry) => !isDirectory(entry.file))
+  progress.estimatedDownload = [
+    ...uniqueCompressedChunkSizes(changedFiles).values(),
+  ].reduce((total, size) => total + BigInt(size), 0n)
+  emitProgress(options, progress)
   if (changed.length === 0 && !filesystemChangesNeeded(source, target)) {
     const desired = desiredRecords(options.desiredDepots)
     options.onEvent?.({ type: 'phase', phase: 'reconciling' })
@@ -125,6 +131,7 @@ async function runUnlocked(
       logicalInstalledBytes: progress.logicalInstalledTotal.toString(),
       reusedLocalBytes: progress.reusedLocal.toString(),
       networkBytes: '0',
+      estimatedDownloadBytes: '0',
     }
   }
 
@@ -235,6 +242,19 @@ async function prepareTransaction(
     desired,
     stagedFiles,
   })
+  if (resumed) {
+    const compressedSizes = uniqueCompressedChunkSizes(changedFiles)
+    progress.estimatedDownload =
+      resumed.estimatedDownloadBytes === undefined
+        ? [...compressedSizes].reduce(
+            (total, [key, size]) =>
+              resumed.completedChunks[key]?.source === 'local'
+                ? total - BigInt(size)
+                : total,
+            progress.estimatedDownload ?? 0n,
+          )
+        : BigInt(resumed.estimatedDownloadBytes)
+  }
   const allocatedBytes = resumed
     ? await stagedAllocatedBytes(options.outputDirectory, resumed)
     : 0n
@@ -252,25 +272,31 @@ async function prepareTransaction(
   const stagingRoot = join(transactionRoot, 'staging')
   const backupRoot = join(transactionRoot, 'backup')
   const journalPath = join(transactionRoot, 'journal.json')
-  const journal: TransactionJournal = resumed ?? {
-    version: TRANSACTION_VERSION,
-    id,
-    generation: randomUUID(),
-    appId: options.appId,
-    kind: options.kind,
-    installPath: resolve(options.outputDirectory),
-    phase: 'staging',
-    paused: false,
-    source: sourceRecords,
-    desired,
-    stagedFiles,
-    completedChunks: {},
-    logicalInstalledTotal: progress.logicalInstalledTotal.toString(),
-    retainedBytes: progress.logicalInstalledCompleted.toString(),
-    oldMoves: [],
-    installs: [],
-    obsoleteDirectories: [],
-  }
+  const journal: TransactionJournal = resumed
+    ? {
+        ...resumed,
+        estimatedDownloadBytes: progress.estimatedDownload?.toString(),
+      }
+    : {
+        version: TRANSACTION_VERSION,
+        id,
+        generation: randomUUID(),
+        appId: options.appId,
+        kind: options.kind,
+        installPath: resolve(options.outputDirectory),
+        phase: 'staging',
+        paused: false,
+        source: sourceRecords,
+        desired,
+        stagedFiles,
+        completedChunks: {},
+        logicalInstalledTotal: progress.logicalInstalledTotal.toString(),
+        estimatedDownloadBytes: progress.estimatedDownload?.toString(),
+        retainedBytes: progress.logicalInstalledCompleted.toString(),
+        oldMoves: [],
+        installs: [],
+        obsoleteDirectories: [],
+      }
   const journalContext: JournalContext = {
     journal,
     path: journalPath,
@@ -346,6 +372,7 @@ async function executeTransaction(
       logicalInstalledBytes: progress.logicalInstalledTotal.toString(),
       reusedLocalBytes: progress.reusedLocal.toString(),
       networkBytes: progress.actualNetwork.toString(),
+      estimatedDownloadBytes: progress.estimatedDownload?.toString() ?? '0',
     }
   } catch (error) {
     const failure: TransactionFailure = { cause: error }

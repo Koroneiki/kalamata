@@ -70,6 +70,9 @@ export function mergeOperationProgress(
       displayed.reusedLocalBytes,
     ),
     networkBytes: latestCounter(state.networkBytes, displayed.networkBytes),
+    // The estimate can decrease as staging verifies reusable local chunks.
+    estimatedDownloadBytes:
+      state.estimatedDownloadBytes ?? displayed.estimatedDownloadBytes,
   }
 }
 

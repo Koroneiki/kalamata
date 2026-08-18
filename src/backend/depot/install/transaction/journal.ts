@@ -113,6 +113,7 @@ const transactionJournalSchema: z.ZodType<TransactionJournal> = z.object({
     }),
   ),
   logicalInstalledTotal: manifestIdSchema,
+  estimatedDownloadBytes: manifestIdSchema.optional(),
   retainedBytes: manifestIdSchema,
   oldMoves: z.array(
     z.object({

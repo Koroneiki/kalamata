@@ -142,6 +142,18 @@ async function reuseLocalChunks(
       progress.reusedLocal += bytes
       progress.logicalInstalledCompleted += bytes
     }
+    if (progress.estimatedDownload === null)
+      throw new ApplicationTransactionError(
+        'planning',
+        'Download estimate was not initialized',
+      )
+    progress.estimatedDownload -= BigInt(
+      Math.max(...group.map(({ chunk }) => chunk.cb_compressed)),
+    )
+    journal.journal = {
+      ...journal.journal,
+      estimatedDownloadBytes: progress.estimatedDownload.toString(),
+    }
     await completeChunk(journal, key, 'local', 0)
     emitProgress(options, progress)
   }

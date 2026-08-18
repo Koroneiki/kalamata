@@ -70,8 +70,9 @@ A preview does not occupy the operation queue, reserve an install path, or save 
 | Logical completed       | Trusted retained files plus completed staged chunks.             |
 | Reused local            | Trusted retained bytes plus locally validated copied chunks.     |
 | Network payload         | Successful encrypted response payload accepted for installation. |
+| Estimated download      | Unique compressed chunks needed after verified local reuse.      |
 
-Payload estimates and counters exclude headers, failed responses, retries, and transport overhead. Kalamata does not estimate ETA or speed.
+Payload estimates and counters exclude headers, failed responses, retries, and transport overhead. The accepted network payload can exceed the estimate. Kalamata does not estimate ETA or speed.
 
 ## Durability boundary
 

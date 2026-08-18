@@ -50,7 +50,7 @@ watch(
     </div>
 
     <div class="min-w-0">
-      <InlineOperationStatus :state="displayedState" />
+      <InlineOperationStatus :state="displayedState" show-installed-progress />
     </div>
   </div>
 </template>

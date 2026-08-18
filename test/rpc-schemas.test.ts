@@ -109,6 +109,36 @@ test('rejects unknown fields and malformed operation states', () => {
   ).toBe(false)
 })
 
+test('validates estimated download progress as a nullable decimal string', () => {
+  const active = {
+    status: 'active' as const,
+    kind: 'download' as const,
+    phase: 'downloading' as const,
+    appId: 10,
+    installPath: '/games/10',
+    desiredDepotIds: [20],
+    installedBytesCompleted: '5',
+    installedBytesTotal: '10',
+    reusedLocalBytes: '0',
+    networkBytes: '3',
+    estimatedDownloadBytes: '7',
+  }
+
+  expect(operationStateSchema.safeParse(active).success).toBe(true)
+  expect(
+    operationStateSchema.safeParse({
+      ...active,
+      estimatedDownloadBytes: null,
+    }).success,
+  ).toBe(true)
+  expect(
+    operationStateSchema.safeParse({
+      ...active,
+      estimatedDownloadBytes: 7,
+    }).success,
+  ).toBe(false)
+})
+
 test('validates priority queue requests', () => {
   expect(
     parseRpcRequest('prioritizeQueuedOperation', { id: 'queued' }),

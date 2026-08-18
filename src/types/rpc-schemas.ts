@@ -68,6 +68,7 @@ const activeOperationFields = {
   installedBytesTotal: manifestIdSchema,
   reusedLocalBytes: manifestIdSchema,
   networkBytes: manifestIdSchema,
+  estimatedDownloadBytes: manifestIdSchema.nullable(),
 }
 const activeOperationStateSchema = strict({
   status: z.literal('active'),
@@ -95,6 +96,7 @@ export const operationStateSchema = z.discriminatedUnion('status', [
     installedBytes: manifestIdSchema,
     reusedLocalBytes: manifestIdSchema,
     networkBytes: manifestIdSchema,
+    estimatedDownloadBytes: manifestIdSchema,
   }),
   strict({
     status: z.literal('cancelled'),

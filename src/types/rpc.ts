@@ -229,6 +229,7 @@ export interface ActiveOperationState {
   installedBytesTotal: string
   reusedLocalBytes: string
   networkBytes: string
+  estimatedDownloadBytes: string | null
 }
 
 export interface PausedOperationState extends Omit<
@@ -260,6 +261,7 @@ export type OperationState =
       installedBytes: string
       reusedLocalBytes: string
       networkBytes: string
+      estimatedDownloadBytes: string
     }
   | {
       status: 'cancelled'

@@ -407,6 +407,7 @@ export class DownloadQueueCoordinator {
         installedBytesTotal: resumable.installedBytesTotal,
         reusedLocalBytes: resumable.reusedLocalBytes,
         networkBytes: resumable.networkBytes,
+        estimatedDownloadBytes: resumable.estimatedDownloadBytes,
       }
       this.emitState()
       return
@@ -452,6 +453,7 @@ export class DownloadQueueCoordinator {
       installedBytesTotal: '0',
       reusedLocalBytes: '0',
       networkBytes: '0',
+      estimatedDownloadBytes: null,
     }
     this.#state = active
     this.#controller = new AbortController()
@@ -687,6 +689,7 @@ export class DownloadQueueCoordinator {
       installedBytes: result.logicalInstalledBytes,
       reusedLocalBytes: result.reusedLocalBytes,
       networkBytes: result.networkBytes,
+      estimatedDownloadBytes: result.estimatedDownloadBytes,
     }
     if (request.kind === 'repair')
       await clearRepairFallback(request.installPath)
@@ -881,6 +884,7 @@ export class DownloadQueueCoordinator {
         installedBytesTotal: event.logicalInstalledTotal,
         reusedLocalBytes: event.reusedLocal,
         networkBytes: event.actualNetwork,
+        estimatedDownloadBytes: event.estimatedDownloadBytes,
       }
       if (!this.#progressQueued) {
         this.#progressQueued = true

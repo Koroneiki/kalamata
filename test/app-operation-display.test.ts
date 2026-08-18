@@ -32,6 +32,7 @@ function operation(
       | 'installedBytesTotal'
       | 'reusedLocalBytes'
       | 'networkBytes'
+      | 'estimatedDownloadBytes'
     >
   >,
 ): ActiveOperationState {
@@ -46,6 +47,7 @@ function operation(
     installedBytesTotal: '0',
     reusedLocalBytes: '0',
     networkBytes: '0',
+    estimatedDownloadBytes: null,
     ...counters,
   }
 }
@@ -96,6 +98,28 @@ test('resuming preserves displayed counters while accepting the active state', (
     reusedLocalBytes: '75',
     networkBytes: '80',
   })
+})
+
+test('download estimates can decrease after local reuse is verified', () => {
+  const displayed = operation({
+    networkBytes: '90',
+    estimatedDownloadBytes: '500',
+  })
+  const refined = operation({
+    networkBytes: '100',
+    estimatedDownloadBytes: '300',
+  })
+
+  expect(mergeOperationProgress(refined, displayed)).toMatchObject({
+    networkBytes: '100',
+    estimatedDownloadBytes: '300',
+  })
+  expect(
+    mergeOperationProgress(
+      operation({ estimatedDownloadBytes: null }),
+      displayed,
+    ).estimatedDownloadBytes,
+  ).toBe('500')
 })
 
 test('operation labels distinguish install, update, uninstall, and verify', () => {
@@ -226,6 +250,7 @@ test('repair and terminal states do not expose desired depot intent', () => {
       installedBytes: '1',
       reusedLocalBytes: '0',
       networkBytes: '1',
+      estimatedDownloadBytes: '1',
     },
     {
       status: 'cancelled',

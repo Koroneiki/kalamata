@@ -181,12 +181,14 @@ export async function successfulReconciliation(
     logicalInstalledBytes: '30',
     reusedLocalBytes: '20',
     networkBytes: '10',
+    estimatedDownloadBytes: '10',
   }
 }
 
 export async function writeQueueStagingJournal(
   options: ReconcileApplicationOptions,
   paused = false,
+  estimatedDownloadBytes?: string,
 ): Promise<void> {
   const id = 'queue-resume'
   const transaction = join(
@@ -226,6 +228,7 @@ export async function writeQueueStagingJournal(
       stagedFiles: [],
       completedChunks: {},
       logicalInstalledTotal: '0',
+      estimatedDownloadBytes,
       retainedBytes: '0',
       oldMoves: [],
       installs: [],

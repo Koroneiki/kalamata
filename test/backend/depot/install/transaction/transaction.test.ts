@@ -271,12 +271,30 @@ describe('application filesystem transactions', () => {
     })
 
     expect(result.networkBytes).toBe('2')
+    expect(result.estimatedDownloadBytes).toBe('4')
     expect(result.logicalInstalledBytes).toBe('8')
     expect(desired.client.downloadChunk).toHaveBeenCalledTimes(1)
     expect(progress.at(-1)).toMatchObject({
       actualNetwork: '2',
       logicalInstalledCompleted: '8',
+      estimatedDownloadBytes: '4',
     })
+  })
+
+  test('subtracts verified local chunks from the download estimate', async () => {
+    directory = await tempDirectory()
+    await writeFile(join(directory, 'old.bin'), 'shared')
+    const installed = depot(10, 'old', { 'old.bin': 'shared' })
+    const desired = depot(10, 'new', {
+      'renamed.bin': 'shared',
+      'added.bin': 'new',
+    })
+
+    const result = await run(directory, [installed], [desired])
+
+    expect(result.estimatedDownloadBytes).toBe('3')
+    expect(result.networkBytes).toBe('3')
+    expect(desired.client.downloadChunk).toHaveBeenCalledTimes(1)
   })
 
   test('rotates retryable content failures and stops after untried servers', async () => {
