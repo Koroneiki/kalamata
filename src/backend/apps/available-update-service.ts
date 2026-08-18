@@ -83,6 +83,8 @@ export class AvailableUpdateService {
     const installsByDepot = new Map(installed.map((row) => [row.depotId, row]))
     const outdatedDepots: AvailableUpdateCandidate['outdatedDepots'] = []
 
+    // Installed depots take precedence over current package eligibility so
+    // regional or discontinued content can still receive updates.
     for (const depot of extractPublicDepots(
       products,
       new Set(installsByDepot.keys()),

@@ -211,6 +211,23 @@ describe('ProductInfoService', () => {
     expect(getProductInfo).toHaveBeenCalledWith([], [100, 101, 102], true)
   })
 
+  test('preserves a known empty base package grant set', async () => {
+    const getProductInfo = mock(async (appIds: number[]) =>
+      appIds.length
+        ? productResult({ 10: product(appInfo()) })
+        : packageResult({ 100: packageInfo([20], [11]) }),
+    )
+    const client = { getProductInfo } as unknown as SteamContentUser
+    const service = new ProductInfoService(
+      { getClient: async () => client },
+      { getPackageIds: async () => new Map([[10, [100]]]) },
+    )
+
+    const result = await service.getProductInfoWithDlc(10)
+
+    expect(result.eligibleBaseDepotIds).toEqual(new Set())
+  })
+
   test('falls back and reports package discovery failures', async () => {
     const error = new Error('Store unavailable')
     const report = mock(() => {})
@@ -446,6 +463,35 @@ describe('ProductInfoService', () => {
     const result = await service.getProductInfoWithDlc(10)
 
     expect(result.eligibleDlcDepotIds.get(20)).toEqual(new Set([20, 300]))
+  })
+
+  test('preserves a known empty DLC package grant set', async () => {
+    const base = appInfo({
+      extended: { listofdlc: '20' },
+      depots: { 21: { dlcappid: '20' } },
+    })
+    const getProductInfo = mock(
+      async (appIds: number[], packageIds: number[]) => {
+        if (appIds.includes(10)) return productResult({ 10: product(base) })
+        if (appIds.includes(20))
+          return productResult({ 20: product(appInfo()) })
+        return packageResult({
+          [packageIds[0]!]: packageInfo([10, 20], []),
+        })
+      },
+    )
+    const client = { getProductInfo } as unknown as SteamContentUser
+    const service = new ProductInfoService(
+      { getClient: async () => client },
+      {
+        getPackageIds: async (appIds: number[]) =>
+          new Map([[appIds[0]!, [100]]]),
+      },
+    )
+
+    const result = await service.getProductInfoWithDlc(10)
+
+    expect(result.eligibleDlcDepotIds.get(20)).toEqual(new Set())
   })
 })
 

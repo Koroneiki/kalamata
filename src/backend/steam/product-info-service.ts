@@ -187,7 +187,7 @@ function eligibleBaseDepotIds(
     if (!grant?.appIds.includes(appId)) continue
     for (const depotId of grant.depotIds) depotIds.add(depotId)
   }
-  return depotIds.size ? depotIds : null
+  return depotIds
 }
 
 function eligibleDlcDepotIds(
@@ -212,7 +212,7 @@ function eligibleDlcDepotIds(
       linkedDepots.get(dlcAppId) ?? new Set(),
       grants,
     )
-    if (depotIds.size) result.set(dlcAppId, depotIds)
+    result.set(dlcAppId, depotIds)
   }
   return result
 }
@@ -224,10 +224,7 @@ function qualifyingDlcGrants(
   dlcDiscovery: PackageDiscovery | null,
 ): PackageGrant[] | null {
   // A DLC may only be granted through a base package and have no direct package.
-  if (
-    !baseDiscovery?.packageIdsByApp.has(baseAppId) ||
-    !dlcDiscovery
-  )
+  if (!baseDiscovery?.packageIdsByApp.has(baseAppId) || !dlcDiscovery)
     return null
   const packageIds = new Set([
     ...(baseDiscovery?.packageIdsByApp.get(baseAppId) ?? []),

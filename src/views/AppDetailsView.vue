@@ -423,12 +423,13 @@ async function getManifest(
 }
 
 async function getDepotResources(depot: AppDepot) {
+  if (!depot.eligible) return
   const targetAppId = appId.value
   const key = manifestKey(targetAppId, depot)
   let keyError = ''
   acquiringManifests.add(key)
   try {
-    if (depot.eligible && depot.keyStatus !== 'present') {
+    if (depot.keyStatus !== 'present') {
       try {
         const result = await resourceAcquisition.acquireKeys(targetAppId, [
           depot.depotId,
@@ -442,7 +443,7 @@ async function getDepotResources(depot: AppDepot) {
       }
     }
 
-    if (!depot.eligible || depot.manifestStatus !== 'ready') {
+    if (depot.manifestStatus !== 'ready') {
       // Manifest acquisition does not require a key. Encrypted filenames can
       // be validated after the key becomes available.
       await getManifest(depot, undefined, keyError, targetAppId)

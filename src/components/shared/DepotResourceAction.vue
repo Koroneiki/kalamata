@@ -15,9 +15,9 @@ defineEmits<{ acquire: [] }>()
 
 const canAcquire = computed(
   () =>
+    props.depot.eligible &&
     props.depot.manifestId !== null &&
-    (!props.depot.eligible ||
-      props.depot.manifestStatus !== 'ready' ||
+    (props.depot.manifestStatus !== 'ready' ||
       props.depot.keyStatus !== 'present'),
 )
 </script>
