@@ -305,6 +305,12 @@ await startup
 
 new BrowserWindow({
   title: 'Kalamata',
+  frame: {
+    x: 0,
+    y: 0,
+    width: 1000,
+    height: 800,
+  },
   url: await getMainViewUrl(),
   rpc,
 })

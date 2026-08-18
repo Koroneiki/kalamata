@@ -38,7 +38,7 @@ watch(
 
 <template>
   <div
-    class="bg-muted/60 grid min-w-0 gap-5 border-b px-4 py-5 sm:px-5 md:grid-cols-[minmax(15rem,0.8fr)_minmax(20rem,1.2fr)] md:items-center"
+    class="bg-muted/60 grid min-w-0 gap-5 border-b px-4 py-5 sm:px-5 lg:grid-cols-[minmax(15rem,0.8fr)_minmax(20rem,1.2fr)] lg:items-center"
   >
     <div class="min-w-0">
       <DownloadAppIdentity

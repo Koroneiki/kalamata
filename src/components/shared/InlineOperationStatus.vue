@@ -268,7 +268,7 @@ defineExpose({
           class="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1"
         >
           <span
-            class="text-muted-foreground flex items-center gap-1 tabular-nums"
+            class="text-muted-foreground flex items-center gap-1 whitespace-nowrap tabular-nums"
             :aria-label="downloadProgress.label"
           >
             <Download class="size-3" aria-hidden="true" />
@@ -276,7 +276,7 @@ defineExpose({
           </span>
           <span
             v-if="showInstalledProgress"
-            class="ml-auto flex min-w-0 items-center justify-end gap-1 tabular-nums"
+            class="ml-auto flex min-w-0 items-center justify-end gap-1 whitespace-nowrap tabular-nums"
           >
             <Computer class="size-3" aria-hidden="true" />
             <span class="sr-only">Logical installed progress:</span>
