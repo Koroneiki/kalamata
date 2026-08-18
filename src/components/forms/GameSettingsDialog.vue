@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { Trash2 } from '@lucide/vue'
+
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -11,11 +13,13 @@ defineProps<{
   open: boolean
   appName: string
   verifyDisabled: boolean
+  removeDisabled: boolean
 }>()
 
 const emit = defineEmits<{
   'update:open': [value: boolean]
   verify: []
+  remove: []
 }>()
 </script>
 
@@ -26,7 +30,7 @@ const emit = defineEmits<{
         <DialogTitle class="text-primary">{{ appName }}</DialogTitle>
       </DialogHeader>
 
-      <div class="border-border border-t pt-4">
+      <div class="border-border flex items-center gap-2 border-t pt-4">
         <Button
           type="button"
           size="sm"
@@ -35,6 +39,16 @@ const emit = defineEmits<{
           @click="emit('verify')"
         >
           Verify game files
+        </Button>
+        <Button
+          type="button"
+          size="icon-sm"
+          variant="outline"
+          :disabled="removeDisabled"
+          aria-label="Remove from library"
+          @click="emit('remove')"
+        >
+          <Trash2 aria-hidden="true" />
         </Button>
       </div>
     </DialogContent>

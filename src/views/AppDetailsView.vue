@@ -364,6 +364,11 @@ function correctSelectedDepots(depotIds: number[]) {
   updateSelectedDepots(depotIds)
 }
 
+function openRemoveDialog() {
+  gameSettingsOpen.value = false
+  removeDialogOpen.value = true
+}
+
 async function removeFromLibrary() {
   const targetAppId = appId.value
   removeError.value = ''
@@ -561,10 +566,8 @@ async function browseLocalFiles() {
           :icon-url="iconUrl"
           :release-date="releaseDate"
           :artwork-failed="artworkFailed"
-          :operation-busy="operationBusy"
           @icon-error="handleIconError"
           @artwork-error="artworkFailed = true"
-          @remove="removeDialogOpen = true"
         />
 
         <section class="mt-8" aria-label="Install game content">
@@ -655,8 +658,10 @@ async function browseLocalFiles() {
           :open="gameSettingsOpen"
           :app-name="data.name"
           :verify-disabled="globalOperationBusy"
+          :remove-disabled="globalOperationBusy"
           @update:open="gameSettingsOpen = $event"
           @verify="verifyGameFiles"
+          @remove="openRemoveDialog"
         />
       </template>
     </AppDetailsQueryState>

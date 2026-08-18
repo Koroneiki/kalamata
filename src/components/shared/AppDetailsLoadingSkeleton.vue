@@ -5,7 +5,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 <template>
   <div class="space-y-6" aria-label="Loading app details">
     <div
-      class="grid gap-6 sm:grid-cols-[minmax(0,1fr)_15rem] sm:items-start lg:grid-cols-[minmax(0,1fr)_18rem]"
+      class="grid gap-6 sm:grid-cols-[minmax(0,1fr)_18rem] sm:items-start lg:grid-cols-[minmax(0,1fr)_22rem]"
     >
       <div class="min-w-0">
         <div class="flex items-start gap-4">

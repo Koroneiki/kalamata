@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { ImageOff, Trash2 } from '@lucide/vue'
+import { ImageOff } from '@lucide/vue'
 import { computed } from 'vue'
 
-import { Button } from '@/components/ui/button'
 import type { AppDetails } from '@/types/rpc'
 
 const props = defineProps<{
@@ -10,13 +9,11 @@ const props = defineProps<{
   iconUrl: string | null
   releaseDate: string
   artworkFailed: boolean
-  operationBusy: boolean
 }>()
 
 defineEmits<{
   iconError: []
   artworkError: []
-  remove: []
 }>()
 
 const developers = computed(
@@ -29,7 +26,7 @@ const publishers = computed(
 
 <template>
   <header
-    class="relative grid gap-6 sm:grid-cols-[minmax(0,1fr)_15rem] sm:items-start lg:grid-cols-[minmax(0,1fr)_18rem]"
+    class="grid gap-6 sm:grid-cols-[minmax(0,1fr)_18rem] sm:items-start lg:grid-cols-[minmax(0,1fr)_22rem]"
   >
     <div class="min-w-0">
       <div class="flex min-w-0 items-start gap-4">
@@ -90,18 +87,5 @@ const publishers = computed(
         </span>
       </div>
     </div>
-
-    <Button
-      v-if="app.inLibrary"
-      class="absolute top-0 right-0"
-      type="button"
-      size="icon-sm"
-      variant="outline"
-      :disabled="operationBusy"
-      aria-label="Remove from library"
-      @click="$emit('remove')"
-    >
-      <Trash2 aria-hidden="true" />
-    </Button>
   </header>
 </template>
