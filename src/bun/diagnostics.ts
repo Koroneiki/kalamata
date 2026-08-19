@@ -10,6 +10,8 @@ interface SerializedDiagnosticError {
   cause?: SerializedDiagnosticError
 }
 
+type ProcessFailure = { toString(): string } | null | undefined
+
 type InfoDiagnostic =
   | {
       event: 'app.started'
@@ -34,6 +36,12 @@ type ErrorDiagnostic =
   | { event: 'operation.failed'; error: Error; appId: number; kind: string }
   | { event: 'app.shutdown-failed'; error: Error }
   | { event: 'recovery.failed'; error: Error; appId: number }
+  | {
+      event: 'process.uncaught-exception'
+      error: Error
+      origin: NodeJS.UncaughtExceptionOrigin
+    }
+  | { event: 'process.unhandled-rejection'; error: Error }
   | {
       event: 'product-info.package-discovery-failed'
       error: Error
@@ -110,6 +118,60 @@ export class Diagnostics {
   private reportFailure(error: Error): void {
     // Diagnostics must never prevent the application from running.
     console.error('Could not write Kalamata diagnostics', error)
+  }
+}
+
+let applicationDiagnostics: Diagnostics | undefined
+
+export function initializeApplicationDiagnostics(
+  userDataDirectory: string,
+): Diagnostics {
+  const diagnostics = new Diagnostics(userDataDirectory)
+  registerProcessDiagnostics(diagnostics)
+  applicationDiagnostics = diagnostics
+  return diagnostics
+}
+
+export function getApplicationDiagnostics(): Diagnostics {
+  if (!applicationDiagnostics)
+    throw new Error('Application diagnostics were not initialized')
+  return applicationDiagnostics
+}
+
+export function registerProcessDiagnostics(
+  diagnostics: Diagnostics,
+): () => void {
+  const handleUncaughtException = (
+    error: ProcessFailure,
+    origin: NodeJS.UncaughtExceptionOrigin,
+  ) => {
+    diagnostics.error({
+      event: 'process.uncaught-exception',
+      error: errorFromUnknown(error),
+      origin,
+    })
+  }
+  const handleUnhandledRejection = (reason: ProcessFailure) => {
+    // Electrobun already owns rejection handling; mirror it to the durable log.
+    diagnostics.error({
+      event: 'process.unhandled-rejection',
+      error: errorFromUnknown(reason),
+    })
+  }
+  process.on('uncaughtExceptionMonitor', handleUncaughtException)
+  process.on('unhandledRejection', handleUnhandledRejection)
+  return () => {
+    process.off('uncaughtExceptionMonitor', handleUncaughtException)
+    process.off('unhandledRejection', handleUnhandledRejection)
+  }
+}
+
+function errorFromUnknown(value: ProcessFailure): Error {
+  if (value instanceof Error) return value
+  try {
+    return new Error(String(value))
+  } catch {
+    return new Error('Non-Error process failure could not be serialized')
   }
 }
 

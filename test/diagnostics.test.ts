@@ -2,7 +2,10 @@ import { afterEach, expect, test } from 'bun:test'
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Diagnostics } from '../src/bun/diagnostics.ts'
+import {
+  Diagnostics,
+  registerProcessDiagnostics,
+} from '../src/bun/diagnostics.ts'
 
 let directory: string | undefined
 
@@ -67,6 +70,38 @@ test('does not throw when an error has a cyclic cause', async () => {
     name: 'Error',
     message: 'Circular error cause omitted',
   })
+})
+
+test('records uncaught exceptions and unhandled rejections', async () => {
+  directory = await mkdtemp(join(tmpdir(), 'kalamata-diagnostics-'))
+  const diagnostics = new Diagnostics(directory)
+  const unregister = registerProcessDiagnostics(diagnostics)
+
+  try {
+    process.emit(
+      'uncaughtExceptionMonitor',
+      Object.create(null),
+      'uncaughtException',
+    )
+    process.emit('unhandledRejection', 'rejected value', Promise.resolve())
+  } finally {
+    unregister()
+  }
+
+  const lines = (await readFile(diagnostics.path, 'utf8')).trim().split('\n')
+  expect(lines.map((line) => JSON.parse(line))).toMatchObject([
+    {
+      level: 'error',
+      event: 'process.uncaught-exception',
+      origin: 'uncaughtException',
+      error: { message: 'Non-Error process failure could not be serialized' },
+    },
+    {
+      level: 'error',
+      event: 'process.unhandled-rejection',
+      error: { message: 'rejected value' },
+    },
+  ])
 })
 
 test('rotates a one MiB log and keeps one archive', async () => {
