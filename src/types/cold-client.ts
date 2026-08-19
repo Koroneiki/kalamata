@@ -1,20 +1,22 @@
 import { z } from 'zod'
 
-const coldClientRelativePathSchema = z.string().superRefine((value, ctx) => {
-  const segments = value.split('/')
-  if (
-    value.length === 0 ||
-    value.startsWith('/') ||
-    value.includes('\\') ||
-    value.includes(':') ||
-    value.includes('\0') ||
-    segments.some(
-      (segment) => segment === '' || segment === '.' || segment === '..',
-    )
-  ) {
-    ctx.addIssue({ code: 'custom', message: 'Invalid relative path' })
-  }
-})
+export const coldClientRelativePathSchema = z
+  .string()
+  .superRefine((value, ctx) => {
+    const segments = value.split('/')
+    if (
+      value.length === 0 ||
+      value.startsWith('/') ||
+      value.includes('\\') ||
+      value.includes(':') ||
+      value.includes('\0') ||
+      segments.some(
+        (segment) => segment === '' || segment === '.' || segment === '..',
+      )
+    ) {
+      ctx.addIssue({ code: 'custom', message: 'Invalid relative path' })
+    }
+  })
 
 export const managedCoreFilesSchema = z
   .array(coldClientRelativePathSchema)
@@ -88,4 +90,66 @@ export interface ColdClientDependencyStatus {
   lastCheckedAt: number | null
   loginFileExists: boolean
   loginDirectory: string | null
+}
+
+export const coldClientLoaderArchitectureSchema = z.enum(['x86', 'x64'])
+export type ColdClientLoaderArchitecture = z.infer<
+  typeof coldClientLoaderArchitectureSchema
+>
+
+export const coldClientDetectionSourceSchema = z.enum([
+  'shipping-executable',
+  'sole-executable',
+  'steam-launch',
+  'manual-choice',
+  'binary-directory',
+  'sole-steam-api',
+  'missing-dll-fallback',
+])
+export type ColdClientDetectionSource = z.infer<
+  typeof coldClientDetectionSourceSchema
+>
+
+export const coldClientSetupWarningSchema = z.enum([
+  'multiple-shipping-executables',
+  'executable-choice-required',
+  'steam-api-choice-required',
+  'x64-assumed-without-steam-api',
+  'launch-executable-mismatch',
+  'existing-cold-client-will-be-replaced',
+])
+export type ColdClientSetupWarning = z.infer<
+  typeof coldClientSetupWarningSchema
+>
+
+export interface ColdClientLaunchOption {
+  key: string
+  executable: string
+  matchedExecutableRelativePath: string | null
+  arguments: string
+  description: string | null
+}
+
+export interface ColdClientSetupDependency {
+  assetId: number
+  tag: string
+}
+
+export interface ColdClientSetupDraft {
+  appId: number
+  targetRelativePath: '_ColdClient'
+  executableCandidates: string[]
+  selectedExecutableRelativePath: string | null
+  executableDetectionSource: ColdClientDetectionSource
+  steamApiCandidates: string[]
+  selectedSteamApiRelativePath: string | null
+  steamApiDetectionSource: ColdClientDetectionSource
+  loaderArchitecture: ColdClientLoaderArchitecture
+  launchOptions: ColdClientLaunchOption[]
+  launchArguments: string
+  launchArgumentSource: string | null
+  warnings: ColdClientSetupWarning[]
+  existingColdClient: boolean
+  gbe: ColdClientSetupDependency
+  gse: ColdClientSetupDependency
 }

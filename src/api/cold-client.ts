@@ -18,3 +18,7 @@ export function updateColdClientDependencies(
 export function openColdClientLoginDirectory() {
   return request('openColdClientLoginDirectory', {})
 }
+
+export function inspectColdClientSetup(appId: number) {
+  return request('inspectColdClientSetup', { appId })
+}

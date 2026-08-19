@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { useMutation, useQuery, useQueryCache } from '@pinia/colada'
 import { computed, nextTick, reactive, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 import CustomManifestDialog from '@/components/forms/CustomManifestDialog.vue'
 import DownloadDepotsDialog from '@/components/forms/DownloadDepotsDialog.vue'
 import GameSettingsDialog from '@/components/forms/GameSettingsDialog.vue'
+import ColdClientSetupDialog from '@/components/forms/ColdClientSetupDialog.vue'
 import RemoveLibraryEntryDialog from '@/components/forms/RemoveLibraryEntryDialog.vue'
 import AppDetailsActionBar from '@/components/shared/AppDetailsActionBar.vue'
 import AppDetailsHeader from '@/components/shared/AppDetailsHeader.vue'
@@ -16,6 +17,7 @@ import {
   appDetailsQuery,
   libraryQueryKey,
   useSettingsQuery,
+  useColdClientDependenciesQuery,
 } from '@/composables/queries'
 import { useFallbackImage } from '@/composables/use-fallback-image'
 import { useAppOperationDisplay } from '@/composables/use-app-operation-display'
@@ -39,12 +41,23 @@ import { filterDepots, matchesDepotPlatform } from '@/utils/depots'
 import { steamIdStringSchema } from '@/types/schemas'
 
 const route = useRoute()
+const router = useRouter()
 const operation = useOperationStore()
 const availableUpdates = useAvailableUpdates()
 const depotDrafts = useDepotOperationDraftStore()
 const resourceAcquisition = useDepotResourceAcquisition()
 const queryCache = useQueryCache()
 const { data: settings } = useSettingsQuery()
+const { data: coldClientDependencies } = useColdClientDependenciesQuery()
+const coldClientReady = computed(
+  () =>
+    Boolean(coldClientDependencies.value?.loginFileExists) &&
+    Boolean(
+      coldClientDependencies.value?.dependencies.every(
+        ({ currentAssetId }) => currentAssetId !== null,
+      ),
+    ),
+)
 const parsedAppId = computed(() =>
   steamIdStringSchema.safeParse(String(route.params.appId)),
 )
@@ -63,6 +76,7 @@ const artworkFailed = ref(false)
 const dialogOpen = ref(false)
 const gameSettingsOpen = ref(false)
 const removeDialogOpen = ref(false)
+const coldClientSetupOpen = ref(false)
 const mutationError = ref('')
 const manifestError = ref('')
 const acquiringManifests = reactive(new Set<string>())
@@ -354,6 +368,15 @@ function correctSelectedDepots(depotIds: number[]) {
 function openRemoveDialog() {
   gameSettingsOpen.value = false
   removeDialogOpen.value = true
+}
+
+function openColdClientSetup() {
+  gameSettingsOpen.value = false
+  if (!coldClientReady.value) {
+    void router.push('/settings')
+    return
+  }
+  coldClientSetupOpen.value = true
 }
 
 async function removeFromLibrary() {
@@ -670,6 +693,15 @@ async function browseLocalFiles() {
             @update:open="removeDialogOpen = $event"
             @confirm="removeFromLibrary"
           />
+
+          <ColdClientSetupDialog
+            v-if="data.installPath"
+            :open="coldClientSetupOpen"
+            :app-id="data.appId"
+            :app-name="data.name"
+            :install-path="data.installPath"
+            @update:open="coldClientSetupOpen = $event"
+          />
         </template>
 
         <CustomManifestDialog
@@ -688,9 +720,15 @@ async function browseLocalFiles() {
           :app-name="data.name"
           :verify-disabled="globalOperationBusy"
           :remove-disabled="globalOperationBusy"
+          :cold-client-supported="
+            Boolean(coldClientDependencies?.supported && data.installPath)
+          "
+          :cold-client-ready="coldClientReady"
+          :cold-client-disabled="globalOperationBusy"
           @update:open="gameSettingsOpen = $event"
           @verify="verifyGameFiles"
           @remove="openRemoveDialog"
+          @setup-cold-client="openColdClientSetup"
         />
       </template>
     </AppDetailsQueryState>

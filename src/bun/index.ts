@@ -9,6 +9,7 @@ import { createSteamService } from '../backend/index.ts'
 import { AppService } from '../backend/apps/app-service.ts'
 import { ColdClientDependencyService } from '../backend/cold-client/dependency-service.ts'
 import { ColdClientMutationMutex } from '../backend/cold-client/mutation-mutex.ts'
+import { ColdClientGameInspector } from '../backend/cold-client/game-inspector.ts'
 import { DownloadQueueCoordinator } from '../backend/operations/download-queue.ts'
 import {
   getResumableApplicationTransaction,
@@ -72,6 +73,11 @@ const coldClientDependencies = new ColdClientDependencyService(
         error,
       }),
   },
+)
+const coldClientInspector = new ColdClientGameInspector(
+  database,
+  steam,
+  coldClientDependencies,
 )
 let coldClientDependenciesReady = false
 let queue: DownloadQueueCoordinator
@@ -149,6 +155,9 @@ const rpc = BrowserView.defineRPC<AppRpc>({
         if (!directory || !Utils.openPath(directory)) {
           throw new Error('The GSE Tools login folder could not be opened')
         }
+      },
+      inspectColdClientSetup({ appId }) {
+        return coldClientInspector.inspect(appId)
       },
       addLibraryEntry({ appId }) {
         return database.addLibraryEntry(appId)

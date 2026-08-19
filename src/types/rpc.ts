@@ -1,6 +1,7 @@
 import type {
   ColdClientDependencyId,
   ColdClientDependencyStatus,
+  ColdClientSetupDraft,
 } from './cold-client.ts'
 
 export interface AppSummary {
@@ -400,6 +401,10 @@ export type AppRpc = {
       openColdClientLoginDirectory: {
         params: Record<string, never>
         response: void
+      }
+      inspectColdClientSetup: {
+        params: { appId: number }
+        response: ColdClientSetupDraft
       }
       addLibraryEntry: {
         params: { appId: number }

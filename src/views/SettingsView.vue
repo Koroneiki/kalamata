@@ -513,6 +513,12 @@ async function openColdClientLoginFolder() {
                 }}
                 Kalamata checks only whether the file exists and never reads it.
               </p>
+              <p
+                v-if="coldClientDependencies.loginDirectory"
+                class="text-muted-foreground mt-1 font-mono text-xs break-all"
+              >
+                {{ coldClientDependencies.loginDirectory }}
+              </p>
             </div>
             <Button
               variant="outline"

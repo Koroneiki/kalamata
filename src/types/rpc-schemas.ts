@@ -7,7 +7,13 @@ import {
   uniqueSteamIdsSchema,
 } from './schemas.ts'
 import { AVAILABLE_UPDATE_BATCH_SIZE } from './available-updates.ts'
-import { coldClientDependencyIdSchema } from './cold-client.ts'
+import {
+  coldClientDependencyIdSchema,
+  coldClientDetectionSourceSchema,
+  coldClientLoaderArchitectureSchema,
+  coldClientRelativePathSchema,
+  coldClientSetupWarningSchema,
+} from './cold-client.ts'
 
 type Requests = AppRpc['bun']['requests']
 type RequestSchemas = {
@@ -51,6 +57,75 @@ const coldClientDependencyStatusSchema = strict({
   lastCheckedAt: z.number().int().nonnegative().safe().nullable(),
   loginFileExists: z.boolean(),
   loginDirectory: z.string().nullable(),
+})
+const coldClientLaunchOptionSchema = strict({
+  key: z.string().regex(/^\d+$/u),
+  executable: coldClientRelativePathSchema,
+  matchedExecutableRelativePath: coldClientRelativePathSchema.nullable(),
+  arguments: z.string(),
+  description: z.string().nullable(),
+})
+const coldClientSetupDependencySchema = strict({
+  assetId: dependencyAssetIdSchema,
+  tag: z.string().min(1),
+})
+const coldClientSetupDraftSchema = strict({
+  appId: steamIdSchema,
+  targetRelativePath: z.literal('_ColdClient'),
+  executableCandidates: z.array(coldClientRelativePathSchema).min(1),
+  selectedExecutableRelativePath: coldClientRelativePathSchema.nullable(),
+  executableDetectionSource: coldClientDetectionSourceSchema,
+  steamApiCandidates: z.array(coldClientRelativePathSchema),
+  selectedSteamApiRelativePath: coldClientRelativePathSchema.nullable(),
+  steamApiDetectionSource: coldClientDetectionSourceSchema,
+  loaderArchitecture: coldClientLoaderArchitectureSchema,
+  launchOptions: z.array(coldClientLaunchOptionSchema),
+  launchArguments: z.string(),
+  launchArgumentSource: z.string().regex(/^\d+$/u).nullable(),
+  warnings: z.array(coldClientSetupWarningSchema),
+  existingColdClient: z.boolean(),
+  gbe: coldClientSetupDependencySchema,
+  gse: coldClientSetupDependencySchema,
+}).superRefine((draft, ctx) => {
+  if (
+    draft.selectedExecutableRelativePath !== null &&
+    !draft.executableCandidates.includes(draft.selectedExecutableRelativePath)
+  ) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'Selected executable must be a candidate',
+      path: ['selectedExecutableRelativePath'],
+    })
+  }
+  if (
+    draft.selectedSteamApiRelativePath !== null &&
+    !draft.steamApiCandidates.includes(draft.selectedSteamApiRelativePath)
+  ) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'Selected Steam API DLL must be a candidate',
+      path: ['selectedSteamApiRelativePath'],
+    })
+  }
+  if (
+    draft.launchArgumentSource !== null &&
+    !draft.launchOptions.some(({ key }) => key === draft.launchArgumentSource)
+  ) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'Launch argument source must be an available launch entry',
+      path: ['launchArgumentSource'],
+    })
+  }
+  if (
+    new Set(draft.warnings).size !== draft.warnings.length ||
+    new Set(draft.executableCandidates.map((path) => path.toLowerCase()))
+      .size !== draft.executableCandidates.length ||
+    new Set(draft.steamApiCandidates.map((path) => path.toLowerCase())).size !==
+      draft.steamApiCandidates.length
+  ) {
+    ctx.addIssue({ code: 'custom', message: 'Draft values must be unique' })
+  }
 })
 const manifestTargetSchema = strict({
   depotId: steamIdSchema,
@@ -310,6 +385,7 @@ const rpcRequestSchemas = {
       ),
   }),
   openColdClientLoginDirectory: emptySchema,
+  inspectColdClientSetup: idRequestSchema,
   addLibraryEntry: idRequestSchema,
   removeLibraryEntry: idRequestSchema,
   setDepotPinned: strict({
@@ -365,6 +441,7 @@ export const rpcResponseSchemas = {
   checkColdClientDependencyUpdates: coldClientDependencyStatusSchema,
   updateColdClientDependencies: coldClientDependencyStatusSchema,
   openColdClientLoginDirectory: z.void(),
+  inspectColdClientSetup: coldClientSetupDraftSchema,
   addLibraryEntry: libraryEntrySchema,
   removeLibraryEntry: z.void(),
   setDepotPinned: z.void(),
