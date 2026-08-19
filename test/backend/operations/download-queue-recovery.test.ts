@@ -262,6 +262,34 @@ test('repair-required protection does not block a different application', async 
   expect(queue.isBusyForApp(APP_ID)).toBe(true)
 })
 
+test('an unresolved ColdClient journal blocks depot work and repair', async () => {
+  const fixture = await setup()
+  fixture.database.reserveInstallPath(
+    APP_ID,
+    await realpath(fixture.installPath),
+  )
+  const queue = new DownloadQueueCoordinator(
+    {
+      getProductInfoWithDlc: async () => products(),
+      reconcileApplication: successfulReconciliation,
+    },
+    fixture.database,
+  )
+  queue.markColdClientBlocked(APP_ID)
+
+  expect(queue.isBusyForApp(APP_ID)).toBe(true)
+  expect(queue.getDownloadQueue().repairRequiredAppIds).toContain(APP_ID)
+  await expect(
+    queue.queueDepotUpdate({ appId: APP_ID, desiredDepotIds: [] }),
+  ).rejects.toThrow('Repair ColdClient')
+  await expect(queue.repairApplication({ appId: APP_ID })).rejects.toThrow(
+    'Repair ColdClient',
+  )
+
+  queue.clearColdClientBlocked(APP_ID)
+  expect(queue.isBusyForApp(APP_ID)).toBe(false)
+})
+
 test('surfaces queued recovery failures one at a time', async () => {
   const fixture = await setup()
   fixture.database.reserveInstallPath(
