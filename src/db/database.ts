@@ -279,6 +279,8 @@ export class KalamataDatabase {
       .map((row) => ({ ...row, pinned: Boolean(row.pinned) }))
   }
 
+  // Used through startup wiring and narrow ColdClient service contracts.
+  // fallow-ignore-next-line unused-class-member
   getColdClientInstallations(): ColdClientInstallation[] {
     return this.sqlite
       .query<ColdClientInstallationRow, []>(
@@ -322,6 +324,8 @@ export class KalamataDatabase {
       )
   }
 
+  // Used through the replacement service's persistence contract.
+  // fallow-ignore-next-line unused-class-member
   replaceColdClientInstallationIfCurrent(
     previous: ColdClientInstallation | null,
     target: ColdClientInstallation,
@@ -339,6 +343,8 @@ export class KalamataDatabase {
     })()
   }
 
+  // Reserved for installation lifecycle cleanup in the remaining core-update slice.
+  // fallow-ignore-next-line unused-class-member
   deleteColdClientInstallation(appId: number): void {
     validateId(appId, 'appId')
     this.sqlite

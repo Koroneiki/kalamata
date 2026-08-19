@@ -89,7 +89,7 @@ const journalSchema = z
     }
   })
 
-export type ColdClientReplacementJournal = z.infer<typeof journalSchema>
+type ColdClientReplacementJournal = z.infer<typeof journalSchema>
 
 interface ReplacementDatabase {
   getColdClientInstallation(appId: number): ColdClientInstallation | null
@@ -254,6 +254,8 @@ export class ColdClientReplacementService {
     }
   }
 
+  // Called through the orchestration service's replacement contract.
+  // fallow-ignore-next-line unused-class-member
   async hasJournal(installRoot: string): Promise<boolean> {
     return (await lstatOrNull(replacementJournalPath(installRoot))) !== null
   }

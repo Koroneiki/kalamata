@@ -247,6 +247,8 @@ export class ColdClientDependencyService {
     )
   }
 
+  // Called through the orchestration service's dependency contract.
+  // fallow-ignore-next-line unused-class-member
   async validateArtifactSnapshot(
     dependencyId: ColdClientDependencyId,
     assetId: number,

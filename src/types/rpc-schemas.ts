@@ -143,7 +143,7 @@ export const coldClientOperationSnapshotSchema = z.discriminatedUnion(
     }),
   ],
 )
-export const coldClientStatusSchema = z.discriminatedUnion('status', [
+const coldClientStatusSchema = z.discriminatedUnion('status', [
   strict({
     status: z.literal('unsupported'),
     reason: z.enum(['host-platform', 'not-installed']),
