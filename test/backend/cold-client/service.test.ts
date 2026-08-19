@@ -119,6 +119,51 @@ test('regenerates only steam_settings and preserves the configured core', async 
   expect(fixture.database.current?.configuredAt).toBe(3000)
 })
 
+test('updates only managed core files and preserves custom configuration', async () => {
+  const fixture = await createFixture()
+  const service = createService(fixture)
+  await service.configure(fixture.request)
+  const live = join(fixture.installRoot, '_ColdClient')
+  const loaderBefore = await readFile(join(live, 'ColdClientLoader.ini'))
+  const settingsBefore = await readFile(
+    join(live, 'steam_settings', 'configs.overlay.ini'),
+  )
+  const previousFingerprint =
+    fixture.database.current?.generatedDepotFingerprint
+  await mkdir(join(live, 'extra_dlls', 'custom'), { recursive: true })
+  await writeFile(join(live, 'extra_dlls', 'custom', 'user.dll'), 'custom')
+  await writeFile(join(live, 'steamclient.dll'), 'damaged')
+  fixture.activateGbeV2()
+
+  const status = await service.updateCore(10)
+
+  expect(status).toMatchObject({
+    status: 'configured',
+    installedGbeTag: 'gbe-v2',
+    coreUpdateAvailable: false,
+  })
+  expect(await readFile(join(live, 'steamclient.dll'), 'utf8')).toBe(
+    'client x86 v2',
+  )
+  expect(await readFile(join(live, 'new-core.dll'), 'utf8')).toBe('new core')
+  await expect(access(join(live, 'GameOverlayRenderer.dll'))).rejects.toThrow()
+  expect(
+    await readFile(join(live, 'extra_dlls', 'custom', 'user.dll'), 'utf8'),
+  ).toBe('custom')
+  expect(await readFile(join(live, 'ColdClientLoader.ini'))).toEqual(
+    loaderBefore,
+  )
+  expect(
+    await readFile(join(live, 'steam_settings', 'configs.overlay.ini')),
+  ).toEqual(settingsBefore)
+  expect(fixture.database.current).toMatchObject({
+    gbeAssetId: 102,
+    gseAssetId: 201,
+    generatedDepotFingerprint: previousFingerprint,
+    configuredAt: 3000,
+  })
+})
+
 function createService(
   fixture: Awaited<ReturnType<typeof createFixture>>,
   inspect: () => ColdClientSetupDraft = () => fixture.draft,
@@ -159,13 +204,16 @@ async function createFixture() {
   root = await mkdtemp(join(tmpdir(), 'kalamata-coldclient-service-'))
   const installRoot = join(root, 'game')
   const gbeRoot = join(root, 'gbe')
+  const gbeV2Root = join(root, 'gbe-v2')
   const core = join(gbeRoot, 'release', 'steamclient_experimental')
+  const coreV2 = join(gbeV2Root, 'release', 'steamclient_experimental')
   const generatedApp = join(root, 'gse-output', '10')
   const generatedSettings = join(generatedApp, 'steam_settings')
   await Promise.all([
     mkdir(join(installRoot, 'Game', 'Binaries'), { recursive: true }),
     mkdir(join(installRoot, '_ColdClient'), { recursive: true }),
     mkdir(join(core, 'extra_dlls', 'nested'), { recursive: true }),
+    mkdir(join(coreV2, 'extra_dlls', 'nested'), { recursive: true }),
     mkdir(join(gbeRoot, 'release', 'tools', 'generate_interfaces'), {
       recursive: true,
     }),
@@ -186,6 +234,13 @@ async function createFixture() {
     writeFile(join(core, 'GameOverlayRenderer.dll'), 'overlay x86'),
     writeFile(join(core, 'GameOverlayRenderer64.dll'), 'overlay x64'),
     writeFile(join(core, 'extra_dlls', 'nested', 'extra.dll'), 'extra'),
+    writeFile(join(coreV2, 'ColdClientLoader.ini'), loaderIni()),
+    writeFile(join(coreV2, 'steamclient.dll'), 'client x86 v2'),
+    writeFile(join(coreV2, 'steamclient64.dll'), 'client x64 v2'),
+    writeFile(join(coreV2, 'steamclient_loader_x86.exe'), 'loader x86 v2'),
+    writeFile(join(coreV2, 'steamclient_loader_x64.exe'), 'loader x64 v2'),
+    writeFile(join(coreV2, 'new-core.dll'), 'new core'),
+    writeFile(join(coreV2, 'extra_dlls', 'nested', 'extra.dll'), 'extra v2'),
     writeFile(
       join(
         gbeRoot,
@@ -200,19 +255,30 @@ async function createFixture() {
   await writeGeneratedSettings(generatedSettings, 'generated-overlay-default')
 
   const gbe = artifact('gbe', 101, 'gbe-v1')
+  const gbeV2 = artifact('gbe', 102, 'gbe-v2')
   const gse = artifact('gse', 201, 'gse-v1')
   const artifacts = new Map([
     ['gbe:101', gbe],
+    ['gbe:102', gbeV2],
     ['gse:201', gse],
   ])
+  let activeGbe = gbe
   const dependencies = {
     activeArtifact: (dependencyId: 'gbe' | 'gse') =>
-      dependencyId === 'gbe' ? gbe : gse,
+      dependencyId === 'gbe' ? activeGbe : gse,
     artifact: (dependencyId: 'gbe' | 'gse', assetId: number) =>
       artifacts.get(`${dependencyId}:${assetId}`) ?? null,
-    validateArtifactSnapshot: async (dependencyId: 'gbe' | 'gse') => ({
-      descriptor: dependencyId === 'gbe' ? gbe : gse,
-      directory: dependencyId === 'gbe' ? gbeRoot : join(root!, 'gse'),
+    validateArtifactSnapshot: async (
+      dependencyId: 'gbe' | 'gse',
+      assetId: number,
+    ) => ({
+      descriptor: artifacts.get(`${dependencyId}:${assetId}`)!,
+      directory:
+        dependencyId === 'gse'
+          ? join(root!, 'gse')
+          : assetId === 102
+            ? gbeV2Root
+            : gbeRoot,
     }),
   }
   const database = new FakeDatabase(installRoot)
@@ -260,6 +326,9 @@ async function createFixture() {
     database,
     draft,
     request,
+    activateGbeV2: () => {
+      activeGbe = gbeV2
+    },
   }
 }
 

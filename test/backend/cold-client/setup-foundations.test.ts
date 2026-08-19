@@ -6,6 +6,7 @@ import { coldClientDepotFingerprint } from '../../../src/backend/cold-client/dep
 import { updateColdClientLoaderIni } from '../../../src/backend/cold-client/ini.ts'
 import { ColdClientInterfaceGenerator } from '../../../src/backend/cold-client/interface-generator.ts'
 import {
+  assertCoreUpdateOwnership,
   assertRequiredManagedCoreFiles,
   collectManagedCoreFiles,
 } from '../../../src/backend/cold-client/managed-inventory.ts'
@@ -130,6 +131,34 @@ describe('managed core inventory', () => {
         'x64',
       ),
     ).toThrow('unused loader')
+  })
+
+  test('rejects custom target collisions and changed managed path types', async () => {
+    root = await mkdtemp(join(tmpdir(), 'kalamata-coldclient-core-'))
+    await mkdir(join(root, 'extra_dlls'), { recursive: true })
+    await writeFile(join(root, 'custom.dll'), 'custom')
+
+    await expect(
+      assertCoreUpdateOwnership(root, ['missing.dll'], ['custom.dll']),
+    ).rejects.toThrow('custom path conflicts')
+
+    await mkdir(join(root, 'managed.dll'))
+    await expect(
+      assertCoreUpdateOwnership(root, ['managed.dll'], ['managed.dll']),
+    ).rejects.toThrow('managed path conflicts')
+  })
+
+  test('allows a missing managed file to be restored but rejects unsafe ancestors', async () => {
+    root = await mkdtemp(join(tmpdir(), 'kalamata-coldclient-core-'))
+
+    await expect(
+      assertCoreUpdateOwnership(root, ['missing.dll'], ['missing.dll']),
+    ).resolves.toBeUndefined()
+
+    await writeFile(join(root, 'extra_dlls'), 'not a directory')
+    await expect(
+      assertCoreUpdateOwnership(root, ['missing.dll'], ['extra_dlls/new.dll']),
+    ).rejects.toThrow('unsafe ancestor')
   })
 })
 

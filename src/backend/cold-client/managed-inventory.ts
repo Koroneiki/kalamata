@@ -5,6 +5,7 @@ import {
   canonicalManifestPath,
   manifestPathKey,
 } from '../depot/manifests/manifest-utils.ts'
+import { filesystemErrorCode } from '../depot/install/transaction/types.ts'
 
 export async function collectManagedCoreFiles(root: string): Promise<string[]> {
   const files: string[] = []
@@ -70,4 +71,62 @@ export function assertRequiredManagedCoreFiles(
       : 'steamclient_loader_x86.exe'
   if (keys.has(unused))
     throw new Error('ColdClient core contains the unused loader')
+}
+
+export async function assertCoreUpdateOwnership(
+  liveRoot: string,
+  previousManagedFiles: string[],
+  targetManagedFiles: string[],
+): Promise<void> {
+  const previous = managedPathMap(previousManagedFiles)
+  const target = managedPathMap(targetManagedFiles)
+
+  for (const path of previous.values()) {
+    const metadata = await lstatOrNull(pathInRoot(liveRoot, path))
+    if (metadata && (!metadata.isFile() || metadata.isSymbolicLink())) {
+      throw new Error(`ColdClient managed path conflicts with ${path}`)
+    }
+  }
+
+  for (const [key, path] of target) {
+    await assertDirectoryAncestors(liveRoot, path)
+    if (previous.has(key)) continue
+    if (await lstatOrNull(pathInRoot(liveRoot, path))) {
+      throw new Error(`ColdClient custom path conflicts with ${path}`)
+    }
+  }
+}
+
+function managedPathMap(paths: string[]): Map<string, string> {
+  const validated = managedCoreFilesSchema.parse(paths)
+  return new Map(
+    validated.map((path) => [manifestPathKey(path, 'win32'), path]),
+  )
+}
+
+async function assertDirectoryAncestors(
+  root: string,
+  path: string,
+): Promise<void> {
+  const segments = path.split('/')
+  for (let length = 1; length < segments.length; length++) {
+    const ancestor = pathInRoot(root, segments.slice(0, length).join('/'))
+    const metadata = await lstatOrNull(ancestor)
+    if (metadata && (!metadata.isDirectory() || metadata.isSymbolicLink())) {
+      throw new Error(`ColdClient path has an unsafe ancestor: ${path}`)
+    }
+  }
+}
+
+function pathInRoot(root: string, path: string): string {
+  return join(root, ...path.split('/'))
+}
+
+async function lstatOrNull(path: string) {
+  try {
+    return await lstat(path)
+  } catch (error) {
+    if (filesystemErrorCode(error) === 'ENOENT') return null
+    throw error
+  }
 }
