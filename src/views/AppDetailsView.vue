@@ -373,28 +373,44 @@ async function removeFromLibrary() {
   }
 }
 
+interface ManifestAcquisitionOptions {
+  acquire?: (manifestId: string) => Promise<{ fetched: boolean }>
+  queueId?: number
+  precedingError?: string
+  targetAppId?: number
+  invalidateDetails?: boolean
+}
+
 async function getManifest(
   depot: AppDepot,
-  queueId?: number,
-  precedingError = '',
-  targetAppId = appId.value,
+  options: ManifestAcquisitionOptions = {},
 ) {
   if (!depot.manifestId) return
   const targetManifestId = depot.manifestId
+  const targetAppId = options.targetAppId ?? appId.value
+  const precedingError = options.precedingError ?? ''
   const key = manifestKey(targetAppId, depot)
   manifestError.value = precedingError
   acquiringManifests.add(key)
   try {
-    await resourceAcquisition.acquireManifestResource(
-      depot.ownerAppId,
-      depot.depotId,
-      targetManifestId,
-      queueId,
-    )
-    await queryCache.invalidateQueries({
-      key: appQueryKeys.details(targetAppId),
-      exact: true,
-    })
+    let fetched = true
+    if (options.acquire) {
+      fetched = (await options.acquire(targetManifestId)).fetched
+    } else {
+      await resourceAcquisition.acquireManifestResource(
+        depot.ownerAppId,
+        depot.depotId,
+        targetManifestId,
+        options.queueId,
+      )
+    }
+    if (fetched && options.invalidateDetails !== false) {
+      await queryCache.invalidateQueries({
+        key: appQueryKeys.details(targetAppId),
+        exact: true,
+      })
+    }
+    return fetched
   } catch (error) {
     if (
       appId.value === targetAppId &&
@@ -438,7 +454,7 @@ async function getDepotResources(depot: AppDepot) {
     if (depot.manifestStatus !== 'ready') {
       // Manifest acquisition does not require a key. Encrypted filenames can
       // be validated after the key becomes available.
-      await getManifest(depot, undefined, keyError, targetAppId)
+      await getManifest(depot, { precedingError: keyError, targetAppId })
     } else {
       if (appId.value === targetAppId) manifestError.value = keyError
       await queryCache.invalidateQueries({
@@ -453,6 +469,33 @@ async function getDepotResources(depot: AppDepot) {
 
 function manifestKey(appId: number, depot: AppDepot) {
   return `${appId}:${depot.depotId}:${depot.manifestId}`
+}
+
+async function acquireAutomaticManifests(
+  targetAppId: number,
+  pending: AppDepot[],
+) {
+  const queueId = resourceAcquisition.beginManifestBatch(pending.length)
+  const acquisitions = pending.map((depot) => {
+    attemptedManifests.add(manifestKey(targetAppId, depot))
+    return getManifest(depot, {
+      acquire: (manifestId) =>
+        resourceAcquisition.acquireManifestAutomatically(
+          depot.ownerAppId,
+          depot.depotId,
+          manifestId,
+          queueId,
+        ),
+      targetAppId,
+      invalidateDetails: false,
+    })
+  })
+  if ((await Promise.all(acquisitions)).some(Boolean)) {
+    await queryCache.invalidateQueries({
+      key: appQueryKeys.details(targetAppId),
+      exact: true,
+    })
+  }
 }
 
 watch(
@@ -472,13 +515,7 @@ watch(
         !attemptedManifests.has(manifestKey(app.appId, depot)),
     )
     if (pending.length > 0) {
-      const queueId = resourceAcquisition.beginManifestBatch(pending.length)
-      for (const depot of pending) {
-        const key = manifestKey(app.appId, depot)
-        // Attempt each manifest version once per app view to avoid reactive refetch loops.
-        attemptedManifests.add(key)
-        void getManifest(depot, queueId, '', app.appId)
-      }
+      void acquireAutomaticManifests(app.appId, pending)
     }
 
     const depotIds = app.depots
@@ -494,19 +531,24 @@ watch(
 
     for (const depotId of depotIds) attemptedDepotKeys.add(depotId)
     void resourceAcquisition
-      .acquireKeys(app.appId, depotIds)
-      .catch((error) => {
+      .acquireKeysAutomatically(app.appId, depotIds)
+      .then(({ fetched }) => {
+        if (!fetched) return
+        return queryCache.invalidateQueries({
+          key: appQueryKeys.details(app.appId),
+          exact: true,
+        })
+      })
+      .catch(async (error) => {
         if (data.value?.appId === app.appId) {
           manifestError.value =
             error instanceof Error ? error.message : String(error)
         }
-      })
-      .then(() =>
-        queryCache.invalidateQueries({
+        await queryCache.invalidateQueries({
           key: appQueryKeys.details(app.appId),
           exact: true,
-        }),
-      )
+        })
+      })
   },
   { immediate: true },
 )

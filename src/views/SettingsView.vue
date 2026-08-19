@@ -19,6 +19,10 @@ import {
   useHubcapUsageQuery,
   useSettingsQuery,
 } from '@/composables/queries'
+import {
+  invalidateDepotKeyAcquisitions,
+  invalidateResourceAcquisitions,
+} from '@/composables/resource-acquisition-cache'
 import { cn } from '@/lib/utils'
 import type { AppSettings, DepotPlatform } from '@/types/rpc'
 import { depotPlatforms } from '@/utils/depots'
@@ -93,6 +97,15 @@ async function persist(next: AppSettings, optimistic = true) {
   try {
     const saved = await updateMutation.mutateAsync(next)
     queryCache.setQueryData(settingsQueryKey, saved)
+    if (previous?.hubcapApiKey !== saved.hubcapApiKey) {
+      invalidateDepotKeyAcquisitions(queryCache)
+    }
+    if (
+      previous &&
+      !previous.automaticManifestAcquisition &&
+      saved.automaticManifestAcquisition
+    )
+      invalidateResourceAcquisitions(queryCache)
     return true
   } catch (error) {
     if (optimistic && previous)

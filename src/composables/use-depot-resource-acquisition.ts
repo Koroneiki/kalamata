@@ -7,6 +7,11 @@ import { requestHubcapApproval } from '@/composables/use-hubcap-approval'
 import { useManifestQueueStore } from '@/stores/manifest-queue'
 import type { EligibleAppDepot } from '@/types/rpc'
 import { acquiredDepotKeysResult } from '@/utils/depot-key-results'
+import {
+  acquisitionNeedsRequest,
+  resourceAcquisitionQueryKeys,
+  runCachedAcquisition,
+} from '@/composables/resource-acquisition-cache'
 
 const hubcapFailureFeedback = {
   'missing-key': () => toast.warning('No Hubcap API Key.'),
@@ -42,6 +47,29 @@ export function useDepotResourceAcquisition() {
     return result
   }
 
+  async function acquireKeysAutomatically(appId: number, depotIds: number[]) {
+    const requestedDepotIds = [...new Set(depotIds)].sort(
+      (left, right) => left - right,
+    )
+    const uncachedDepotIds = requestedDepotIds.filter((depotId) =>
+      acquisitionNeedsRequest(
+        queryCache,
+        resourceAcquisitionQueryKeys.depotKey(appId, depotId),
+      ),
+    )
+    let batch: ReturnType<typeof acquireKeys> | undefined
+    const acquisitions = await Promise.all(
+      requestedDepotIds.map((depotId) =>
+        runCachedAcquisition(
+          queryCache,
+          resourceAcquisitionQueryKeys.depotKey(appId, depotId),
+          () => (batch ??= acquireKeys(appId, uncachedDepotIds)),
+        ),
+      ),
+    )
+    return { fetched: acquisitions.some(({ fetched }) => fetched) }
+  }
+
   async function handleHubcapOutcome(
     outcome: Awaited<ReturnType<typeof acquireDepotKeys>>['hubcap'],
   ) {
@@ -69,6 +97,23 @@ export function useDepotResourceAcquisition() {
   ) {
     try {
       return await acquireManifest(ownerAppId, depotId, manifestId)
+    } finally {
+      manifestQueue.settle(queueId)
+    }
+  }
+
+  async function acquireManifestAutomatically(
+    ownerAppId: number,
+    depotId: number,
+    manifestId: string,
+    queueId: number,
+  ) {
+    try {
+      return await runCachedAcquisition(
+        queryCache,
+        resourceAcquisitionQueryKeys.manifest(depotId, manifestId),
+        () => acquireManifest(ownerAppId, depotId, manifestId),
+      )
     } finally {
       manifestQueue.settle(queueId)
     }
@@ -116,6 +161,8 @@ export function useDepotResourceAcquisition() {
   return {
     beginManifestBatch,
     acquireKeys,
+    acquireKeysAutomatically,
+    acquireManifestAutomatically,
     acquireManifestResource,
     acquireRequiredResources,
   }
