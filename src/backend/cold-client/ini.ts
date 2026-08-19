@@ -6,6 +6,13 @@ interface ColdClientLoaderValues {
   launchArguments: string
 }
 
+export interface ColdClientLoaderIniValues {
+  Exe: string
+  ExeCommandLine: string
+  AppId: string
+  DllsToInjectFolder: string
+}
+
 const keys = ['Exe', 'ExeCommandLine', 'AppId', 'DllsToInjectFolder'] as const
 type IniKey = (typeof keys)[number]
 type IniEncoding = 'utf8' | 'utf8-bom' | 'utf16le'
@@ -52,6 +59,31 @@ export async function updateColdClientLoaderIni(
   }
   const text = `${updated.join(newline)}${trailingNewline ? newline : ''}`
   await writeFile(path, encodeIni(text, decoded.encoding))
+}
+
+export async function readColdClientLoaderIniValues(
+  path: string,
+): Promise<ColdClientLoaderIniValues> {
+  const { text } = decodeIni(await readFile(path))
+  const values = new Map<IniKey, string>()
+  for (const line of text.split(/\r?\n/u)) {
+    const separator = line.indexOf('=')
+    if (separator < 0) continue
+    const key = line.slice(0, separator)
+    if (!isIniKey(key)) continue
+    if (values.has(key)) throw new Error(`ColdClient loader INI repeats ${key}`)
+    values.set(key, line.slice(separator + 1))
+  }
+  for (const key of keys) {
+    if (!values.has(key))
+      throw new Error(`ColdClient loader INI is missing ${key}`)
+  }
+  return {
+    Exe: values.get('Exe')!,
+    ExeCommandLine: values.get('ExeCommandLine')!,
+    AppId: values.get('AppId')!,
+    DllsToInjectFolder: values.get('DllsToInjectFolder')!,
+  }
 }
 
 function decodeIni(source: Buffer): DecodedIni {

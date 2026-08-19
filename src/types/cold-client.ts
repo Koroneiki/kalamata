@@ -65,16 +65,43 @@ export type ColdClientInstallation = z.infer<
   typeof coldClientInstallationSchema
 >
 
-export interface ColdClientSetupRequest {
-  appId: number
-  executableRelativePath: string
-  steamApiRelativePath: string | null
-  loaderArchitecture: ColdClientLoaderArchitecture
-  launchArguments: string
-  launchArgumentSource: string | null
-  gbeAssetId: number
-  gseAssetId: number
-}
+export const coldClientSetupRequestSchema = z
+  .object({
+    appId: z.number().int().positive().max(4_294_967_295),
+    executableRelativePath: coldClientRelativePathSchema,
+    steamApiRelativePath: coldClientRelativePathSchema.nullable(),
+    loaderArchitecture: z.enum(['x86', 'x64']),
+    launchArguments: z.string().refine((value) => !/[\0\r\n]/u.test(value), {
+      message: 'Launch arguments must fit on one line',
+    }),
+    launchArgumentSource: z.string().regex(/^\d+$/u).nullable(),
+    gbeAssetId: z.number().int().positive().safe(),
+    gseAssetId: z.number().int().positive().safe(),
+  })
+  .strict()
+  .superRefine((request, ctx) => {
+    const dllName = request.steamApiRelativePath
+      ?.split('/')
+      .at(-1)
+      ?.toLowerCase()
+    const expectedArchitecture = dllName === 'steam_api.dll' ? 'x86' : 'x64'
+    if (
+      (dllName !== undefined &&
+        dllName !== 'steam_api.dll' &&
+        dllName !== 'steam_api64.dll') ||
+      request.loaderArchitecture !== expectedArchitecture
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Loader architecture must match the selected Steam API DLL',
+        path: ['loaderArchitecture'],
+      })
+    }
+  })
+
+export type ColdClientSetupRequest = z.infer<
+  typeof coldClientSetupRequestSchema
+>
 
 export type ColdClientRecommendationReason = 'depots-changed' | 'gse-updated'
 

@@ -98,6 +98,44 @@ test('validates ColdClient setup inspection drafts', () => {
   ).toThrow()
 })
 
+test('validates reviewed ColdClient setup and app status', () => {
+  const request = {
+    appId: 10,
+    executableRelativePath: 'Game/Binaries/Game.exe',
+    steamApiRelativePath: 'Game/Binaries/steam_api64.dll',
+    loaderArchitecture: 'x64',
+    launchArguments: '-windowed',
+    launchArgumentSource: '0',
+    gbeAssetId: 201,
+    gseAssetId: 301,
+  } as const
+  expect(parseRpcRequest('configureColdClient', request)).toEqual(request)
+  expect(() =>
+    parseRpcRequest('configureColdClient', {
+      ...request,
+      loaderArchitecture: 'x86',
+    }),
+  ).toThrow()
+  expect(() =>
+    parseRpcRequest('configureColdClient', {
+      ...request,
+      launchArguments: '-safe\nAppId=20',
+    }),
+  ).toThrow()
+  expect(
+    rpcResponseSchemas.getColdClientStatus.parse({
+      status: 'configured',
+      coreUpdateAvailable: false,
+      recommendationReasons: ['depots-changed'],
+      installedGbeTag: 'gbe-v1',
+      availableGbeTag: 'gbe-v1',
+      installedGseTag: 'gse-v1',
+      availableGseTag: 'gse-v2',
+      lastConfiguredAt: 1000,
+    }),
+  ).toMatchObject({ status: 'configured' })
+})
+
 test('validates secret-free ColdClient operation snapshots', () => {
   const snapshot = {
     status: 'active',

@@ -234,6 +234,33 @@ export class ColdClientDependencyService {
         ) ?? null)
   }
 
+  artifact(
+    dependencyId: ColdClientDependencyId,
+    assetId: number,
+  ): ArtifactDescriptor | null {
+    return (
+      this.#metadata.artifacts.find(
+        (artifact) =>
+          artifact.dependencyId === dependencyId &&
+          artifact.assetId === assetId,
+      ) ?? null
+    )
+  }
+
+  async validateArtifactSnapshot(
+    dependencyId: ColdClientDependencyId,
+    assetId: number,
+  ): Promise<{ descriptor: ArtifactDescriptor; directory: string }> {
+    const descriptor = this.artifact(dependencyId, assetId)
+    if (!descriptor)
+      throw new Error('ColdClient dependency metadata is missing')
+    await this.validateArtifact(dependencyId, assetId)
+    return {
+      descriptor,
+      directory: this.artifactDirectory(dependencyId, assetId),
+    }
+  }
+
   artifactDirectory(
     dependencyId: ColdClientDependencyId,
     assetId: number,

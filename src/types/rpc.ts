@@ -3,7 +3,9 @@ import type {
   ColdClientDependencyId,
   ColdClientDependencyStatus,
   ColdClientOperationSnapshot,
+  ColdClientSetupRequest,
   ColdClientSetupDraft,
+  ColdClientStatus,
 } from './cold-client.ts'
 
 export interface AppSummary {
@@ -407,6 +409,14 @@ export type AppRpc = {
       inspectColdClientSetup: {
         params: { appId: number }
         response: ColdClientSetupDraft
+      }
+      getColdClientStatus: {
+        params: { appId: number }
+        response: ColdClientStatus
+      }
+      configureColdClient: {
+        params: ColdClientSetupRequest
+        response: ColdClientStatus
       }
       getColdClientOperation: {
         params: Record<string, never>

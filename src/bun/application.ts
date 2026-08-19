@@ -11,6 +11,10 @@ import { ColdClientDependencyService } from '../backend/cold-client/dependency-s
 import { ColdClientMutationMutex } from '../backend/cold-client/mutation-mutex.ts'
 import { ColdClientOperationCoordinator } from '../backend/cold-client/operation-coordinator.ts'
 import { ColdClientGameInspector } from '../backend/cold-client/game-inspector.ts'
+import { ColdClientGenerator } from '../backend/cold-client/generator.ts'
+import { ColdClientInterfaceGenerator } from '../backend/cold-client/interface-generator.ts'
+import { ColdClientReplacementService } from '../backend/cold-client/replacement.ts'
+import { ColdClientService } from '../backend/cold-client/service.ts'
 import { DownloadQueueCoordinator } from '../backend/operations/download-queue.ts'
 import {
   getResumableApplicationTransaction,
@@ -85,6 +89,24 @@ const coldClientInspector = new ColdClientGameInspector(
   database,
   steam,
   coldClientDependencies,
+)
+const coldClientGenerator = new ColdClientGenerator(coldClientDependencies)
+const coldClientInterfaceGenerator = new ColdClientInterfaceGenerator()
+const coldClientReplacement = new ColdClientReplacementService(database, {
+  reportCleanupError: (error) =>
+    diagnostics.error({
+      event: 'cold-client-replacement.cleanup-failed',
+      error,
+    }),
+})
+const coldClient = new ColdClientService(
+  database,
+  coldClientDependencies,
+  coldClientInspector,
+  coldClientGenerator,
+  coldClientInterfaceGenerator,
+  coldClientOperations,
+  coldClientReplacement,
 )
 let coldClientDependenciesReady = false
 let queue: DownloadQueueCoordinator
@@ -166,6 +188,12 @@ const rpc = BrowserView.defineRPC<AppRpc>({
       inspectColdClientSetup({ appId }) {
         return coldClientInspector.inspect(appId)
       },
+      getColdClientStatus({ appId }) {
+        return coldClient.getStatus(appId)
+      },
+      configureColdClient(request) {
+        return coldClient.configure(request)
+      },
       getColdClientOperation() {
         return coldClientOperations.getSnapshot()
       },
@@ -176,7 +204,12 @@ const rpc = BrowserView.defineRPC<AppRpc>({
         return database.addLibraryEntry(appId)
       },
       removeLibraryEntry({ appId }) {
-        if (queue.isBusyForApp(appId)) {
+        const coldClientOperation = coldClientOperations.getSnapshot()
+        if (
+          queue.isBusyForApp(appId) ||
+          (coldClientOperation.status === 'active' &&
+            coldClientOperation.appId === appId)
+        ) {
           throw new Error(
             'Wait for the download to finish before removing this game',
           )
@@ -330,6 +363,28 @@ startup = (async () => {
   // Recover commits before restoring one staging operation; surface any repair
   // requirements only after resumable work has claimed the singleton queue.
   const recoveryFailures: Array<{ appId: number; installPath: string }> = []
+  for (const entry of database.getLibrary()) {
+    if (!entry.installPath) continue
+    try {
+      const result = await coldClient.recover(entry.appId, entry.installPath)
+      if (result.status === 'invalid') {
+        recoveryFailures.push({
+          appId: entry.appId,
+          installPath: entry.installPath,
+        })
+      }
+    } catch (error) {
+      diagnostics.error({
+        event: 'recovery.failed',
+        error: error instanceof Error ? error : new Error(String(error)),
+        appId: entry.appId,
+      })
+      recoveryFailures.push({
+        appId: entry.appId,
+        installPath: entry.installPath,
+      })
+    }
+  }
   for (const entry of database.getLibrary()) {
     if (!entry.installPath) continue
     try {
