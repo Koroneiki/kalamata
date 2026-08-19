@@ -422,6 +422,10 @@ export type AppRpc = {
         params: { appId: number }
         response: ColdClientStatus
       }
+      updateColdClientCore: {
+        params: { appId: number }
+        response: ColdClientStatus
+      }
       getColdClientOperation: {
         params: Record<string, never>
         response: ColdClientOperationSnapshot

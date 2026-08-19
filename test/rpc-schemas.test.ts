@@ -110,6 +110,10 @@ test('validates reviewed ColdClient setup and app status', () => {
     gseAssetId: 301,
   } as const
   expect(parseRpcRequest('configureColdClient', request)).toEqual(request)
+  expect(parseRpcRequest('updateColdClientCore', { appId: 10 })).toEqual({
+    appId: 10,
+  })
+  expect(() => parseRpcRequest('updateColdClientCore', { appId: 0 })).toThrow()
   expect(() =>
     parseRpcRequest('configureColdClient', {
       ...request,
@@ -134,6 +138,11 @@ test('validates reviewed ColdClient setup and app status', () => {
       lastConfiguredAt: 1000,
     }),
   ).toMatchObject({ status: 'configured' })
+  expect(
+    rpcResponseSchemas.updateColdClientCore.parse({
+      status: 'not-configured',
+    }),
+  ).toEqual({ status: 'not-configured' })
 })
 
 test('validates secret-free ColdClient operation snapshots', () => {

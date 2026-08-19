@@ -200,6 +200,9 @@ const rpc = BrowserView.defineRPC<AppRpc>({
       regenerateColdClientConfiguration({ appId }) {
         return coldClient.regenerate(appId)
       },
+      updateColdClientCore({ appId }) {
+        return coldClient.updateCore(appId)
+      },
       getColdClientOperation() {
         return coldClientOperations.getSnapshot()
       },
