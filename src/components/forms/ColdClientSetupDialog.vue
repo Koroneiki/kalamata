@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import { useMutation } from '@pinia/colada'
 import { computed, ref, watch } from 'vue'
 
-import { inspectColdClientSetup } from '@/api/cold-client'
+import { configureColdClient, inspectColdClientSetup } from '@/api/cold-client'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -24,11 +25,13 @@ const props = defineProps<{
   appId: number
   appName: string
   installPath: string
-  canConfirm?: boolean
+  operationPhase?: string
+  operationCancellable?: boolean
 }>()
 
 const emit = defineEmits<{
   'update:open': [value: boolean]
+  configured: []
 }>()
 
 const draft = ref<ColdClientSetupDraft | null>(null)
@@ -38,7 +41,11 @@ const selectedExecutable = ref('')
 const selectedSteamApi = ref('')
 const selectedLaunchSource = ref('')
 const launchArguments = ref('')
+const setupError = ref('')
 let requestSequence = 0
+const configureMutation = useMutation({
+  mutation: configureColdClient,
+})
 
 const targetPath = computed(
   () => `${props.installPath.replace(/[\\/]+$/u, '')}\\_ColdClient`,
@@ -55,6 +62,7 @@ const reviewedArchitecture = computed(() =>
     ? 'x86'
     : 'x64',
 )
+const setupRunning = computed(() => Boolean(props.operationPhase))
 const visibleWarnings = computed(() => {
   if (!draft.value) return []
   const selectedLaunch = draft.value.launchOptions.find(
@@ -105,6 +113,7 @@ watch(
     if (!open) {
       draft.value = null
       loading.value = false
+      setupError.value = ''
       return
     }
     loading.value = true
@@ -130,6 +139,27 @@ watch(
   },
   { immediate: true },
 )
+
+async function confirmSetup() {
+  if (!draft.value || !canReview.value || setupRunning.value) return
+  setupError.value = ''
+  try {
+    await configureMutation.mutateAsync({
+      appId: props.appId,
+      executableRelativePath: selectedExecutable.value,
+      steamApiRelativePath: selectedSteamApi.value || null,
+      loaderArchitecture: reviewedArchitecture.value,
+      launchArguments: launchArguments.value,
+      launchArgumentSource: selectedLaunchSource.value || null,
+      gbeAssetId: draft.value.gbe.assetId,
+      gseAssetId: draft.value.gse.assetId,
+    })
+    emit('configured')
+    emit('update:open', false)
+  } catch (reason) {
+    setupError.value = reason instanceof Error ? reason.message : String(reason)
+  }
+}
 
 function selectLaunchSource(event: Event) {
   if (!(event.target instanceof HTMLSelectElement)) return
@@ -160,6 +190,33 @@ function selectLaunchSource(event: Event) {
       </p>
 
       <div v-else-if="draft" class="space-y-5">
+        <div
+          v-if="setupRunning"
+          class="bg-muted rounded-lg p-3 text-sm"
+          aria-live="polite"
+        >
+          <p class="font-medium">
+            {{
+              operationPhase === 'waiting-for-generator'
+                ? 'Waiting for GSE Tools'
+                : 'Finishing ColdClient setup'
+            }}
+          </p>
+          <p class="text-muted-foreground mt-1">
+            <template v-if="operationPhase === 'waiting-for-generator'">
+              Complete authentication or Steam Guard prompts in the separate
+              console window.
+            </template>
+            <template v-else>
+              The generated files are being validated and installed. Do not
+              close the game directory.
+            </template>
+          </p>
+          <p v-if="!operationCancellable" class="mt-2 text-xs font-medium">
+            Replacement has started and can no longer be cancelled.
+          </p>
+        </div>
+
         <dl class="bg-muted grid gap-2 rounded-lg p-3 text-sm sm:grid-cols-2">
           <div class="min-w-0">
             <dt class="text-muted-foreground text-xs">App ID</dt>
@@ -274,13 +331,28 @@ function selectLaunchSource(event: Event) {
             Review only. No game files have changed.
           </p>
         </div>
+
+        <p v-if="setupError" class="text-destructive text-sm" role="alert">
+          {{ setupError }}
+        </p>
       </div>
 
       <DialogFooter>
         <Button variant="outline" @click="emit('update:open', false)">
           Close
         </Button>
-        <Button :disabled="!canConfirm || !canReview">Confirm setup</Button>
+        <Button
+          :disabled="
+            !canReview || setupRunning || configureMutation.isLoading.value
+          "
+          @click="confirmSetup"
+        >
+          {{
+            configureMutation.isLoading.value
+              ? 'Starting setup...'
+              : 'Confirm setup'
+          }}
+        </Button>
       </DialogFooter>
     </DialogContent>
   </Dialog>
