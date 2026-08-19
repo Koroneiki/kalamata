@@ -65,6 +65,37 @@ export type ColdClientInstallation = z.infer<
   typeof coldClientInstallationSchema
 >
 
+export interface ColdClientSetupRequest {
+  appId: number
+  executableRelativePath: string
+  steamApiRelativePath: string | null
+  loaderArchitecture: ColdClientLoaderArchitecture
+  launchArguments: string
+  launchArgumentSource: string | null
+  gbeAssetId: number
+  gseAssetId: number
+}
+
+export type ColdClientRecommendationReason = 'depots-changed' | 'gse-updated'
+
+export type ColdClientStatus =
+  | {
+      status: 'unsupported'
+      reason: 'host-platform' | 'not-installed'
+    }
+  | { status: 'not-configured' }
+  | {
+      status: 'configured'
+      coreUpdateAvailable: boolean
+      recommendationReasons: ColdClientRecommendationReason[]
+      installedGbeTag: string
+      availableGbeTag: string | null
+      installedGseTag: string
+      availableGseTag: string | null
+      lastConfiguredAt: number
+    }
+  | { status: 'invalid'; message: string }
+
 export const coldClientDependencyIds = ['7zip', 'gbe', 'gse'] as const
 export type ColdClientDependencyId = (typeof coldClientDependencyIds)[number]
 export const coldClientDependencyIdSchema = z.enum(coldClientDependencyIds)
