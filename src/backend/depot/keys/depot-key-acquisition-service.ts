@@ -1,11 +1,15 @@
 import type { KalamataDatabase } from '../../../db/database.ts'
 import { depotKeyFromHex, validateId } from '../../../db/validation.ts'
+import { acquiredDepotKeysResult } from '../../../utils/depot-key-results.ts'
 import type {
   AcquiredDepotKeys,
   AcquireDepotKeysRequest,
+  HubcapUsage,
+  HubcapUsageResult,
 } from '../../../types/rpc.ts'
 import { DepotKeyCache } from './depot-key-cache.ts'
 import { parseDepotKeysLua } from './depot-key-lua-parser.ts'
+import { HubcapClient } from './hubcap-client.ts'
 
 const REPOSITORY_RAW_URL =
   'https://raw.githubusercontent.com/dvahana2424-web/sojogamesdatabase1'
@@ -19,6 +23,11 @@ export class DepotKeyAcquisitionService {
   readonly #abortController = new AbortController()
   readonly #cache: DepotKeyCache
   readonly #luaSources = new Map<number, Promise<string | null>>()
+  readonly #hubcapLuaSources = new Map<
+    number,
+    Promise<{ source: string; usage: HubcapUsage }>
+  >()
+  readonly #hubcap: HubcapClient
   #accepting = true
 
   constructor(
@@ -30,6 +39,7 @@ export class DepotKeyAcquisitionService {
       fetcher,
       this.#abortController.signal,
     )
+    this.#hubcap = new HubcapClient(fetcher)
   }
 
   initializeCache(): Promise<void> {
@@ -57,6 +67,7 @@ export class DepotKeyAcquisitionService {
       }
     })
 
+    let hubcap: AcquiredDepotKeys['hubcap']
     if (pending.length > 0) {
       const requested = new Set(pending)
       // The base-app Lua source includes keys for its DLC depots as well.
@@ -76,13 +87,19 @@ export class DepotKeyAcquisitionService {
           requested.delete(depotId)
         }
       }
+
+      if (requested.size > 0) {
+        const hubcapResult = await this.acquireFromHubcap(request, requested)
+        hubcap = hubcapResult.outcome
+        for (const [depotId, key] of hubcapResult.keys) {
+          this.database.setDepotKey(depotId, key)
+          acquiredDepotIds.push(depotId)
+          requested.delete(depotId)
+        }
+      }
     }
 
-    const acquired = new Set(acquiredDepotIds)
-    return {
-      acquiredDepotIds: depotIds.filter((depotId) => acquired.has(depotId)),
-      missingDepotIds: depotIds.filter((depotId) => !acquired.has(depotId)),
-    }
+    return acquiredDepotKeysResult(depotIds, acquiredDepotIds, hubcap)
   }
 
   async shutdown(): Promise<void> {
@@ -90,7 +107,134 @@ export class DepotKeyAcquisitionService {
     this.#abortController.abort(
       new Error('Depot key acquisition was cancelled'),
     )
-    await Promise.allSettled(this.#luaSources.values())
+    await Promise.allSettled([
+      ...this.#luaSources.values(),
+      ...this.#hubcapLuaSources.values(),
+    ])
+  }
+
+  // The usage RPC reaches this through SteamService, which Fallow cannot trace.
+  // fallow-ignore-next-line unused-class-member
+  async getHubcapUsage(): Promise<HubcapUsageResult> {
+    const apiKey = this.database.getHubcapApiKey()
+    if (!apiKey) return { status: 'missing-key' }
+    return this.#hubcap.getUsage(apiKey, this.#abortController.signal)
+  }
+
+  private async acquireFromHubcap(
+    request: AcquireDepotKeysRequest,
+    requested: Set<number>,
+  ): Promise<{
+    keys: Map<number, string>
+    outcome?: NonNullable<AcquiredDepotKeys['hubcap']>
+  }> {
+    const cached = this.#hubcapLuaSources.get(request.appId)
+    if (cached) return this.useHubcapSource(cached, requested)
+
+    const apiKey = this.database.getHubcapApiKey()
+    if (!apiKey) return { keys: new Map(), outcome: { status: 'missing-key' } }
+
+    const depotIdsResult = await this.#hubcap.getDepotIds(
+      apiKey,
+      this.#abortController.signal,
+    )
+    const availableSource = this.#hubcapLuaSources.get(request.appId)
+    if (availableSource) return this.useHubcapSource(availableSource, requested)
+    if (depotIdsResult.status === 'invalid-key')
+      return { keys: new Map(), outcome: { status: 'invalid-key' } }
+    if (depotIdsResult.status === 'unavailable')
+      return { keys: new Map(), outcome: { status: 'stats-unavailable' } }
+
+    const availableDepotIds = new Set(
+      [...requested].filter((depotId) => depotIdsResult.depotIds.has(depotId)),
+    )
+    if (availableDepotIds.size === 0) return { keys: new Map() }
+
+    const usageResult = await this.#hubcap.getUsage(
+      apiKey,
+      this.#abortController.signal,
+    )
+
+    const inFlight = this.#hubcapLuaSources.get(request.appId)
+    if (inFlight) return this.useHubcapSource(inFlight, requested)
+
+    if (usageResult.status !== 'available')
+      return { keys: new Map(), outcome: usageResult }
+
+    const { usage } = usageResult
+    if (!usage.canMakeRequests || usage.remaining === 0) {
+      return {
+        keys: new Map(),
+        outcome: { status: 'quota-exhausted', usage },
+      }
+    }
+    if (usage.remaining <= 10 && !request.approveLowQuotaHubcap) {
+      return {
+        keys: new Map(),
+        outcome: { status: 'approval-required', usage },
+      }
+    }
+
+    const sourcePromise = this.fetchHubcapLua(request.appId, apiKey, usage)
+    this.#hubcapLuaSources.set(request.appId, sourcePromise)
+    sourcePromise.catch(() => {
+      if (this.#hubcapLuaSources.get(request.appId) === sourcePromise)
+        this.#hubcapLuaSources.delete(request.appId)
+    })
+    const result = await sourcePromise
+    const keys = parseDepotKeysLua(result.source, availableDepotIds)
+    return {
+      keys,
+      outcome: {
+        status: 'fetched',
+        usage: result.usage,
+        acquiredDepotIds: [...keys.keys()],
+      },
+    }
+  }
+
+  private async useHubcapSource(
+    source: Promise<{ source: string; usage: HubcapUsage }>,
+    requested: ReadonlySet<number>,
+  ): Promise<{
+    keys: Map<number, string>
+    outcome: NonNullable<AcquiredDepotKeys['hubcap']>
+  }> {
+    const result = await source
+    const keys = parseDepotKeysLua(result.source, requested)
+    return {
+      keys,
+      outcome: {
+        status: 'fetched',
+        usage: result.usage,
+        acquiredDepotIds: [...keys.keys()],
+      },
+    }
+  }
+
+  private async fetchHubcapLua(
+    appId: number,
+    apiKey: string,
+    preflightUsage: HubcapUsage,
+  ): Promise<{ source: string; usage: HubcapUsage }> {
+    const source = await this.#hubcap.getLua(
+      appId,
+      apiKey,
+      this.#abortController.signal,
+    )
+    const refreshed = await this.#hubcap.getUsage(
+      apiKey,
+      this.#abortController.signal,
+    )
+    const usage =
+      refreshed.status === 'available'
+        ? refreshed.usage
+        : {
+            ...preflightUsage,
+            dailyUsage: preflightUsage.dailyUsage + 1,
+            remaining: Math.max(0, preflightUsage.remaining - 1),
+          }
+    return { source, usage }
   }
 
   private getLuaSource(appId: number): Promise<string | null> {

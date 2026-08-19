@@ -60,6 +60,7 @@ interface ApplicationQueueDepotRow {
 
 interface SettingsRow {
   automaticManifestAcquisition: number
+  hubcapApiKey: string | null
   hideRedistributables: number
   hideUnknownDepots: number
   hideUnusedDepots: number
@@ -73,6 +74,7 @@ const depotPlatforms: DepotPlatform[] = ['windows', 'macos', 'linux']
 const settingsRowSchema = z
   .object({
     automaticManifestAcquisition: z.union([z.literal(0), z.literal(1)]),
+    hubcapApiKey: z.string().nullable(),
     hideRedistributables: z.union([z.literal(0), z.literal(1)]),
     hideUnknownDepots: z.union([z.literal(0), z.literal(1)]),
     hideUnusedDepots: z.union([z.literal(0), z.literal(1)]),
@@ -84,6 +86,7 @@ const settingsRowSchema = z
   .transform(
     (row): AppSettings => ({
       automaticManifestAcquisition: Boolean(row.automaticManifestAcquisition),
+      hubcapApiKey: row.hubcapApiKey ?? '',
       hideRedistributables: Boolean(row.hideRedistributables),
       hideUnknownDepots: Boolean(row.hideUnknownDepots),
       hideUnusedDepots: Boolean(row.hideUnusedDepots),
@@ -179,10 +182,11 @@ export class KalamataDatabase {
     this.validateSettings(defaults)
     this.sqlite
       .query(
-        'INSERT INTO settings (id, automatic_manifest_acquisition, hide_redistributables, hide_unknown_depots, hide_unused_depots, hide_unavailable_depots, show_windows, show_macos, show_linux) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING',
+        'INSERT INTO settings (id, automatic_manifest_acquisition, hubcap_api_key, hide_redistributables, hide_unknown_depots, hide_unused_depots, hide_unavailable_depots, show_windows, show_macos, show_linux) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING',
       )
       .run(
         Number(defaults.automaticManifestAcquisition),
+        defaults.hubcapApiKey || null,
         Number(defaults.hideRedistributables),
         Number(defaults.hideUnknownDepots),
         Number(defaults.hideUnusedDepots),
@@ -199,10 +203,11 @@ export class KalamataDatabase {
     this.validateSettings(settings)
     this.sqlite
       .query(
-        'INSERT INTO settings (id, automatic_manifest_acquisition, hide_redistributables, hide_unknown_depots, hide_unused_depots, hide_unavailable_depots, show_windows, show_macos, show_linux) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET automatic_manifest_acquisition = excluded.automatic_manifest_acquisition, hide_redistributables = excluded.hide_redistributables, hide_unknown_depots = excluded.hide_unknown_depots, hide_unused_depots = excluded.hide_unused_depots, hide_unavailable_depots = excluded.hide_unavailable_depots, show_windows = excluded.show_windows, show_macos = excluded.show_macos, show_linux = excluded.show_linux',
+        'INSERT INTO settings (id, automatic_manifest_acquisition, hubcap_api_key, hide_redistributables, hide_unknown_depots, hide_unused_depots, hide_unavailable_depots, show_windows, show_macos, show_linux) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET automatic_manifest_acquisition = excluded.automatic_manifest_acquisition, hubcap_api_key = excluded.hubcap_api_key, hide_redistributables = excluded.hide_redistributables, hide_unknown_depots = excluded.hide_unknown_depots, hide_unused_depots = excluded.hide_unused_depots, hide_unavailable_depots = excluded.hide_unavailable_depots, show_windows = excluded.show_windows, show_macos = excluded.show_macos, show_linux = excluded.show_linux',
       )
       .run(
         Number(settings.automaticManifestAcquisition),
+        settings.hubcapApiKey || null,
         Number(settings.hideRedistributables),
         Number(settings.hideUnknownDepots),
         Number(settings.hideUnusedDepots),
@@ -217,7 +222,7 @@ export class KalamataDatabase {
   private readSettings(): AppSettings {
     const row = this.sqlite
       .query<SettingsRow, []>(
-        'SELECT automatic_manifest_acquisition AS automaticManifestAcquisition, hide_redistributables AS hideRedistributables, hide_unknown_depots AS hideUnknownDepots, hide_unused_depots AS hideUnusedDepots, hide_unavailable_depots AS hideUnavailableDepots, show_windows AS showWindows, show_macos AS showMacos, show_linux AS showLinux FROM settings WHERE id = 1',
+        'SELECT automatic_manifest_acquisition AS automaticManifestAcquisition, hubcap_api_key AS hubcapApiKey, hide_redistributables AS hideRedistributables, hide_unknown_depots AS hideUnknownDepots, hide_unused_depots AS hideUnusedDepots, hide_unavailable_depots AS hideUnavailableDepots, show_windows AS showWindows, show_macos AS showMacos, show_linux AS showLinux FROM settings WHERE id = 1',
       )
       .get()!
     return settingsRowSchema.parse(row)
@@ -225,6 +230,16 @@ export class KalamataDatabase {
 
   private validateSettings(settings: AppSettings): void {
     appSettingsSchema.parse(settings)
+  }
+
+  getHubcapApiKey(): string | null {
+    const row = this.sqlite
+      .query<{ hubcapApiKey: unknown }, []>(
+        'SELECT hubcap_api_key AS hubcapApiKey FROM settings WHERE id = 1',
+      )
+      .get()
+    if (row?.hubcapApiKey == null || row.hubcapApiKey === '') return null
+    return z.string().parse(row.hubcapApiKey)
   }
 
   getManifestRows(depotId: number): ManifestRow[] {

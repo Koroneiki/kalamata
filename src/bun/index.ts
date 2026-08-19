@@ -70,6 +70,7 @@ const systemPlatform: DepotPlatform =
       : 'linux'
 const defaultSettings: AppSettings = {
   automaticManifestAcquisition: true,
+  hubcapApiKey: '',
   hideRedistributables: true,
   hideUnknownDepots: true,
   hideUnusedDepots: true,
@@ -110,6 +111,9 @@ const rpc = BrowserView.defineRPC<AppRpc>({
       },
       updateSettings(settings) {
         return database.updateSettings(settings)
+      },
+      getHubcapUsage() {
+        return steam.getHubcapUsage(database)
       },
       openUserDataFolder() {
         if (!Utils.openPath(Utils.paths.userData))

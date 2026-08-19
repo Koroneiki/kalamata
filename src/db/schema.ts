@@ -167,6 +167,7 @@ export const settings = sqliteTable(
     })
       .notNull()
       .default(true),
+    hubcapApiKey: text('hubcap_api_key'),
     hideRedistributables: integer('hide_redistributables', {
       mode: 'boolean',
     }).notNull(),

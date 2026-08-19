@@ -88,6 +88,7 @@ describe('foundation database', () => {
     expect(tables).toContain('library')
     expect(tables).toContain('manifest_files')
     expect(tables).toContain('depot_keys')
+    expect(db.getHubcapApiKey()).toBeNull()
     expect(tables).toContain('library_depot_installs')
     expect(tables).not.toContain('library_depot_selections')
     expect(tables).toContain('settings')
@@ -379,6 +380,7 @@ describe('foundation database', () => {
     expect(
       db.getSettings({
         automaticManifestAcquisition: true,
+        hubcapApiKey: '',
         hideRedistributables: true,
         hideUnknownDepots: true,
         hideUnusedDepots: true,
@@ -387,6 +389,7 @@ describe('foundation database', () => {
       }),
     ).toEqual({
       automaticManifestAcquisition: true,
+      hubcapApiKey: '',
       hideRedistributables: true,
       hideUnknownDepots: true,
       hideUnusedDepots: true,
@@ -397,6 +400,7 @@ describe('foundation database', () => {
     expect(
       db.updateSettings({
         automaticManifestAcquisition: false,
+        hubcapApiKey: 'hubcap-secret',
         hideRedistributables: false,
         hideUnknownDepots: false,
         hideUnusedDepots: false,
@@ -405,6 +409,7 @@ describe('foundation database', () => {
       }),
     ).toEqual({
       automaticManifestAcquisition: false,
+      hubcapApiKey: 'hubcap-secret',
       hideRedistributables: false,
       hideUnknownDepots: false,
       hideUnusedDepots: false,
@@ -422,6 +427,7 @@ describe('foundation database', () => {
     expect(
       db.getSettings({
         automaticManifestAcquisition: true,
+        hubcapApiKey: '',
         hideRedistributables: true,
         hideUnknownDepots: true,
         hideUnusedDepots: true,
@@ -430,10 +436,69 @@ describe('foundation database', () => {
       }),
     ).toEqual({
       automaticManifestAcquisition: false,
+      hubcapApiKey: 'hubcap-secret',
       hideRedistributables: false,
       hideUnknownDepots: false,
       hideUnusedDepots: false,
       hideUnavailableDepots: false,
+      platforms: ['windows', 'linux'],
+    })
+
+    expect(db.getHubcapApiKey()).toBe('hubcap-secret')
+    db.updateSettings({
+      ...db.getSettings({
+        automaticManifestAcquisition: true,
+        hubcapApiKey: '',
+        hideRedistributables: true,
+        hideUnknownDepots: true,
+        hideUnusedDepots: true,
+        hideUnavailableDepots: true,
+        platforms: ['macos'],
+      }),
+      hubcapApiKey: '',
+    })
+    expect(db.getHubcapApiKey()).toBeNull()
+    db.close()
+    database = await KalamataDatabase.open(
+      root!,
+      join(import.meta.dir, '..', 'src', 'db', 'migrations'),
+    )
+    expect(database.getHubcapApiKey()).toBeNull()
+  })
+
+  test('preserves settings while adding the Hubcap key column', async () => {
+    let db = await openDatabaseAtMigration(12)
+    db.sqlite
+      .query(
+        'INSERT INTO settings (id, automatic_manifest_acquisition, hide_redistributables, hide_unknown_depots, hide_unused_depots, hide_unavailable_depots, show_windows, show_macos, show_linux) VALUES (1, 0, 0, 1, 0, 1, 1, 0, 1)',
+      )
+      .run()
+    db.close()
+    database = undefined
+
+    db = await KalamataDatabase.open(
+      root!,
+      join(import.meta.dir, '..', 'src', 'db', 'migrations'),
+    )
+    database = db
+    expect(db.getHubcapApiKey()).toBeNull()
+    expect(
+      db.getSettings({
+        automaticManifestAcquisition: true,
+        hubcapApiKey: '',
+        hideRedistributables: true,
+        hideUnknownDepots: true,
+        hideUnusedDepots: true,
+        hideUnavailableDepots: true,
+        platforms: ['macos'],
+      }),
+    ).toEqual({
+      automaticManifestAcquisition: false,
+      hubcapApiKey: '',
+      hideRedistributables: false,
+      hideUnknownDepots: true,
+      hideUnusedDepots: false,
+      hideUnavailableDepots: true,
       platforms: ['windows', 'linux'],
     })
   })
@@ -442,6 +507,7 @@ describe('foundation database', () => {
     const db = await openDatabase()
     const settings = {
       automaticManifestAcquisition: true,
+      hubcapApiKey: '',
       hideRedistributables: true,
       hideUnknownDepots: true,
       hideUnusedDepots: true,
@@ -476,6 +542,7 @@ describe('foundation database', () => {
     expect(
       db.getSettings({
         automaticManifestAcquisition: true,
+        hubcapApiKey: '',
         hideRedistributables: true,
         hideUnknownDepots: true,
         hideUnusedDepots: true,
@@ -484,6 +551,7 @@ describe('foundation database', () => {
       }),
     ).toEqual({
       automaticManifestAcquisition: true,
+      hubcapApiKey: '',
       hideRedistributables: false,
       hideUnknownDepots: true,
       hideUnusedDepots: false,

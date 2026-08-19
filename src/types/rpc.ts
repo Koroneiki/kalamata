@@ -12,6 +12,7 @@ export type DepotPlatform = 'windows' | 'macos' | 'linux'
 
 export interface AppSettings {
   automaticManifestAcquisition: boolean
+  hubcapApiKey: string
   hideRedistributables: boolean
   hideUnknownDepots: boolean
   hideUnusedDepots: boolean
@@ -179,11 +180,38 @@ export interface AcquiredManifest {
 export interface AcquireDepotKeysRequest {
   appId: number
   depotIds: number[]
+  approveLowQuotaHubcap?: boolean
 }
+
+export interface HubcapUsage {
+  dailyUsage: number
+  dailyLimit: number
+  remaining: number
+  canMakeRequests: boolean
+}
+
+export type HubcapDepotKeyOutcome =
+  | { status: 'approval-required'; usage: HubcapUsage }
+  | {
+      status: 'fetched'
+      usage: HubcapUsage
+      acquiredDepotIds: number[]
+    }
+  | { status: 'missing-key' }
+  | { status: 'invalid-key' }
+  | { status: 'quota-exhausted'; usage: HubcapUsage }
+  | { status: 'stats-unavailable' }
+
+export type HubcapUsageResult =
+  | { status: 'available'; usage: HubcapUsage }
+  | { status: 'missing-key' }
+  | { status: 'invalid-key' }
+  | { status: 'stats-unavailable' }
 
 export interface AcquiredDepotKeys {
   acquiredDepotIds: number[]
   missingDepotIds: number[]
+  hubcap?: HubcapDepotKeyOutcome
 }
 
 export type OperationKind = 'download' | 'reconcile' | 'repair'
@@ -344,6 +372,10 @@ export type AppRpc = {
       updateSettings: {
         params: AppSettings
         response: AppSettings
+      }
+      getHubcapUsage: {
+        params: Record<string, never>
+        response: HubcapUsageResult
       }
       openUserDataFolder: {
         params: Record<string, never>

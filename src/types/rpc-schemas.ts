@@ -228,6 +228,37 @@ const libraryEntrySchema = strict({
   createdAt: z.number().int(),
 })
 const acceptedResultSchema = strict({ accepted: z.literal(true) })
+export const hubcapUsageSchema = strict({
+  dailyUsage: z.number().int().nonnegative(),
+  dailyLimit: z.number().int().nonnegative(),
+  remaining: z.number().int().nonnegative(),
+  canMakeRequests: z.boolean(),
+}).refine(
+  (usage) =>
+    usage.remaining === Math.max(0, usage.dailyLimit - usage.dailyUsage),
+  {
+    message: 'remaining must match daily limit minus usage',
+    path: ['remaining'],
+  },
+)
+const hubcapUsageResultSchema = z.discriminatedUnion('status', [
+  strict({ status: z.literal('available'), usage: hubcapUsageSchema }),
+  strict({ status: z.literal('missing-key') }),
+  strict({ status: z.literal('invalid-key') }),
+  strict({ status: z.literal('stats-unavailable') }),
+])
+const hubcapDepotKeyOutcomeSchema = z.discriminatedUnion('status', [
+  strict({ status: z.literal('approval-required'), usage: hubcapUsageSchema }),
+  strict({
+    status: z.literal('fetched'),
+    usage: hubcapUsageSchema,
+    acquiredDepotIds: z.array(steamIdSchema),
+  }),
+  strict({ status: z.literal('missing-key') }),
+  strict({ status: z.literal('invalid-key') }),
+  strict({ status: z.literal('quota-exhausted'), usage: hubcapUsageSchema }),
+  strict({ status: z.literal('stats-unavailable') }),
+])
 
 const rpcRequestSchemas = {
   getAppSummary: idRequestSchema,
@@ -240,6 +271,7 @@ const rpcRequestSchemas = {
   getLibrary: emptySchema,
   getSettings: emptySchema,
   updateSettings: appSettingsSchema,
+  getHubcapUsage: emptySchema,
   openUserDataFolder: emptySchema,
   addLibraryEntry: idRequestSchema,
   removeLibraryEntry: idRequestSchema,
@@ -272,6 +304,7 @@ const rpcRequestSchemas = {
   acquireDepotKeys: strict({
     appId: steamIdSchema,
     depotIds: uniqueSteamIdsSchema,
+    approveLowQuotaHubcap: z.boolean().optional(),
   }),
   cancelOperation: emptySchema,
   pauseOperation: emptySchema,
@@ -290,6 +323,7 @@ export const rpcResponseSchemas = {
   getLibrary: z.array(libraryEntrySchema),
   getSettings: appSettingsSchema,
   updateSettings: appSettingsSchema,
+  getHubcapUsage: hubcapUsageResultSchema,
   openUserDataFolder: z.void(),
   addLibraryEntry: libraryEntrySchema,
   removeLibraryEntry: z.void(),
@@ -340,6 +374,7 @@ export const rpcResponseSchemas = {
   acquireDepotKeys: strict({
     acquiredDepotIds: z.array(steamIdSchema),
     missingDepotIds: z.array(steamIdSchema),
+    hubcap: hubcapDepotKeyOutcomeSchema.optional(),
   }),
   cancelOperation: z.discriminatedUnion('accepted', [
     acceptedResultSchema,

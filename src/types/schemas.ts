@@ -20,6 +20,7 @@ const depotPlatformSchema = z.enum(['windows', 'macos', 'linux'])
 export const appSettingsSchema: z.ZodType<AppSettings> = z
   .object({
     automaticManifestAcquisition: z.boolean(),
+    hubcapApiKey: z.string(),
     hideRedistributables: z.boolean(),
     hideUnknownDepots: z.boolean(),
     hideUnusedDepots: z.boolean(),

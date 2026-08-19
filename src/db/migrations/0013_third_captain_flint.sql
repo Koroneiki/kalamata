@@ -1,0 +1,1 @@
+ALTER TABLE `settings` ADD `hubcap_api_key` text;

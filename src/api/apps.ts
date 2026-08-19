@@ -32,6 +32,14 @@ export function acquireManifest(
   })
 }
 
-export function acquireDepotKeys(appId: number, depotIds: number[]) {
-  return request('acquireDepotKeys', { appId, depotIds })
+export function acquireDepotKeys(
+  appId: number,
+  depotIds: number[],
+  approveLowQuotaHubcap?: boolean,
+) {
+  return request('acquireDepotKeys', {
+    appId,
+    depotIds,
+    approveLowQuotaHubcap,
+  })
 }

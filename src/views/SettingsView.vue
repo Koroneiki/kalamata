@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useMutation, useQueryCache } from '@pinia/colada'
 import { FolderOpen } from '@lucide/vue'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import {
   openUserDataFolder as requestOpenUserDataFolder,
@@ -11,19 +11,54 @@ import SettingsCheckboxRow from '@/components/forms/SettingsCheckboxRow.vue'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
+import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
-import { settingsQueryKey, useSettingsQuery } from '@/composables/queries'
+import {
+  hubcapUsageQueryKey,
+  settingsQueryKey,
+  useHubcapUsageQuery,
+  useSettingsQuery,
+} from '@/composables/queries'
 import { cn } from '@/lib/utils'
 import type { AppSettings, DepotPlatform } from '@/types/rpc'
 import { depotPlatforms } from '@/utils/depots'
 
 const queryCache = useQueryCache()
 const { data: settings, error, isPending } = useSettingsQuery()
+const {
+  data: hubcapUsage,
+  isLoading: hubcapUsageLoading,
+  isPending: hubcapUsagePending,
+} = useHubcapUsageQuery()
 const updateMutation = useMutation({ mutation: updateSettings })
 const openFolderMutation = useMutation({ mutation: requestOpenUserDataFolder })
 const mutationError = ref('')
+const hubcapApiKeyDraft = ref('')
+const hubcapKeyFocused = ref(false)
+const hubcapUsageLabels = {
+  'missing-key': 'No key configured',
+  'invalid-key': 'Key invalid',
+  'stats-unavailable': 'Usage unavailable',
+} as const
 const hasError = computed(() => Boolean(error.value || mutationError.value))
 const errorMessage = computed(() => mutationError.value || error.value?.message)
+const hubcapUsageText = computed(() => {
+  if (!settings.value?.hubcapApiKey) return 'No key configured'
+  if (hubcapUsagePending.value || hubcapUsageLoading.value)
+    return 'Checking Hubcap usage…'
+  const result = hubcapUsage.value
+  if (result?.status === 'available')
+    return `${result.usage.dailyUsage} / ${result.usage.dailyLimit} Hubcap requests today`
+  return result ? hubcapUsageLabels[result.status] : 'No key configured'
+})
+
+watch(
+  () => settings.value?.hubcapApiKey,
+  (apiKey) => {
+    if (!hubcapKeyFocused.value) hubcapApiKeyDraft.value = apiKey ?? ''
+  },
+  { immediate: true },
+)
 
 const platformLabels = {
   windows: 'Windows',
@@ -58,11 +93,28 @@ async function persist(next: AppSettings, optimistic = true) {
   try {
     const saved = await updateMutation.mutateAsync(next)
     queryCache.setQueryData(settingsQueryKey, saved)
+    return true
   } catch (error) {
     if (optimistic && previous)
       queryCache.setQueryData(settingsQueryKey, previous)
     mutationError.value = error instanceof Error ? error.message : String(error)
+    return false
   }
+}
+
+async function saveHubcapApiKey() {
+  if (!settings.value || updateMutation.isLoading.value) return
+  const apiKey = hubcapApiKeyDraft.value.trim()
+  if (apiKey === settings.value.hubcapApiKey) return
+  if (!(await persist({ ...settings.value, hubcapApiKey: apiKey }, false)))
+    return
+  hubcapApiKeyDraft.value = apiKey
+  await queryCache.invalidateQueries({ key: hubcapUsageQueryKey, exact: true })
+}
+
+function handleHubcapKeyBlur() {
+  hubcapKeyFocused.value = false
+  void saveHubcapApiKey()
 }
 
 function setPlatform(platform: DepotPlatform, active: boolean) {
@@ -156,6 +208,27 @@ async function openUserDataFolder() {
         :disabled="updateMutation.isLoading.value"
         @update:model-value="setAutomaticManifestAcquisition"
       />
+      <div class="border-border border-t p-4 sm:p-5">
+        <Label for="hubcap-api-key">Hubcap API key</Label>
+        <Input
+          id="hubcap-api-key"
+          v-model="hubcapApiKeyDraft"
+          class="mt-2"
+          type="password"
+          autocomplete="off"
+          :disabled="!settings || updateMutation.isLoading.value"
+          aria-describedby="hubcap-api-key-status"
+          @focus="hubcapKeyFocused = true"
+          @blur="handleHubcapKeyBlur"
+          @keydown.enter.prevent="saveHubcapApiKey"
+        />
+        <p
+          id="hubcap-api-key-status"
+          class="text-muted-foreground mt-1.5 text-xs"
+        >
+          {{ hubcapUsageText }}
+        </p>
+      </div>
       <SettingsCheckboxRow
         id="hide-redistributables"
         label="Hide redistributables"

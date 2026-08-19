@@ -11,6 +11,7 @@ import type {
   AcquireDepotKeysRequest,
   AcquireManifestRequest,
   ApplicationOperationPreview,
+  HubcapUsageResult,
 } from '../types/rpc.ts'
 import { ProductInfoService } from './steam/product-info-service.ts'
 import { SteamSession } from './steam/steam-session.ts'
@@ -114,6 +115,10 @@ export class SteamService {
     request: AcquireDepotKeysRequest,
   ): Promise<AcquiredDepotKeys> {
     return this.getDepotKeyAcquisitionService(database).acquire(request)
+  }
+
+  getHubcapUsage(database: KalamataDatabase): Promise<HubcapUsageResult> {
+    return this.getDepotKeyAcquisitionService(database).getHubcapUsage()
   }
 
   async shutdownManifestAcquisitions(): Promise<void> {

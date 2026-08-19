@@ -22,11 +22,7 @@ import { useAppOperationDisplay } from '@/composables/use-app-operation-display'
 import { useCustomManifest } from '@/composables/use-custom-manifest'
 import { useAvailableUpdates } from '@/composables/use-available-updates'
 import { useDepotResourceAcquisition } from '@/composables/use-depot-resource-acquisition'
-import {
-  acquireDepotKeys,
-  acquireManifest,
-  openInstallDirectory,
-} from '@/api/apps'
+import { acquireManifest, openInstallDirectory } from '@/api/apps'
 import {
   addLibraryEntry,
   removeLibraryEntry,
@@ -93,10 +89,6 @@ const manifestMutation = useMutation({
     manifestId: string
   }) => acquireManifest(appId, depotId, manifestId),
 })
-const depotKeysMutation = useMutation({
-  mutation: ({ appId, depotIds }: { appId: number; depotIds: number[] }) =>
-    acquireDepotKeys(appId, depotIds),
-})
 const pinMutation = useMutation({
   mutation: ({
     appId,
@@ -152,12 +144,7 @@ const {
   removeCustomManifestTarget: (depotId) =>
     depotDrafts.removeManifestTarget(appId.value, depotId),
   acquireDepotKeys: async (id, depotIds) =>
-    (
-      await depotKeysMutation.mutateAsync({
-        appId: id,
-        depotIds,
-      })
-    ).missingDepotIds,
+    (await resourceAcquisition.acquireKeys(id, depotIds)).missingDepotIds,
   acquireManifest: async (id, depotId, manifestId) => {
     await manifestMutation.mutateAsync({ appId: id, depotId, manifestId })
   },
@@ -506,8 +493,8 @@ watch(
     if (depotIds.length === 0) return
 
     for (const depotId of depotIds) attemptedDepotKeys.add(depotId)
-    void depotKeysMutation
-      .mutateAsync({ appId: app.appId, depotIds })
+    void resourceAcquisition
+      .acquireKeys(app.appId, depotIds)
       .catch((error) => {
         if (data.value?.appId === app.appId) {
           manifestError.value =

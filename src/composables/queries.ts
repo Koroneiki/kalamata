@@ -8,7 +8,7 @@ import {
   getAppSummary,
 } from '@/api/apps'
 import { getLibrary } from '@/api/library'
-import { getSettings } from '@/api/settings'
+import { getHubcapUsage, getSettings } from '@/api/settings'
 
 export const appQueryKeys = {
   summary: (appId: number) => ['app-summary', appId] as const,
@@ -18,6 +18,7 @@ export const appQueryKeys = {
 
 export const libraryQueryKey = ['library'] as const
 export const settingsQueryKey = ['settings'] as const
+export const hubcapUsageQueryKey = ['hubcap-usage'] as const
 
 const appSummaryQuery = defineQueryOptions((appId: number) => ({
   key: appQueryKeys.summary(appId),
@@ -69,6 +70,10 @@ const settingsQuery = defineQueryOptions({
   key: settingsQueryKey,
   query: getSettings,
 })
+const hubcapUsageQuery = defineQueryOptions({
+  key: hubcapUsageQueryKey,
+  query: getHubcapUsage,
+})
 
 export function useAppSummaryQuery(appId: MaybeRefOrGetter<number>) {
   return useQuery(() => appSummaryQuery(toValue(appId)))
@@ -80,4 +85,8 @@ export function useLibraryQuery() {
 
 export function useSettingsQuery() {
   return useQuery(settingsQuery)
+}
+
+export function useHubcapUsageQuery() {
+  return useQuery(hubcapUsageQuery)
 }

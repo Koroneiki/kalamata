@@ -6,6 +6,7 @@ import 'vue-sonner/style.css'
 
 import AppHeader from '@/components/shared/AppHeader.vue'
 import AppSidebar from '@/components/shared/AppSidebar.vue'
+import HubcapQuotaDialog from '@/components/shared/HubcapQuotaDialog.vue'
 import { Button } from '@/components/ui/button'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { Toaster } from '@/components/ui/sonner'
@@ -85,6 +86,7 @@ watch(
       :offset="notificationOffset"
       :gap="10"
     />
+    <HubcapQuotaDialog />
     <Toaster
       id="manifest-queue"
       position="bottom-right"

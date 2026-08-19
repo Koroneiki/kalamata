@@ -2,8 +2,10 @@ import { expect, mock, test } from 'bun:test'
 import {
   availableUpdateResultSchema,
   downloadQueueSnapshotSchema,
+  hubcapUsageSchema,
   operationStateSchema,
   parseRpcRequest,
+  rpcResponseSchemas,
   validatedRpcHandlers,
 } from '../src/types/rpc-schemas.ts'
 
@@ -109,6 +111,66 @@ test('validates priority queue requests', () => {
   expect(() =>
     parseRpcRequest('prioritizeQueuedOperation', { id: '' }),
   ).toThrow()
+})
+
+test('validates Hubcap requests, usage, and acquisition outcomes', () => {
+  const usage = {
+    dailyUsage: 90,
+    dailyLimit: 100,
+    remaining: 10,
+    canMakeRequests: true,
+  }
+  expect(
+    parseRpcRequest('acquireDepotKeys', {
+      appId: 10,
+      depotIds: [20],
+      approveLowQuotaHubcap: true,
+    }).approveLowQuotaHubcap,
+  ).toBe(true)
+  expect(() =>
+    parseRpcRequest('acquireDepotKeys', {
+      appId: 10,
+      depotIds: [20],
+      approveLowQuotaHubcap: 'yes',
+    }),
+  ).toThrow()
+  expect(hubcapUsageSchema.parse(usage)).toEqual(usage)
+  expect(() => hubcapUsageSchema.parse({ ...usage, remaining: 9 })).toThrow()
+
+  const outcomes = [
+    { status: 'approval-required', usage },
+    { status: 'fetched', usage, acquiredDepotIds: [20] },
+    { status: 'missing-key' },
+    { status: 'invalid-key' },
+    { status: 'quota-exhausted', usage },
+    { status: 'stats-unavailable' },
+  ]
+  for (const hubcap of outcomes) {
+    expect(
+      rpcResponseSchemas.acquireDepotKeys.safeParse({
+        acquiredDepotIds: [],
+        missingDepotIds: [20],
+        hubcap,
+      }).success,
+    ).toBe(true)
+  }
+  expect(
+    rpcResponseSchemas.getHubcapUsage.safeParse({
+      status: 'available',
+      usage,
+    }).success,
+  ).toBe(true)
+  for (const status of ['missing-key', 'invalid-key', 'stats-unavailable']) {
+    expect(
+      rpcResponseSchemas.getHubcapUsage.safeParse({ status }).success,
+    ).toBe(true)
+  }
+  expect(
+    rpcResponseSchemas.getHubcapUsage.safeParse({
+      status: 'invalid-key',
+      extra: true,
+    }).success,
+  ).toBe(false)
 })
 
 test('validates every available update result variant and decimal data', () => {

@@ -1,9 +1,19 @@
 import { useQueryCache } from '@pinia/colada'
+import { toast } from 'vue-sonner'
 
 import { acquireDepotKeys, acquireManifest } from '@/api/apps'
-import { appQueryKeys } from '@/composables/queries'
+import { appQueryKeys, hubcapUsageQueryKey } from '@/composables/queries'
+import { requestHubcapApproval } from '@/composables/use-hubcap-approval'
 import { useManifestQueueStore } from '@/stores/manifest-queue'
 import type { EligibleAppDepot } from '@/types/rpc'
+import { acquiredDepotKeysResult } from '@/utils/depot-key-results'
+
+const hubcapFailureFeedback = {
+  'missing-key': () => toast.warning('No Hubcap API Key.'),
+  'quota-exhausted': () => toast.warning('No Hubcap Quota left.'),
+  'invalid-key': () => toast.error('Hubcap API Key invalid.'),
+  'stats-unavailable': () => toast.error('Hubcap quota check failed.'),
+}
 
 export function useDepotResourceAcquisition() {
   const queryCache = useQueryCache()
@@ -13,8 +23,42 @@ export function useDepotResourceAcquisition() {
     return manifestQueue.begin(count)
   }
 
-  function acquireKeys(appId: number, depotIds: number[]) {
-    return acquireDepotKeys(appId, depotIds)
+  async function acquireKeys(appId: number, depotIds: number[]) {
+    const first = await acquireDepotKeys(appId, depotIds)
+    if (first.hubcap?.status !== 'approval-required') {
+      await handleHubcapOutcome(first.hubcap)
+      return first
+    }
+
+    if (!(await requestHubcapApproval(first.hubcap.usage))) return first
+
+    const approved = await acquireDepotKeys(appId, first.missingDepotIds, true)
+    const result = acquiredDepotKeysResult(
+      depotIds,
+      [...first.acquiredDepotIds, ...approved.acquiredDepotIds],
+      approved.hubcap,
+    )
+    await handleHubcapOutcome(approved.hubcap)
+    return result
+  }
+
+  async function handleHubcapOutcome(
+    outcome: Awaited<ReturnType<typeof acquireDepotKeys>>['hubcap'],
+  ) {
+    if (!outcome || outcome.status === 'approval-required') return
+    if (outcome.status === 'fetched') {
+      await queryCache.invalidateQueries({
+        key: hubcapUsageQueryKey,
+        exact: true,
+      })
+      if (outcome.acquiredDepotIds.length > 0) {
+        toast.success(
+          `Depot keys fetched from Hubcap. Rem.: ${outcome.usage.remaining} Gens.`,
+        )
+      }
+      return
+    }
+    hubcapFailureFeedback[outcome.status]()
   }
 
   async function acquireManifestResource(
