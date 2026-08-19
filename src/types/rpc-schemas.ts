@@ -7,6 +7,7 @@ import {
   uniqueSteamIdsSchema,
 } from './schemas.ts'
 import { AVAILABLE_UPDATE_BATCH_SIZE } from './available-updates.ts'
+import { coldClientDependencyIdSchema } from './cold-client.ts'
 
 type Requests = AppRpc['bun']['requests']
 type RequestSchemas = {
@@ -27,6 +28,30 @@ type RequestHandlers = {
 const strict = z.strictObject
 const emptySchema = strict({})
 const idRequestSchema = strict({ appId: steamIdSchema })
+const dependencyAssetIdSchema = z.number().int().positive().safe()
+const coldClientDependencyItemStatusSchema = strict({
+  dependencyId: coldClientDependencyIdSchema,
+  status: z.enum(['current', 'update-available', 'missing', 'check-failed']),
+  currentAssetId: dependencyAssetIdSchema.nullable(),
+  currentTag: z.string().nullable(),
+  availableAssetId: dependencyAssetIdSchema.nullable(),
+  availableTag: z.string().nullable(),
+  error: z.string().nullable(),
+})
+const coldClientDependencyStatusSchema = strict({
+  supported: z.boolean(),
+  dependencies: z
+    .array(coldClientDependencyItemStatusSchema)
+    .length(3)
+    .refine(
+      (items) =>
+        new Set(items.map(({ dependencyId }) => dependencyId)).size === 3,
+      'Dependency statuses must be unique',
+    ),
+  lastCheckedAt: z.number().int().nonnegative().safe().nullable(),
+  loginFileExists: z.boolean(),
+  loginDirectory: z.string().nullable(),
+})
 const manifestTargetSchema = strict({
   depotId: steamIdSchema,
   manifestId: manifestIdSchema,
@@ -273,6 +298,18 @@ const rpcRequestSchemas = {
   updateSettings: appSettingsSchema,
   getHubcapUsage: emptySchema,
   openUserDataFolder: emptySchema,
+  getColdClientDependencies: emptySchema,
+  checkColdClientDependencyUpdates: emptySchema,
+  updateColdClientDependencies: strict({
+    dependencyIds: z
+      .array(coldClientDependencyIdSchema)
+      .min(1)
+      .refine(
+        (ids) => new Set(ids).size === ids.length,
+        'Dependencies must be unique',
+      ),
+  }),
+  openColdClientLoginDirectory: emptySchema,
   addLibraryEntry: idRequestSchema,
   removeLibraryEntry: idRequestSchema,
   setDepotPinned: strict({
@@ -324,6 +361,10 @@ export const rpcResponseSchemas = {
   updateSettings: appSettingsSchema,
   getHubcapUsage: hubcapUsageResultSchema,
   openUserDataFolder: z.void(),
+  getColdClientDependencies: coldClientDependencyStatusSchema,
+  checkColdClientDependencyUpdates: coldClientDependencyStatusSchema,
+  updateColdClientDependencies: coldClientDependencyStatusSchema,
+  openColdClientLoginDirectory: z.void(),
   addLibraryEntry: libraryEntrySchema,
   removeLibraryEntry: z.void(),
   setDepotPinned: z.void(),

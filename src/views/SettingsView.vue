@@ -1,21 +1,29 @@
 <script setup lang="ts">
 import { useMutation, useQueryCache } from '@pinia/colada'
-import { FolderOpen } from '@lucide/vue'
+import { Download, FolderOpen, RefreshCw } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
 
 import {
   openUserDataFolder as requestOpenUserDataFolder,
   updateSettings,
 } from '@/api/settings'
+import {
+  checkColdClientDependencyUpdates,
+  openColdClientLoginDirectory,
+  updateColdClientDependencies,
+} from '@/api/cold-client'
 import SettingsCheckboxRow from '@/components/forms/SettingsCheckboxRow.vue'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   hubcapUsageQueryKey,
+  coldClientDependenciesQueryKey,
   settingsQueryKey,
+  useColdClientDependenciesQuery,
   useHubcapUsageQuery,
   useSettingsQuery,
 } from '@/composables/queries'
@@ -25,6 +33,10 @@ import {
 } from '@/composables/resource-acquisition-cache'
 import { cn } from '@/lib/utils'
 import type { AppSettings, DepotPlatform } from '@/types/rpc'
+import type {
+  ColdClientDependencyId,
+  ColdClientDependencyItemStatus,
+} from '@/types/cold-client'
 import { depotPlatforms } from '@/utils/depots'
 
 const queryCache = useQueryCache()
@@ -36,7 +48,23 @@ const {
 } = useHubcapUsageQuery()
 const updateMutation = useMutation({ mutation: updateSettings })
 const openFolderMutation = useMutation({ mutation: requestOpenUserDataFolder })
+const {
+  data: coldClientDependencies,
+  error: coldClientQueryError,
+  isPending: coldClientPending,
+} = useColdClientDependenciesQuery()
+const checkColdClientMutation = useMutation({
+  mutation: checkColdClientDependencyUpdates,
+})
+const updateColdClientMutation = useMutation({
+  mutation: updateColdClientDependencies,
+})
+const openLoginFolderMutation = useMutation({
+  mutation: openColdClientLoginDirectory,
+})
 const mutationError = ref('')
+const coldClientMutationError = ref('')
+const confirmingDependencyUpdate = ref(false)
 const hubcapApiKeyDraft = ref('')
 const hubcapKeyFocused = ref(false)
 const hubcapUsageLabels = {
@@ -44,8 +72,48 @@ const hubcapUsageLabels = {
   'invalid-key': 'Key invalid',
   'stats-unavailable': 'Usage unavailable',
 } as const
-const hasError = computed(() => Boolean(error.value || mutationError.value))
-const errorMessage = computed(() => mutationError.value || error.value?.message)
+const hasError = computed(() =>
+  Boolean(
+    error.value ||
+    mutationError.value ||
+    coldClientQueryError.value ||
+    coldClientMutationError.value,
+  ),
+)
+const errorMessage = computed(
+  () =>
+    mutationError.value ||
+    coldClientMutationError.value ||
+    error.value?.message ||
+    coldClientQueryError.value?.message,
+)
+const dependencyLabels = {
+  '7zip': '7-Zip extractor',
+  gbe: 'GBE Fork',
+  gse: 'GSE Tools',
+} satisfies Record<ColdClientDependencyId, string>
+const dependencyUpdateIds = computed(
+  () =>
+    coldClientDependencies.value?.dependencies
+      .filter(
+        ({ status }) => status === 'missing' || status === 'update-available',
+      )
+      .map(({ dependencyId }) => dependencyId) ?? [],
+)
+const coldClientBusy = computed(
+  () =>
+    checkColdClientMutation.isLoading.value ||
+    updateColdClientMutation.isLoading.value ||
+    openLoginFolderMutation.isLoading.value,
+)
+const coldClientLastCheckedText = computed(() => {
+  const checkedAt = coldClientDependencies.value?.lastCheckedAt
+  if (checkedAt === null || checkedAt === undefined) return 'Not checked yet'
+  return `Last checked ${new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(checkedAt)}`
+})
 const hubcapUsageText = computed(() => {
   if (!settings.value?.hubcapApiKey) return 'No key configured'
   if (hubcapUsagePending.value || hubcapUsageLoading.value)
@@ -178,6 +246,56 @@ async function openUserDataFolder() {
     mutationError.value = error instanceof Error ? error.message : String(error)
   }
 }
+
+function dependencyStatusLabel(item: ColdClientDependencyItemStatus) {
+  if (item.status === 'check-failed') return 'Check failed'
+  if (item.status === 'update-available') return 'Update available'
+  if (item.status === 'missing') return 'Not installed'
+  return 'Current'
+}
+
+function dependencyVersionText(item: ColdClientDependencyItemStatus) {
+  if (!item.currentTag) return item.availableTag ?? 'Version unavailable'
+  if (item.availableTag && item.availableAssetId !== item.currentAssetId) {
+    return `${item.currentTag} installed · ${item.availableTag} available`
+  }
+  return `${item.currentTag} installed`
+}
+
+async function checkColdClientDependencies() {
+  coldClientMutationError.value = ''
+  try {
+    const status = await checkColdClientMutation.mutateAsync()
+    queryCache.setQueryData(coldClientDependenciesQueryKey, status)
+  } catch (error) {
+    coldClientMutationError.value =
+      error instanceof Error ? error.message : String(error)
+  }
+}
+
+async function confirmColdClientDependencyUpdate() {
+  coldClientMutationError.value = ''
+  try {
+    const status = await updateColdClientMutation.mutateAsync(
+      dependencyUpdateIds.value,
+    )
+    queryCache.setQueryData(coldClientDependenciesQueryKey, status)
+    confirmingDependencyUpdate.value = false
+  } catch (error) {
+    coldClientMutationError.value =
+      error instanceof Error ? error.message : String(error)
+  }
+}
+
+async function openColdClientLoginFolder() {
+  coldClientMutationError.value = ''
+  try {
+    await openLoginFolderMutation.mutateAsync()
+  } catch (error) {
+    coldClientMutationError.value =
+      error instanceof Error ? error.message : String(error)
+  }
+}
 </script>
 
 <template>
@@ -270,6 +388,147 @@ async function openUserDataFolder() {
         :disabled="updateMutation.isLoading.value"
         @update:model-value="setHideUnavailableDepots"
       />
+    </section>
+
+    <section
+      class="border-border bg-card mt-6 overflow-hidden rounded-xl border"
+      :aria-busy="coldClientPending || coldClientBusy"
+    >
+      <div class="p-4 sm:p-5">
+        <h2 class="text-sm font-medium">ColdClient dependencies</h2>
+        <p class="text-muted-foreground mt-1 text-sm">
+          Downloaded tools are kept in user data and never change a game until
+          you start setup from Game Settings.
+        </p>
+      </div>
+
+      <div v-if="coldClientPending" class="border-border border-t p-4 sm:p-5">
+        <div class="space-y-3" aria-label="Loading ColdClient dependencies">
+          <Skeleton v-for="index in 3" :key="index" class="h-10 w-full" />
+        </div>
+      </div>
+
+      <div
+        v-else-if="coldClientDependencies && !coldClientDependencies.supported"
+        class="border-border text-muted-foreground border-t p-4 text-sm sm:p-5"
+      >
+        ColdClient setup is available only in the Windows build.
+      </div>
+
+      <template v-else-if="coldClientDependencies">
+        <div class="border-border divide-border divide-y border-t">
+          <div
+            v-for="item in coldClientDependencies.dependencies"
+            :key="item.dependencyId"
+            class="flex min-w-0 items-start justify-between gap-3 px-4 py-3 sm:px-5"
+          >
+            <div class="min-w-0">
+              <p class="text-sm font-medium">
+                {{ dependencyLabels[item.dependencyId] }}
+              </p>
+              <p
+                class="text-muted-foreground mt-0.5 truncate text-xs tabular-nums"
+              >
+                {{ dependencyVersionText(item) }}
+              </p>
+              <p v-if="item.error" class="text-destructive mt-1 text-xs">
+                {{ item.error }}
+              </p>
+            </div>
+            <Badge
+              :variant="
+                item.status === 'check-failed' ? 'destructive' : 'secondary'
+              "
+              class="shrink-0"
+            >
+              {{ dependencyStatusLabel(item) }}
+            </Badge>
+          </div>
+        </div>
+
+        <div class="border-border border-t p-4 sm:p-5">
+          <p class="text-muted-foreground mb-3 text-xs tabular-nums">
+            {{ coldClientLastCheckedText }}
+          </p>
+          <div class="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              :disabled="coldClientBusy"
+              @click="checkColdClientDependencies"
+            >
+              <RefreshCw aria-hidden="true" />
+              Check again
+            </Button>
+            <Button
+              v-if="dependencyUpdateIds.length > 0"
+              :disabled="coldClientBusy"
+              @click="confirmingDependencyUpdate = true"
+            >
+              <Download aria-hidden="true" />
+              Update dependencies
+            </Button>
+          </div>
+
+          <div
+            v-if="confirmingDependencyUpdate"
+            class="bg-muted mt-4 rounded-lg p-3"
+            role="group"
+            aria-label="Confirm dependency update"
+          >
+            <p class="text-sm">
+              Download and activate {{ dependencyUpdateIds.length }}
+              {{
+                dependencyUpdateIds.length === 1
+                  ? 'dependency'
+                  : 'dependencies'
+              }}. No game files will change.
+            </p>
+            <div class="mt-3 flex flex-wrap gap-2">
+              <Button
+                :disabled="coldClientBusy"
+                @click="confirmColdClientDependencyUpdate"
+              >
+                Confirm download
+              </Button>
+              <Button
+                variant="ghost"
+                :disabled="coldClientBusy"
+                @click="confirmingDependencyUpdate = false"
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        <div class="border-border border-t p-4 sm:p-5">
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <p class="text-sm font-medium">GSE Tools login file</p>
+              <p class="text-muted-foreground mt-0.5 text-xs">
+                {{
+                  coldClientDependencies.loginFileExists
+                    ? 'my_login.txt is present.'
+                    : 'Add my_login.txt before setup.'
+                }}
+                Kalamata checks only whether the file exists and never reads it.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              class="shrink-0"
+              :disabled="
+                !coldClientDependencies.loginDirectory || coldClientBusy
+              "
+              @click="openColdClientLoginFolder"
+            >
+              <FolderOpen aria-hidden="true" />
+              Open folder
+            </Button>
+          </div>
+        </div>
+      </template>
     </section>
 
     <Button
