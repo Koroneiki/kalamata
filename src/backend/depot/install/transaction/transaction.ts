@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, rm, statfs, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
+import { manifestPathKey } from '../../manifests/manifest-utils.ts'
 import { CONFIG_DIRECTORY } from '../internal-paths.ts'
 import { acquireOutputLock } from '../output-lock.ts'
 import { resolveOutputPath } from '../filesystem.ts'
@@ -104,10 +105,21 @@ async function runUnlocked(
   throwIfAborted(options.signal)
 
   const { source, target } = buildValidatedProjections(options)
+  const sourceRecords = desiredRecords(options.installedDepots)
+  const desired = desiredRecords(options.desiredDepots)
+  const resumed = await loadResumableJournal(
+    options,
+    { source: sourceRecords, desired },
+    target,
+    options.kind === 'repair'
+      ? (journal) => retainedRepairFilesMatch(options, source, target, journal)
+      : undefined,
+  )
+  const retainedBytes = resumed ? BigInt(resumed.retainedBytes) : 0n
   const progress: ProgressState = {
-    logicalInstalledCompleted: 0n,
+    logicalInstalledCompleted: retainedBytes,
     logicalInstalledTotal: sumProjectionFiles(target),
-    reusedLocal: 0n,
+    reusedLocal: retainedBytes,
     actualNetwork: 0n,
     estimatedDownload: null,
   }
@@ -115,14 +127,19 @@ async function runUnlocked(
   if (options.kind === 'repair')
     options.onEvent?.({ type: 'phase', phase: 'verifying' })
 
-  const changed = await findChangedEntries(options, source, target, progress)
+  const changed = await findChangedEntries(
+    options,
+    source,
+    target,
+    progress,
+    resumed,
+  )
   const changedFiles = changed.filter((entry) => !isDirectory(entry.file))
   progress.estimatedDownload = [
     ...uniqueCompressedChunkSizes(changedFiles).values(),
   ].reduce((total, size) => total + BigInt(size), 0n)
   emitProgress(options, progress)
   if (changed.length === 0 && !filesystemChangesNeeded(source, target)) {
-    const desired = desiredRecords(options.desiredDepots)
     options.onEvent?.({ type: 'phase', phase: 'reconciling' })
     await callPersistence(options.reconcile, desired, 'SQLite reconciliation')
     options.onEvent?.({ type: 'phase', phase: 'completed' })
@@ -142,6 +159,7 @@ async function runUnlocked(
     changed,
     changedFiles,
     progress,
+    resumed,
   )
   return executeTransaction(
     options,
@@ -152,6 +170,22 @@ async function runUnlocked(
     progress,
     transaction,
   )
+}
+
+async function retainedRepairFilesMatch(
+  options: RunApplicationTransactionOptions,
+  source: Map<string, ProjectionEntry>,
+  target: Map<string, ProjectionEntry>,
+  journal: TransactionJournal,
+): Promise<boolean> {
+  const staged = new Set(
+    journal.stagedFiles.map(({ path }) => manifestPathKey(path)),
+  )
+  for (const [key, entry] of target) {
+    if (isDirectory(entry.file) || staged.has(key)) continue
+    if (await entryNeedsStaging(options, entry, source.get(key))) return false
+  }
+  return true
 }
 
 function buildValidatedProjections(options: RunApplicationTransactionOptions) {
@@ -172,29 +206,24 @@ async function findChangedEntries(
   source: Map<string, ProjectionEntry>,
   target: Map<string, ProjectionEntry>,
   progress: ProgressState,
+  resumed?: TransactionJournal,
 ): Promise<ProjectionEntry[]> {
+  if (resumed) {
+    const changedFiles = resumed.stagedFiles.map(({ path }) =>
+      target.get(manifestPathKey(path))!,
+    )
+    const directories = new Map(
+      [...target].filter(([, entry]) => isDirectory(entry.file)),
+    )
+    return [
+      ...changedFiles,
+      ...(await findChangedEntries(options, source, directories, progress)),
+    ]
+  }
   const changed: ProjectionEntry[] = []
   for (const entry of target.values()) {
     const previous = source.get(entry.key)
-    let needsStaging: boolean
-    try {
-      needsStaging = await projectionEntryNeedsStaging(
-        entry,
-        previous,
-        options.outputDirectory,
-        options.kind,
-        options.signal,
-      )
-    } catch (error) {
-      if (isFilesystemError(error))
-        throw classify(
-          error,
-          'filesystem',
-          `Could not verify ${entry.file.filename}`,
-        )
-      throw error
-    }
-    if (needsStaging) {
+    if (await entryNeedsStaging(options, entry, previous)) {
       changed.push(entry)
       continue
     }
@@ -206,6 +235,30 @@ async function findChangedEntries(
     }
   }
   return changed
+}
+
+async function entryNeedsStaging(
+  options: RunApplicationTransactionOptions,
+  entry: ProjectionEntry,
+  previous?: ProjectionEntry,
+): Promise<boolean> {
+  try {
+    return await projectionEntryNeedsStaging(
+      entry,
+      previous,
+      options.outputDirectory,
+      options.kind,
+      options.signal,
+    )
+  } catch (error) {
+    if (isFilesystemError(error))
+      throw classify(
+        error,
+        'filesystem',
+        `Could not verify ${entry.file.filename}`,
+      )
+    throw error
+  }
 }
 
 interface PreparedTransaction {
@@ -228,6 +281,7 @@ async function prepareTransaction(
   changed: ProjectionEntry[],
   changedFiles: ProjectionEntry[],
   progress: ProgressState,
+  resumed: TransactionJournal | undefined,
 ): Promise<PreparedTransaction> {
   const sourceRecords = desiredRecords(options.installedDepots)
   const desired = desiredRecords(options.desiredDepots)
@@ -237,11 +291,6 @@ async function prepareTransaction(
     0n,
   )
   await validateObstructions(options.outputDirectory, source, changed)
-  const resumed = await loadResumableJournal(options, {
-    source: sourceRecords,
-    desired,
-    stagedFiles,
-  })
   if (resumed) {
     const compressedSizes = uniqueCompressedChunkSizes(changedFiles)
     progress.estimatedDownload =
@@ -293,6 +342,9 @@ async function prepareTransaction(
         logicalInstalledTotal: progress.logicalInstalledTotal.toString(),
         estimatedDownloadBytes: progress.estimatedDownload?.toString(),
         retainedBytes: progress.logicalInstalledCompleted.toString(),
+        retainedFileCount:
+          [...target.values()].filter((entry) => !isDirectory(entry.file))
+            .length - stagedFiles.length,
         oldMoves: [],
         installs: [],
         obsoleteDirectories: [],

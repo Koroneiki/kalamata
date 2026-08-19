@@ -12,24 +12,34 @@ import { dirname, join, resolve } from 'node:path'
 import { z } from 'zod'
 import { CONFIG_DIRECTORY } from '../internal-paths.ts'
 import { resolveManifestPath } from '../filesystem.ts'
-import { normalizeManifestSeparators } from '../../manifests/manifest-utils.ts'
+import {
+  canonicalManifestPath,
+  manifestPathKey,
+  normalizeManifestSeparators,
+} from '../../manifests/manifest-utils.ts'
 import {
   lowercaseSha1Schema,
   manifestIdSchema,
   steamIdSchema,
 } from '../../../../types/schemas.ts'
-import { safeLstat } from './projection.ts'
+import {
+  isDirectory,
+  safeLstat,
+  stagedFileLayout,
+  sumProjectionFiles,
+} from './projection.ts'
 import {
   ApplicationTransactionError,
   filesystemErrorCode,
   type ApplicationDepotRecord,
   type CompletionRecord,
   type JournalContext,
+  type ProjectionEntry,
   type RunApplicationTransactionOptions,
   type TransactionJournal,
 } from './types.ts'
 
-export const TRANSACTION_VERSION = 2
+export const TRANSACTION_VERSION = 3
 
 const journalPathSchema = z.string().refine(safeJournalPath)
 const depotRecordSchema = z.object({
@@ -74,63 +84,73 @@ const fileInstallSchema = z.object({
   expectedSize: manifestIdSchema,
   expectedSha1: lowercaseSha1Schema,
 })
-const transactionJournalSchema: z.ZodType<TransactionJournal> = z.object({
-  version: z.literal(TRANSACTION_VERSION),
-  id: z.string(),
-  generation: z.string(),
-  appId: steamIdSchema,
-  kind: z.enum(['download', 'reconcile', 'repair']),
-  installPath: z.string(),
-  paused: z.boolean(),
-  phase: z.enum([
-    'staging',
-    'ready',
-    'filesystem-committed',
-    'sqlite-committed',
-    'completed',
-  ]),
-  source: depotRecordsSchema,
-  desired: depotRecordsSchema,
-  stagedFiles: z.array(
-    z.object({
-      path: journalPathSchema,
-      size: manifestIdSchema,
-      sha1: lowercaseSha1Schema,
-      chunks: z.array(
-        z.object({
-          key: z.string(),
-          offset: manifestIdSchema,
-          size: z.number().int().nonnegative(),
-        }),
-      ),
-    }),
-  ),
-  completedChunks: z.record(
-    z.string(),
-    z.object({
-      source: z.enum(['local', 'network']),
-      networkBytes: manifestIdSchema,
-    }),
-  ),
-  logicalInstalledTotal: manifestIdSchema,
-  estimatedDownloadBytes: manifestIdSchema.optional(),
-  retainedBytes: manifestIdSchema,
-  oldMoves: z.array(
-    z.object({
-      path: journalPathSchema,
-      backup: journalPathSchema.refine((path) =>
-        inJournalDirectory(path, 'backup'),
-      ),
-    }),
-  ),
-  installs: z.array(
-    z.discriminatedUnion('directory', [
-      directoryInstallSchema,
-      fileInstallSchema,
+const transactionJournalSchema: z.ZodType<TransactionJournal> = z
+  .object({
+    version: z.union([z.literal(2), z.literal(TRANSACTION_VERSION)]),
+    id: z.string(),
+    generation: z.string(),
+    appId: steamIdSchema,
+    kind: z.enum(['download', 'reconcile', 'repair']),
+    installPath: z.string(),
+    paused: z.boolean(),
+    phase: z.enum([
+      'staging',
+      'ready',
+      'filesystem-committed',
+      'sqlite-committed',
+      'completed',
     ]),
-  ),
-  obsoleteDirectories: z.array(journalPathSchema),
-})
+    source: depotRecordsSchema,
+    desired: depotRecordsSchema,
+    stagedFiles: z.array(
+      z.object({
+        path: journalPathSchema,
+        size: manifestIdSchema,
+        sha1: lowercaseSha1Schema,
+        chunks: z.array(
+          z.object({
+            key: z.string(),
+            offset: manifestIdSchema,
+            size: z.number().int().nonnegative(),
+          }),
+        ),
+      }),
+    ),
+    completedChunks: z.record(
+      z.string(),
+      z.object({
+        source: z.enum(['local', 'network']),
+        networkBytes: manifestIdSchema,
+      }),
+    ),
+    logicalInstalledTotal: manifestIdSchema,
+    estimatedDownloadBytes: manifestIdSchema.optional(),
+    retainedBytes: manifestIdSchema,
+    retainedFileCount: z.number().int().nonnegative().optional(),
+    oldMoves: z.array(
+      z.object({
+        path: journalPathSchema,
+        backup: journalPathSchema.refine((path) =>
+          inJournalDirectory(path, 'backup'),
+        ),
+      }),
+    ),
+    installs: z.array(
+      z.discriminatedUnion('directory', [
+        directoryInstallSchema,
+        fileInstallSchema,
+      ]),
+    ),
+    obsoleteDirectories: z.array(journalPathSchema),
+  })
+  .superRefine((journal, context) => {
+    if (journal.version === 3 && journal.retainedFileCount === undefined)
+      context.addIssue({
+        code: 'custom',
+        path: ['retainedFileCount'],
+        message: 'Version 3 journals require retained file accounting',
+      })
+  })
 
 export async function checkpointJournal(
   context: JournalContext,
@@ -209,9 +229,12 @@ export async function readJournal(path: string): Promise<TransactionJournal> {
 }
 
 function safeJournalPath(path: string): boolean {
-  if (!path || path.includes('\0')) return false
-  const normalized = normalizeManifestSeparators(path)
-  return !normalized.startsWith('/') && !normalized.split('/').includes('..')
+  try {
+    canonicalManifestPath(path)
+    return true
+  } catch {
+    return false
+  }
 }
 
 function inJournalDirectory(path: string, directory: string): boolean {
@@ -235,7 +258,9 @@ export function assertJournalIdentity(
 
 export async function loadResumableJournal(
   options: RunApplicationTransactionOptions,
-  expected: Pick<TransactionJournal, 'source' | 'desired' | 'stagedFiles'>,
+  expected: Pick<TransactionJournal, 'source' | 'desired'>,
+  target: Map<string, ProjectionEntry>,
+  validateRetained?: (journal: TransactionJournal) => Promise<boolean>,
 ): Promise<TransactionJournal | undefined> {
   const root = join(options.outputDirectory, CONFIG_DIRECTORY, 'transactions')
   let entries
@@ -273,12 +298,48 @@ export async function loadResumableJournal(
     journal.installPath === resolve(options.outputDirectory) &&
     JSON.stringify(journal.source) === JSON.stringify(expected.source) &&
     JSON.stringify(journal.desired) === JSON.stringify(expected.desired) &&
-    JSON.stringify(journal.stagedFiles) === JSON.stringify(expected.stagedFiles)
-  if (!matches || !(await validateStagingLedger(transactionRoot, journal))) {
+    stagedFilesMatchProjection(journal, target)
+  if (
+    !matches ||
+    !(await validateStagingLedger(transactionRoot, journal)) ||
+    (validateRetained && !(await validateRetained(journal)))
+  ) {
     await rm(transactionRoot, { recursive: true, force: true })
     return undefined
   }
   return journal
+}
+
+function stagedFilesMatchProjection(
+  journal: TransactionJournal,
+  target: Map<string, ProjectionEntry>,
+): boolean {
+  const paths = new Set<string>()
+  let stagedBytes = 0n
+  for (const stagedFile of journal.stagedFiles) {
+    const key = manifestPathKey(stagedFile.path)
+    const entry = target.get(key)
+    if (
+      paths.has(key) ||
+      !entry ||
+      isDirectory(entry.file) ||
+      JSON.stringify(stagedFileLayout([entry])[0]) !==
+        JSON.stringify(stagedFile)
+    )
+      return false
+    paths.add(key)
+    stagedBytes += BigInt(stagedFile.size)
+  }
+  const targetBytes = sumProjectionFiles(target)
+  const targetFileCount = [...target.values()].filter(
+    (entry) => !isDirectory(entry.file),
+  ).length
+  return (
+    BigInt(journal.logicalInstalledTotal) === targetBytes &&
+    BigInt(journal.retainedBytes) + stagedBytes === targetBytes &&
+    (journal.retainedFileCount === undefined ||
+      journal.retainedFileCount + paths.size === targetFileCount)
+  )
 }
 
 async function validateStagingLedger(

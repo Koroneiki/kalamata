@@ -182,7 +182,7 @@ export type JournalPhase =
   | 'completed'
 
 export interface TransactionJournal {
-  version: 2
+  version: 2 | 3
   id: string
   generation: string
   appId: number
@@ -197,6 +197,7 @@ export interface TransactionJournal {
   logicalInstalledTotal: string
   estimatedDownloadBytes?: string
   retainedBytes: string
+  retainedFileCount?: number
   oldMoves: OldMove[]
   installs: InstallAction[]
   obsoleteDirectories: string[]

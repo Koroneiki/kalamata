@@ -228,6 +228,62 @@ describe('application filesystem transactions', () => {
     expect(desired.client.downloadChunk).not.toHaveBeenCalled()
   })
 
+  test('resume trusts the journal staging selection instead of rechecking the installed file', async () => {
+    directory = await tempDirectory()
+    const installed = depot(10, '1', { 'game.bin': 'old' })
+    const desired = depot(10, '2', { 'game.bin': 'good' })
+    await writeFile(join(directory, 'game.bin'), 'good')
+    await writeStagingJournal(desired, 'good', undefined, [installed])
+
+    const result = await run(directory, [installed], [desired])
+
+    expect(result.transactionId).toBe('resume-test')
+    expect(await text('game.bin')).toBe('good')
+    expect(desired.client.downloadChunk).not.toHaveBeenCalled()
+  })
+
+  test('resumed repair replans when a retained file changed', async () => {
+    directory = await tempDirectory()
+    const desired = depot(10, '1', {
+      'staged.bin': 'new',
+      'retained.bin': 'good',
+    })
+    await writeFile(join(directory, 'retained.bin'), 'bad!')
+    await writeStagingJournal(desired, 'new', undefined, [desired])
+    const journalPath = join(
+      directory,
+      '.Kalamata/transactions/resume-test/journal.json',
+    )
+    const journal = JSON.parse(await readFile(journalPath, 'utf8'))
+    journal.kind = 'repair'
+    journal.logicalInstalledTotal = '7'
+    journal.retainedBytes = '4'
+    journal.retainedFileCount = 1
+    await writeFile(journalPath, JSON.stringify(journal))
+
+    const result = await run(directory, [desired], [desired], {
+      kind: 'repair',
+    })
+
+    expect(result.transactionId).not.toBe('resume-test')
+    expect(await text('retained.bin')).toBe('good')
+    expect(desired.client.downloadChunk).toHaveBeenCalledTimes(2)
+  })
+
+  test('resume downloads incomplete chunks without reusing their installed source', async () => {
+    directory = await tempDirectory()
+    const installed = depot(10, '1', { 'source.bin': 'shared' })
+    const desired = depot(10, '2', { 'target.bin': 'shared' })
+    await writeFile(join(directory, 'source.bin'), 'shared')
+    await writeStagingJournal(desired, '\0'.repeat(6), null, [installed])
+
+    const result = await run(directory, [installed], [desired])
+
+    expect(await text('target.bin')).toBe('shared')
+    expect(desired.client.downloadChunk).toHaveBeenCalledTimes(1)
+    expect(result.reusedLocalBytes).toBe('0')
+  })
+
   test('discards staging when the completion ledger is not bound to its layout', async () => {
     directory = await tempDirectory()
     const desired = depot(10, '1', { 'game.bin': 'good' })
@@ -237,6 +293,62 @@ describe('application filesystem transactions', () => {
 
     expect(await text('game.bin')).toBe('good')
     expect(desired.client.downloadChunk).toHaveBeenCalledTimes(1)
+  })
+
+  test('discards staging with a non-canonical journal path', async () => {
+    directory = await tempDirectory()
+    const desired = depot(10, '1', { 'game.bin': 'good' })
+    await writeStagingJournal(desired, 'good')
+    const journalPath = join(
+      directory,
+      '.Kalamata/transactions/resume-test/journal.json',
+    )
+    const journal = JSON.parse(await readFile(journalPath, 'utf8'))
+    journal.stagedFiles[0].path = '.Kalamata/file'
+    await writeFile(journalPath, JSON.stringify(journal))
+
+    const result = await run(directory, [], [desired])
+
+    expect(result.transactionId).not.toBe('resume-test')
+    expect(await text('game.bin')).toBe('good')
+  })
+
+  test('discards staging when its retained and staged bytes omit target files', async () => {
+    directory = await tempDirectory()
+    const desired = depot(10, '1', { 'game.bin': 'good' })
+    await writeStagingJournal(desired, 'good')
+    const journalPath = join(
+      directory,
+      '.Kalamata/transactions/resume-test/journal.json',
+    )
+    const journal = JSON.parse(await readFile(journalPath, 'utf8'))
+    journal.stagedFiles = []
+    journal.completedChunks = {}
+    await writeFile(journalPath, JSON.stringify(journal))
+
+    await run(directory, [], [desired])
+
+    expect(await text('game.bin')).toBe('good')
+    expect(desired.client.downloadChunk).toHaveBeenCalledTimes(1)
+  })
+
+  test('discards staging when its file count omits an empty target file', async () => {
+    directory = await tempDirectory()
+    const desired = depot(10, '1', { 'empty.bin': '' })
+    await writeStagingJournal(desired, '')
+    const journalPath = join(
+      directory,
+      '.Kalamata/transactions/resume-test/journal.json',
+    )
+    const journal = JSON.parse(await readFile(journalPath, 'utf8'))
+    journal.stagedFiles = []
+    delete journal.retainedFileCount
+    await writeFile(journalPath, JSON.stringify(journal))
+
+    const result = await run(directory, [], [desired])
+
+    expect(await text('empty.bin')).toBe('')
+    expect(result.transactionId).not.toBe('resume-test')
   })
 
   test('downloads a duplicate chunk once while counting both installed copies', async () => {
@@ -732,20 +844,25 @@ async function transactionEntries(): Promise<string[]> {
 async function writeStagingJournal(
   desired: DesiredApplicationDepot,
   contents: string,
-  completionKey?: string,
+  completionKey?: string | null,
+  installed: DesiredApplicationDepot[] = [],
 ): Promise<void> {
   const id = 'resume-test'
   const root = join(directory!, '.Kalamata/transactions', id)
   const staging = join(root, 'staging')
   await mkdir(staging, { recursive: true })
-  await writeFile(join(staging, 'game.bin'), contents)
   const file = desired.manifest.files[0]!
-  const chunk = file.chunks[0]!
-  const key = `${chunk.sha.toLowerCase()}:${chunk.cb_original}`
+  await writeFile(join(staging, file.filename), contents)
+  const chunks = file.chunks.map((chunk) => ({
+    key: `${chunk.sha.toLowerCase()}:${chunk.cb_original}`,
+    offset: chunk.offset,
+    size: chunk.cb_original,
+  }))
+  const key = chunks[0]?.key
   await writeFile(
     join(root, 'journal.json'),
     JSON.stringify({
-      version: 2,
+      version: 3,
       id,
       generation: 'generation',
       appId: 100,
@@ -753,7 +870,13 @@ async function writeStagingJournal(
       installPath: directory,
       phase: 'staging',
       paused: true,
-      source: [],
+      source: installed.map((depot, mountIndex) => ({
+        depotId: depot.depotId,
+        manifestId: depot.manifest.gid_manifest,
+        pinned: depot.pinned ?? false,
+        mountIndex,
+        ownerAppId: depot.ownerAppId ?? depot.appId,
+      })),
       desired: [
         {
           depotId: desired.depotId,
@@ -764,23 +887,24 @@ async function writeStagingJournal(
       ],
       stagedFiles: [
         {
-          path: 'game.bin',
+          path: file.filename,
           size: file.size,
           sha1: file.sha_content,
-          chunks: [
-            {
-              key,
-              offset: chunk.offset,
-              size: chunk.cb_original,
-            },
-          ],
+          chunks,
         },
       ],
-      completedChunks: {
-        [completionKey ?? key]: { source: 'network', networkBytes: '3' },
-      },
+      completedChunks:
+        completionKey === null || !key
+          ? {}
+          : {
+              [completionKey ?? key]: {
+                source: 'network',
+                networkBytes: '3',
+              },
+            },
       logicalInstalledTotal: file.size,
       retainedBytes: '0',
+      retainedFileCount: 0,
       oldMoves: [],
       installs: [],
       obsoleteDirectories: [],

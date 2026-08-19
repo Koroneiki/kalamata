@@ -107,7 +107,9 @@ async function reuseLocalChunks(
   progress: ProgressState,
   journal: JournalContext,
 ): Promise<Map<string, ChunkDestination[]>> {
-  const sourceCandidates = buildChunkCandidates(source, options.outputDirectory)
+  const sourceCandidates = journal.resumed
+    ? undefined
+    : buildChunkCandidates(source, options.outputDirectory)
   const downloads = new Map<string, ChunkDestination[]>()
   for (const [key, group] of destinations) {
     throwIfAborted(options.signal)
@@ -122,8 +124,14 @@ async function reuseLocalChunks(
       progress.actualNetwork += BigInt(completed.networkBytes)
       continue
     }
+    // A resumed ledger is the staging authority. Incomplete chunks must not
+    // inspect live files whose contents may have changed since the checkpoint.
+    if (journal.resumed) {
+      downloads.set(key, group)
+      continue
+    }
     const candidate = await reusableChunk(
-      sourceCandidates.get(key) ?? [],
+      sourceCandidates?.get(key) ?? [],
       options.signal,
     )
     if (!candidate) {
