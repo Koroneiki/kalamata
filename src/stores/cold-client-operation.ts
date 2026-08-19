@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, shallowRef } from 'vue'
+import { shallowRef } from 'vue'
 
 import {
   cancelColdClientOperation,
@@ -15,8 +15,6 @@ export const useColdClientOperationStore = defineStore(
   'cold-client-operation',
   () => {
     const state = shallowRef<ColdClientOperationSnapshot>({ status: 'idle' })
-    const initialized = ref(false)
-    const initializationError = ref<string | null>(null)
     let initializePromise: Promise<void> | undefined
     let unsubscribe: (() => void) | undefined
 
@@ -29,16 +27,12 @@ export const useColdClientOperationStore = defineStore(
       initializePromise = (async () => {
         unsubscribe ??= subscribeToColdClientOperation(applySnapshot)
         const sequence = getColdClientOperationMessageSequence()
-        initializationError.value = null
         try {
           const snapshot = await getColdClientOperation()
           if (getColdClientOperationMessageSequence() === sequence)
             applySnapshot(snapshot)
-          initialized.value = true
-        } catch (error) {
-          initialized.value = false
-          initializationError.value =
-            error instanceof Error ? error.message : String(error)
+        } catch {
+          // A later native message still initializes state after a missed replay.
         } finally {
           initializePromise = undefined
         }
@@ -60,6 +54,6 @@ export const useColdClientOperationStore = defineStore(
       return result
     }
 
-    return { state, initialized, initializationError, initialize, cancel }
+    return { state, initialize, cancel }
   },
 )
