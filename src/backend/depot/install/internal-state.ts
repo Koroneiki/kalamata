@@ -12,6 +12,7 @@ export async function assertSafeInternalStatePaths(
     join(directory, 'transactions'),
     join(directory, 'repair-fallback'),
     join(directory, 'download.lock'),
+    join(directory, 'coldclient-replacement.json'),
   ]) {
     try {
       if ((await lstat(path)).isSymbolicLink())

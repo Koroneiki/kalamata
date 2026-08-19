@@ -322,6 +322,23 @@ export class KalamataDatabase {
       )
   }
 
+  replaceColdClientInstallationIfCurrent(
+    previous: ColdClientInstallation | null,
+    target: ColdClientInstallation,
+  ): void {
+    const validatedPrevious = previous
+      ? coldClientInstallationSchema.parse(previous)
+      : null
+    const validatedTarget = coldClientInstallationSchema.parse(target)
+    this.sqlite.transaction(() => {
+      const current = this.getColdClientInstallation(validatedTarget.appId)
+      if (!sameColdClientInstallation(current, validatedPrevious)) {
+        throw new Error('ColdClient installation changed during setup')
+      }
+      this.replaceColdClientInstallation(validatedTarget)
+    })()
+  }
+
   deleteColdClientInstallation(appId: number): void {
     validateId(appId, 'appId')
     this.sqlite
@@ -698,6 +715,13 @@ function parseColdClientInstallationRow(
     ...row,
     managedCoreFiles: JSON.parse(row.managedCoreFiles),
   })
+}
+
+function sameColdClientInstallation(
+  left: ColdClientInstallation | null,
+  right: ColdClientInstallation | null,
+): boolean {
+  return JSON.stringify(left) === JSON.stringify(right)
 }
 
 function validateQueueItem(item: ApplicationQueueItem): void {

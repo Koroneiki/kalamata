@@ -71,6 +71,25 @@ describe('ColdClient installation storage', () => {
     expect(db.getColdClientInstallation(installation.appId)).toBeNull()
   })
 
+  test('replaces only the exact expected installation record', async () => {
+    const db = await openDatabase()
+    db.addLibraryEntry(installation.appId)
+    db.replaceColdClientInstallation(installation)
+    const replacement = { ...installation, configuredAt: 2000 }
+
+    expect(() =>
+      db.replaceColdClientInstallationIfCurrent(null, replacement),
+    ).toThrow('changed during setup')
+    expect(db.getColdClientInstallation(installation.appId)).toEqual(
+      installation,
+    )
+
+    db.replaceColdClientInstallationIfCurrent(installation, replacement)
+    expect(db.getColdClientInstallation(installation.appId)).toEqual(
+      replacement,
+    )
+  })
+
   test('cascades installation records with their library entries', async () => {
     const db = await openDatabase()
     db.addLibraryEntry(installation.appId)
