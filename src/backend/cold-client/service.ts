@@ -252,14 +252,11 @@ export class ColdClientService {
         })
         stagingDirectory = undefined
       } finally {
-        if (stagingDirectory) {
-          await rm(stagingDirectory, { recursive: true, force: true })
-        }
-        await rm(generated.appDirectory, { recursive: true, force: true })
-        await rm(join(installRoot, CONFIG_TEMPORARY_DIRECTORY), {
-          recursive: true,
-          force: true,
-        })
+        await cleanupGeneratedOperation(
+          installRoot,
+          generated,
+          stagingDirectory,
+        )
         await release()
       }
       return this.getStatus(appId)
@@ -466,20 +463,28 @@ export class ColdClientService {
       })
       stagingDirectory = undefined
     } finally {
-      if (stagingDirectory) {
-        await rm(stagingDirectory, { recursive: true, force: true })
-      }
-      await rm(generated.appDirectory, { recursive: true, force: true })
-      await rm(join(initialRoot, CONFIG_TEMPORARY_DIRECTORY), {
-        recursive: true,
-        force: true,
-      })
+      await cleanupGeneratedOperation(initialRoot, generated, stagingDirectory)
       await release()
     }
   }
 }
 
 const CONFIG_TEMPORARY_DIRECTORY = '.Kalamata-coldclient-interfaces'
+
+async function cleanupGeneratedOperation(
+  installRoot: string,
+  generated: GeneratedGseConfiguration,
+  stagingDirectory: string | undefined,
+): Promise<void> {
+  if (stagingDirectory) {
+    await rm(stagingDirectory, { recursive: true, force: true })
+  }
+  await rm(generated.appDirectory, { recursive: true, force: true })
+  await rm(join(installRoot, CONFIG_TEMPORARY_DIRECTORY), {
+    recursive: true,
+    force: true,
+  })
+}
 
 function requireInstalledLibrary(database: ServiceDatabase, appId: number) {
   const library = database.getLibraryEntry(appId)
