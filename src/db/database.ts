@@ -19,6 +19,10 @@ import {
   validateManifestId,
 } from './validation.ts'
 import { manifestRelativePath } from './manifest-files.ts'
+import {
+  type ColdClientInstallation,
+  coldClientInstallationSchema,
+} from '../types/cold-client.ts'
 
 export interface ManifestRow {
   depotId: number
@@ -68,6 +72,13 @@ interface SettingsRow {
   showWindows: number
   showMacos: number
   showLinux: number
+}
+
+interface ColdClientInstallationRow extends Omit<
+  ColdClientInstallation,
+  'managedCoreFiles'
+> {
+  managedCoreFiles: string
 }
 
 const depotPlatforms: DepotPlatform[] = ['windows', 'macos', 'linux']
@@ -266,6 +277,56 @@ export class KalamataDatabase {
       )
       .all(appId)
       .map((row) => ({ ...row, pinned: Boolean(row.pinned) }))
+  }
+
+  getColdClientInstallations(): ColdClientInstallation[] {
+    return this.sqlite
+      .query<ColdClientInstallationRow, []>(
+        'SELECT app_id AS appId, loader_architecture AS loaderArchitecture, executable_relative_path AS executableRelativePath, steam_api_relative_path AS steamApiRelativePath, launch_arguments AS launchArguments, launch_argument_source AS launchArgumentSource, gbe_asset_id AS gbeAssetId, gse_asset_id AS gseAssetId, generated_depot_fingerprint AS generatedDepotFingerprint, managed_core_files AS managedCoreFiles, configured_at AS configuredAt FROM cold_client_installations ORDER BY app_id',
+      )
+      .all()
+      .map(parseColdClientInstallationRow)
+  }
+
+  getColdClientInstallation(appId: number): ColdClientInstallation | null {
+    validateId(appId, 'appId')
+    const row = this.sqlite
+      .query<ColdClientInstallationRow, [number]>(
+        'SELECT app_id AS appId, loader_architecture AS loaderArchitecture, executable_relative_path AS executableRelativePath, steam_api_relative_path AS steamApiRelativePath, launch_arguments AS launchArguments, launch_argument_source AS launchArgumentSource, gbe_asset_id AS gbeAssetId, gse_asset_id AS gseAssetId, generated_depot_fingerprint AS generatedDepotFingerprint, managed_core_files AS managedCoreFiles, configured_at AS configuredAt FROM cold_client_installations WHERE app_id = ?',
+      )
+      .get(appId)
+    return row ? parseColdClientInstallationRow(row) : null
+  }
+
+  replaceColdClientInstallation(record: ColdClientInstallation): void {
+    const validated = coldClientInstallationSchema.parse(record)
+    if (!this.getLibraryEntry(validated.appId)) {
+      throw new Error('App is not in library')
+    }
+    this.sqlite
+      .query(
+        'INSERT INTO cold_client_installations (app_id, loader_architecture, executable_relative_path, steam_api_relative_path, launch_arguments, launch_argument_source, gbe_asset_id, gse_asset_id, generated_depot_fingerprint, managed_core_files, configured_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(app_id) DO UPDATE SET loader_architecture = excluded.loader_architecture, executable_relative_path = excluded.executable_relative_path, steam_api_relative_path = excluded.steam_api_relative_path, launch_arguments = excluded.launch_arguments, launch_argument_source = excluded.launch_argument_source, gbe_asset_id = excluded.gbe_asset_id, gse_asset_id = excluded.gse_asset_id, generated_depot_fingerprint = excluded.generated_depot_fingerprint, managed_core_files = excluded.managed_core_files, configured_at = excluded.configured_at',
+      )
+      .run(
+        validated.appId,
+        validated.loaderArchitecture,
+        validated.executableRelativePath,
+        validated.steamApiRelativePath,
+        validated.launchArguments,
+        validated.launchArgumentSource,
+        validated.gbeAssetId,
+        validated.gseAssetId,
+        validated.generatedDepotFingerprint,
+        JSON.stringify(validated.managedCoreFiles),
+        validated.configuredAt,
+      )
+  }
+
+  deleteColdClientInstallation(appId: number): void {
+    validateId(appId, 'appId')
+    this.sqlite
+      .query('DELETE FROM cold_client_installations WHERE app_id = ?')
+      .run(appId)
   }
 
   // fallow-ignore-next-line unused-class-member
@@ -628,6 +689,15 @@ export class KalamataDatabase {
         )
     })()
   }
+}
+
+function parseColdClientInstallationRow(
+  row: ColdClientInstallationRow,
+): ColdClientInstallation {
+  return coldClientInstallationSchema.parse({
+    ...row,
+    managedCoreFiles: JSON.parse(row.managedCoreFiles),
+  })
 }
 
 function validateQueueItem(item: ApplicationQueueItem): void {

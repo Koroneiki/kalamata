@@ -95,6 +95,70 @@ export const libraryDepotInstalls = sqliteTable(
   ],
 )
 
+export const coldClientInstallations = sqliteTable(
+  'cold_client_installations',
+  {
+    appId: integer('app_id')
+      .primaryKey()
+      .references(() => library.appId, { onDelete: 'cascade' }),
+    loaderArchitecture: text('loader_architecture', {
+      enum: ['x86', 'x64'],
+    }).notNull(),
+    executableRelativePath: text('executable_relative_path').notNull(),
+    steamApiRelativePath: text('steam_api_relative_path'),
+    launchArguments: text('launch_arguments').notNull(),
+    launchArgumentSource: text('launch_argument_source'),
+    gbeAssetId: integer('gbe_asset_id').notNull(),
+    gseAssetId: integer('gse_asset_id').notNull(),
+    generatedDepotFingerprint: text('generated_depot_fingerprint').notNull(),
+    managedCoreFiles: text('managed_core_files').notNull(),
+    configuredAt: integer('configured_at').notNull(),
+  },
+  (table) => [
+    check('cold_client_installations_app_id_valid', validId(table.appId)),
+    check(
+      'cold_client_installations_loader_architecture_valid',
+      sql`${table.loaderArchitecture} IN ('x86', 'x64')`,
+    ),
+    check(
+      'cold_client_installations_executable_path_valid',
+      sql`${table.executableRelativePath} <> ''`,
+    ),
+    check(
+      'cold_client_installations_steam_api_path_valid',
+      sql`${table.steamApiRelativePath} IS NULL OR ${table.steamApiRelativePath} <> ''`,
+    ),
+    check(
+      'cold_client_installations_architecture_consistent',
+      sql`${table.loaderArchitecture} = 'x64' OR ${table.steamApiRelativePath} IS NOT NULL`,
+    ),
+    check(
+      'cold_client_installations_launch_source_valid',
+      sql`${table.launchArgumentSource} IS NULL OR ${table.launchArgumentSource} <> ''`,
+    ),
+    check(
+      'cold_client_installations_gbe_asset_id_valid',
+      sql`${table.gbeAssetId} > 0`,
+    ),
+    check(
+      'cold_client_installations_gse_asset_id_valid',
+      sql`${table.gseAssetId} > 0`,
+    ),
+    check(
+      'cold_client_installations_depot_fingerprint_valid',
+      sql`length(${table.generatedDepotFingerprint}) = 64 AND ${table.generatedDepotFingerprint} NOT GLOB '*[^0-9a-f]*'`,
+    ),
+    check(
+      'cold_client_installations_managed_core_files_valid',
+      sql`json_valid(${table.managedCoreFiles}) AND json_type(${table.managedCoreFiles}) = 'array' AND json_array_length(${table.managedCoreFiles}) > 0`,
+    ),
+    check(
+      'cold_client_installations_configured_at_valid',
+      sql`${table.configuredAt} >= 0`,
+    ),
+  ],
+)
+
 export const applicationQueueItems = sqliteTable(
   'application_queue_items',
   {

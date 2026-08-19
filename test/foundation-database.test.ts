@@ -90,6 +90,7 @@ describe('foundation database', () => {
     expect(tables).toContain('depot_keys')
     expect(db.getHubcapApiKey()).toBeNull()
     expect(tables).toContain('library_depot_installs')
+    expect(tables).toContain('cold_client_installations')
     expect(tables).not.toContain('library_depot_selections')
     expect(tables).toContain('settings')
     expect(db.sqlite.query('PRAGMA foreign_keys').get()).toEqual({
@@ -98,6 +99,31 @@ describe('foundation database', () => {
     expect(db.sqlite.query('PRAGMA journal_mode').get()).toEqual({
       journal_mode: 'wal',
     })
+    expect(db.sqlite.query('PRAGMA foreign_key_check').all()).toEqual([])
+  })
+
+  test('adds ColdClient storage without changing populated installation state', async () => {
+    let db = await openDatabaseAtMigration(13)
+    db.addLibraryEntry(10, 1000)
+    db.addManifest(20, '123')
+    db.recordInstalledDepot(10, root!, 20, '123', 2000)
+    db.close()
+    database = undefined
+
+    db = await KalamataDatabase.open(
+      root!,
+      join(import.meta.dir, '..', 'src', 'db', 'migrations'),
+    )
+    database = db
+
+    expect(db.getColdClientInstallations()).toEqual([])
+    expect(db.getLibraryEntry(10)).toMatchObject({ hasInstalledDepots: true })
+    expect(db.getInstalls(10)).toEqual([
+      expect.objectContaining({
+        depotId: 20,
+        installedManifestId: '123',
+      }),
+    ])
     expect(db.sqlite.query('PRAGMA foreign_key_check').all()).toEqual([])
   })
 
