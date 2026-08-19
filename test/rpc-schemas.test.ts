@@ -8,6 +8,7 @@ import {
   rpcResponseSchemas,
   validatedRpcHandlers,
 } from '../src/types/rpc-schemas.ts'
+import type { ColdClientSetupDraft } from '../src/types/cold-client.ts'
 
 test('validates ColdClient dependency requests and secret-free status', () => {
   expect(
@@ -49,6 +50,49 @@ test('validates ColdClient dependency requests and secret-free status', () => {
     rpcResponseSchemas.getColdClientDependencies.parse({
       ...status,
       loginContents: 'secret',
+    }),
+  ).toThrow()
+})
+
+test('validates ColdClient setup inspection drafts', () => {
+  const draft = {
+    appId: 10,
+    targetRelativePath: '_ColdClient',
+    executableCandidates: ['Game/Binaries/Game.exe'],
+    selectedExecutableRelativePath: 'Game/Binaries/Game.exe',
+    executableDetectionSource: 'steam-launch',
+    steamApiCandidates: ['Game/Binaries/steam_api64.dll'],
+    selectedSteamApiRelativePath: 'Game/Binaries/steam_api64.dll',
+    steamApiDetectionSource: 'binary-directory',
+    loaderArchitecture: 'x64',
+    launchOptions: [
+      {
+        key: '0',
+        executable: 'Game/Binaries/Game.exe',
+        matchedExecutableRelativePath: 'Game/Binaries/Game.exe',
+        arguments: '-windowed',
+        description: 'Default',
+      },
+    ],
+    launchArguments: '-windowed',
+    launchArgumentSource: '0',
+    warnings: [],
+    existingColdClient: false,
+    gbe: { assetId: 201, tag: 'gbe-one' },
+    gse: { assetId: 301, tag: 'gse-one' },
+  } satisfies ColdClientSetupDraft
+
+  expect(rpcResponseSchemas.inspectColdClientSetup.parse(draft)).toEqual(draft)
+  expect(() =>
+    rpcResponseSchemas.inspectColdClientSetup.parse({
+      ...draft,
+      selectedExecutableRelativePath: '../outside.exe',
+    }),
+  ).toThrow()
+  expect(() =>
+    rpcResponseSchemas.inspectColdClientSetup.parse({
+      ...draft,
+      launchArgumentSource: '9',
     }),
   ).toThrow()
 })
