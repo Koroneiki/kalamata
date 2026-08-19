@@ -64,7 +64,7 @@ bun run build
 
 1. Update the version in `package.json` and add the release to `CHANGELOG.md`.
 2. Commit and push the release changes.
-3. Run the release workflow manually and test both generated packages.
+3. Run the release workflow manually and test both generated packages. Confirm they contain no GBE, GSE Tools, or 7-Zip binaries, and verify the ColdClient dependency policy in `docs/coldclient-dependencies.md` against the selected upstream releases.
 4. Create and push the matching version tag.
 
 ```sh
