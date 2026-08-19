@@ -143,6 +143,61 @@ test('settings replacement rolls back without touching sibling core files', asyn
   expect(database.current).toEqual(previous)
 })
 
+describe('ColdClient core replacement', () => {
+  test('replaces managed files and preserves configuration and custom files', async () => {
+    const fixture = await createCoreFixture()
+    const database = new FakeDatabase(previous)
+    const replacement = new ColdClientReplacementService(database)
+
+    await replacement.replaceCore({
+      installRoot: fixture.installRoot,
+      stagingDirectory: fixture.staging,
+      previousInstallation: previous,
+      targetInstallation: target,
+      validateLive: async (live) => {
+        expect(await readFile(join(live, 'new.dll'), 'utf8')).toBe('new')
+      },
+    })
+
+    expect(await readFile(join(fixture.live, 'custom.txt'), 'utf8')).toBe(
+      'custom',
+    )
+    expect(
+      await readFile(join(fixture.live, 'ColdClientLoader.ini'), 'utf8'),
+    ).toBe('loader')
+    expect(
+      await readFile(
+        join(fixture.live, 'steam_settings', 'settings.txt'),
+        'utf8',
+      ),
+    ).toBe('settings')
+    await expect(access(join(fixture.live, 'old.dll'))).rejects.toThrow()
+    expect(database.current).toEqual(target)
+  })
+
+  test('restores every managed file when validation fails', async () => {
+    const fixture = await createCoreFixture()
+    const database = new FakeDatabase(previous)
+    const replacement = new ColdClientReplacementService(database)
+
+    await expect(
+      replacement.replaceCore({
+        installRoot: fixture.installRoot,
+        stagingDirectory: fixture.staging,
+        previousInstallation: previous,
+        targetInstallation: target,
+        validateLive: async () => {
+          throw new Error('invalid core')
+        },
+      }),
+    ).rejects.toThrow('invalid core')
+
+    expect(await readFile(join(fixture.live, 'old.dll'), 'utf8')).toBe('old')
+    await expect(access(join(fixture.live, 'new.dll'))).rejects.toThrow()
+    expect(database.current).toEqual(previous)
+  })
+})
+
 describe('ColdClient replacement recovery', () => {
   test('rolls back the filesystem while SQLite has the previous record', async () => {
     const fixture = await createFixture()
@@ -159,7 +214,7 @@ describe('ColdClient replacement recovery', () => {
     )
 
     await expect(
-      replacement.recover(fixture.installRoot, async () => {}),
+      replacement.recover(fixture.installRoot, 10, async () => {}),
     ).resolves.toEqual({ status: 'recovered', direction: 'rollback' })
     expect(
       await readFile(
@@ -184,7 +239,7 @@ describe('ColdClient replacement recovery', () => {
     )
 
     await expect(
-      replacement.recover(fixture.installRoot, async (live) => {
+      replacement.recover(fixture.installRoot, 10, async (live) => {
         expect(await readFile(join(live, 'state.txt'), 'utf8')).toBe('new')
       }),
     ).resolves.toEqual({ status: 'recovered', direction: 'forward' })
@@ -205,6 +260,7 @@ describe('ColdClient replacement recovery', () => {
 
     const result = await replacement.recover(
       fixture.installRoot,
+      10,
       async () => {},
     )
 
@@ -256,12 +312,72 @@ describe('ColdClient replacement recovery', () => {
     )
 
     await expect(
-      replacement.recover(fixture.installRoot, async () => {}),
+      replacement.recover(fixture.installRoot, 10, async () => {}),
     ).resolves.toEqual({ status: 'recovered', direction: 'rollback' })
     expect(await readFile(join(settings, 'state.txt'), 'utf8')).toBe(
       'old settings',
     )
     expect(await readFile(join(live, 'core.dll'), 'utf8')).toBe('core')
+  })
+
+  test('rolls back a partially installed core update from its file ledger', async () => {
+    const fixture = await createCoreFixture()
+    const backup = '.Kalamata-coldclient-core-backup-test'
+    await mkdir(join(fixture.installRoot, backup))
+    await rename(
+      join(fixture.live, 'old.dll'),
+      join(fixture.installRoot, backup, 'old.dll'),
+    )
+    await rename(
+      join(fixture.staging, 'new.dll'),
+      join(fixture.live, 'new.dll'),
+    )
+    await writeCoreJournal(fixture.installRoot, backup)
+    const replacement = new ColdClientReplacementService(
+      new FakeDatabase(previous),
+      { acquireLock: async () => async () => {} },
+    )
+
+    await expect(
+      replacement.recover(fixture.installRoot, 10, async () => {}),
+    ).resolves.toEqual({ status: 'recovered', direction: 'rollback' })
+    expect(await readFile(join(fixture.live, 'old.dll'), 'utf8')).toBe('old')
+    await expect(access(join(fixture.live, 'new.dll'))).rejects.toThrow()
+    expect(await readFile(join(fixture.live, 'custom.txt'), 'utf8')).toBe(
+      'custom',
+    )
+  })
+
+  test('finishes a committed core update and rejects a journal for another app', async () => {
+    const fixture = await createCoreFixture()
+    const backup = '.Kalamata-coldclient-core-backup-test'
+    await mkdir(join(fixture.installRoot, backup))
+    await rename(
+      join(fixture.live, 'old.dll'),
+      join(fixture.installRoot, backup, 'old.dll'),
+    )
+    await rename(
+      join(fixture.staging, 'new.dll'),
+      join(fixture.live, 'new.dll'),
+    )
+    await writeCoreJournal(fixture.installRoot, backup)
+    const replacement = new ColdClientReplacementService(
+      new FakeDatabase(target),
+      { acquireLock: async () => async () => {} },
+    )
+
+    await expect(
+      replacement.recover(fixture.installRoot, 11, async () => {}),
+    ).resolves.toEqual({
+      status: 'invalid',
+      message: 'ColdClient journal AppID changed',
+    })
+    await expect(
+      replacement.recover(fixture.installRoot, 10, async (live) => {
+        expect(await readFile(join(live, 'new.dll'), 'utf8')).toBe('new')
+      }),
+    ).resolves.toEqual({ status: 'recovered', direction: 'forward' })
+    await expect(access(join(fixture.installRoot, backup))).rejects.toThrow()
   })
 })
 
@@ -297,6 +413,29 @@ async function createFixture() {
   await writeFile(join(staging, 'state.txt'), 'new')
   return {
     installRoot: await realpath(installRoot),
+    staging: await realpath(staging),
+  }
+}
+
+async function createCoreFixture() {
+  root = await mkdtemp(join(tmpdir(), 'kalamata-coldclient-core-replacement-'))
+  const installRoot = join(root, 'game')
+  const live = join(installRoot, '_ColdClient')
+  const staging = join(installRoot, '.Kalamata-coldclient-core-staging-test')
+  await Promise.all([
+    mkdir(join(live, 'steam_settings'), { recursive: true }),
+    mkdir(staging, { recursive: true }),
+  ])
+  await Promise.all([
+    writeFile(join(live, 'old.dll'), 'old'),
+    writeFile(join(live, 'custom.txt'), 'custom'),
+    writeFile(join(live, 'ColdClientLoader.ini'), 'loader'),
+    writeFile(join(live, 'steam_settings', 'settings.txt'), 'settings'),
+    writeFile(join(staging, 'new.dll'), 'new'),
+  ])
+  return {
+    installRoot: await realpath(installRoot),
+    live,
     staging: await realpath(staging),
   }
 }
@@ -341,6 +480,41 @@ async function writeSettingsJournal(
       stagingRelativePath: '.Kalamata-coldclient-settings-staging-test',
       backupRelativePath: backup,
       affectedFiles: [{ path: '_ColdClient/steam_settings', existed: true }],
+    }),
+  )
+}
+
+async function writeCoreJournal(
+  installRoot: string,
+  backup: string,
+): Promise<void> {
+  await mkdir(join(installRoot, '.Kalamata'), { recursive: true })
+  await writeFile(
+    replacementJournalPath(installRoot),
+    JSON.stringify({
+      version: 1,
+      kind: 'update-core',
+      appId: 10,
+      installRoot,
+      previousInstallation: previous,
+      targetInstallation: target,
+      liveRelativePath: '_ColdClient',
+      stagingRelativePath: '.Kalamata-coldclient-core-staging-test',
+      backupRelativePath: backup,
+      affectedFiles: [
+        {
+          path: 'old.dll',
+          existed: true,
+          previousPath: 'old.dll',
+          targetPath: null,
+        },
+        {
+          path: 'new.dll',
+          existed: false,
+          previousPath: null,
+          targetPath: 'new.dll',
+        },
+      ],
     }),
   )
 }

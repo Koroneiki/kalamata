@@ -9,6 +9,7 @@ import type {
 } from '../../types/cold-client.ts'
 import { coldClientSetupRequestSchema } from '../../types/cold-client.ts'
 import { acquireOutputLock } from '../depot/install/output-lock.ts'
+import { filesystemErrorCode } from '../depot/install/transaction/types.ts'
 import type { ArtifactDescriptor } from './dependency-schema.ts'
 import { coldClientDepotFingerprint } from './depot-fingerprint.ts'
 import type { GeneratedGseConfiguration } from './generator.ts'
@@ -18,6 +19,7 @@ import {
 } from './ini.ts'
 import {
   assertRequiredManagedCoreFiles,
+  assertCoreUpdateOwnership,
   collectManagedCoreFiles,
 } from './managed-inventory.ts'
 import type { ColdClientOperationContext } from './operation-coordinator.ts'
@@ -66,7 +68,7 @@ interface InterfaceGeneratorProvider {
 
 interface OperationProvider {
   run<Result>(
-    kind: 'setup' | 'regenerate',
+    kind: 'setup' | 'regenerate' | 'update-core',
     appId: number,
     operation: (context: ColdClientOperationContext) => Promise<Result>,
   ): Promise<Result>
@@ -87,9 +89,17 @@ interface ReplacementProvider {
     targetInstallation: ColdClientInstallation
     validateLive(directory: string): Promise<void>
   }): Promise<void>
+  replaceCore(options: {
+    installRoot: string
+    stagingDirectory: string
+    previousInstallation: ColdClientInstallation
+    targetInstallation: ColdClientInstallation
+    validateLive(directory: string): Promise<void>
+  }): Promise<void>
   hasJournal(installRoot: string): Promise<boolean>
   recover(
     installRoot: string,
+    expectedAppId: number,
     validateLive: (directory: string) => Promise<void>,
   ): Promise<
     | { status: 'none' }
@@ -263,6 +273,101 @@ export class ColdClientService {
     })
   }
 
+  updateCore(appId: number): Promise<ColdClientStatus> {
+    return this.operations.run('update-core', appId, async (context) => {
+      const previous = this.database.getColdClientInstallation(appId)
+      if (!previous) throw new Error('ColdClient is not configured')
+      const library = requireInstalledLibrary(this.database, appId)
+      const installRoot = await realpath(library.installPath)
+      const activeGbe = this.dependencies.activeArtifact('gbe')
+      if (!activeGbe || activeGbe.assetId === previous.gbeAssetId) {
+        throw new Error('No ColdClient core update is available')
+      }
+      const gbe = await this.dependencies.validateArtifactSnapshot(
+        'gbe',
+        activeGbe.assetId,
+      )
+      const release = await this.#acquireLock(installRoot)
+      let stagingDirectory: string | undefined
+      try {
+        const currentLibrary = requireInstalledLibrary(this.database, appId)
+        if ((await realpath(currentLibrary.installPath)) !== installRoot) {
+          throw new Error('The game install path changed during core update')
+        }
+        const current = this.database.getColdClientInstallation(appId)
+        if (!sameInstallation(current, previous)) {
+          throw new Error('ColdClient changed during core update')
+        }
+        if (
+          this.dependencies.activeArtifact('gbe')?.assetId !== activeGbe.assetId
+        ) {
+          throw new Error(
+            'The active GBE dependency changed during core update',
+          )
+        }
+        await this.dependencies.validateArtifactSnapshot(
+          'gbe',
+          activeGbe.assetId,
+        )
+        context.signal.throwIfAborted()
+        stagingDirectory = join(
+          installRoot,
+          `.Kalamata-coldclient-core-staging-${randomUUID()}`,
+        )
+        await cp(
+          join(gbe.directory, 'release', 'steamclient_experimental'),
+          stagingDirectory,
+          { recursive: true, errorOnExist: true, force: false },
+        )
+        const unusedLoader =
+          previous.loaderArchitecture === 'x86'
+            ? 'steamclient_loader_x64.exe'
+            : 'steamclient_loader_x86.exe'
+        await Promise.all([
+          rm(join(stagingDirectory, unusedLoader), { force: true }),
+          rm(join(stagingDirectory, 'ColdClientLoader.ini'), { force: true }),
+          rm(join(stagingDirectory, 'steam_settings'), {
+            recursive: true,
+            force: true,
+          }),
+        ])
+        const managedCoreFiles = await collectManagedCoreFiles(stagingDirectory)
+        assertRequiredManagedCoreFiles(
+          managedCoreFiles,
+          previous.loaderArchitecture,
+        )
+        await assertCoreUpdateOwnership(
+          join(installRoot, '_ColdClient'),
+          previous.managedCoreFiles,
+          managedCoreFiles,
+        )
+        const target: ColdClientInstallation = {
+          ...previous,
+          gbeAssetId: activeGbe.assetId,
+          managedCoreFiles,
+        }
+        context.beginReplacement()
+        await this.replacement.replaceCore({
+          installRoot,
+          stagingDirectory,
+          previousInstallation: previous,
+          targetInstallation: target,
+          validateLive: async (live) => {
+            context.setPhase('validating')
+            await validateCoreUpdateLive(live, previous, target)
+          },
+        })
+        stagingDirectory = undefined
+      } finally {
+        if (stagingDirectory) {
+          await rm(stagingDirectory, { recursive: true, force: true })
+        }
+        await release()
+      }
+      return this.getStatus(appId)
+    })
+  }
+
   async getStatus(appId: number): Promise<ColdClientStatus> {
     if (this.#platform !== 'win32') {
       return { status: 'unsupported', reason: 'host-platform' }
@@ -326,7 +431,7 @@ export class ColdClientService {
   }
 
   async recover(appId: number, installRoot: string) {
-    return this.replacement.recover(installRoot, async () => {
+    return this.replacement.recover(installRoot, appId, async () => {
       const installation = this.database.getColdClientInstallation(appId)
       if (!installation) {
         throw new Error('Committed ColdClient installation record is missing')
@@ -609,10 +714,45 @@ async function validateInstalledCore(
   }
 }
 
+async function validateCoreUpdateLive(
+  root: string,
+  previous: ColdClientInstallation,
+  target: ColdClientInstallation,
+): Promise<void> {
+  for (const path of target.managedCoreFiles) {
+    await assertRegularFile(join(root, ...path.split('/')), path)
+  }
+  const targetKeys = new Set(
+    target.managedCoreFiles.map((path) => path.toLowerCase()),
+  )
+  for (const path of previous.managedCoreFiles) {
+    if (targetKeys.has(path.toLowerCase())) continue
+    if (await lstatOrNull(join(root, ...path.split('/')))) {
+      throw new Error(`Removed ColdClient core file remains: ${path}`)
+    }
+  }
+  await assertRegularFile(
+    join(root, 'ColdClientLoader.ini'),
+    'ColdClientLoader.ini',
+  )
+  for (const path of requiredSettingsFiles) {
+    await assertRegularFile(join(root, 'steam_settings', path), path)
+  }
+}
+
 async function assertRegularFile(path: string, label: string): Promise<void> {
   const metadata = await lstat(path)
   if (!metadata.isFile() || metadata.isSymbolicLink()) {
     throw new Error(`ColdClient installation is missing ${label}`)
+  }
+}
+
+async function lstatOrNull(path: string) {
+  try {
+    return await lstat(path)
+  } catch (error) {
+    if (filesystemErrorCode(error) === 'ENOENT') return null
+    throw error
   }
 }
 
