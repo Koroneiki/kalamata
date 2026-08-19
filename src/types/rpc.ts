@@ -1,6 +1,8 @@
 import type {
+  CancelColdClientOperationResult,
   ColdClientDependencyId,
   ColdClientDependencyStatus,
+  ColdClientOperationSnapshot,
   ColdClientSetupDraft,
 } from './cold-client.ts'
 
@@ -406,6 +408,14 @@ export type AppRpc = {
         params: { appId: number }
         response: ColdClientSetupDraft
       }
+      getColdClientOperation: {
+        params: Record<string, never>
+        response: ColdClientOperationSnapshot
+      }
+      cancelColdClientOperation: {
+        params: { appId: number }
+        response: CancelColdClientOperationResult
+      }
       addLibraryEntry: {
         params: { appId: number }
         response: LibraryEntry
@@ -477,6 +487,7 @@ export type AppRpc = {
     requests: Record<never, never>
     messages: {
       downloadQueueChanged: DownloadQueueSnapshot
+      coldClientOperationChanged: ColdClientOperationSnapshot
     }
   }
 }

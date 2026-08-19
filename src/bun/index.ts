@@ -9,6 +9,7 @@ import { createSteamService } from '../backend/index.ts'
 import { AppService } from '../backend/apps/app-service.ts'
 import { ColdClientDependencyService } from '../backend/cold-client/dependency-service.ts'
 import { ColdClientMutationMutex } from '../backend/cold-client/mutation-mutex.ts'
+import { ColdClientOperationCoordinator } from '../backend/cold-client/operation-coordinator.ts'
 import { ColdClientGameInspector } from '../backend/cold-client/game-inspector.ts'
 import { DownloadQueueCoordinator } from '../backend/operations/download-queue.ts'
 import {
@@ -63,6 +64,12 @@ void steam.initializeDepotKeyCache(database).catch((error) => {
 })
 const appService = new AppService(steam, database)
 const coldClientMutex = new ColdClientMutationMutex()
+const coldClientOperations = new ColdClientOperationCoordinator(
+  coldClientMutex,
+  (snapshot) => {
+    if (rpcReady) rpc.send.coldClientOperationChanged(snapshot)
+  },
+)
 const coldClientDependencies = new ColdClientDependencyService(
   Utils.paths.userData,
   {
@@ -158,6 +165,12 @@ const rpc = BrowserView.defineRPC<AppRpc>({
       },
       inspectColdClientSetup({ appId }) {
         return coldClientInspector.inspect(appId)
+      },
+      getColdClientOperation() {
+        return coldClientOperations.getSnapshot()
+      },
+      cancelColdClientOperation({ appId }) {
+        return coldClientOperations.cancel(appId)
       },
       addLibraryEntry({ appId }) {
         return database.addLibraryEntry(appId)
@@ -265,13 +278,24 @@ Electrobun.events.on(
     void (async () => {
       try {
         await startup.catch(() => {})
-        await queue.shutdown()
-        await coldClientDependencies.shutdown()
-        await steam.shutdownManifestAcquisitions()
-        await steam.shutdownDepotKeyAcquisitions()
+        const results = await Promise.allSettled([
+          queue.shutdown(),
+          coldClientOperations.shutdown(),
+          coldClientDependencies.shutdown(),
+          steam.shutdownManifestAcquisitions(),
+          steam.shutdownDepotKeyAcquisitions(),
+        ])
+        const failures = results
+          .filter((result) => result.status === 'rejected')
+          .map((result) => result.reason)
+        if (failures.length > 0)
+          throw new AggregateError(failures, 'Service shutdown failed')
       } finally {
-        steam.dispose()
-        database.close()
+        try {
+          steam.dispose()
+        } finally {
+          database.close()
+        }
       }
       diagnostics.info({ event: 'app.shutdown-completed' })
       allowQuit = true

@@ -11,6 +11,8 @@ import {
   coldClientDependencyIdSchema,
   coldClientDetectionSourceSchema,
   coldClientLoaderArchitectureSchema,
+  coldClientOperationKinds,
+  coldClientOperationPhases,
   coldClientRelativePathSchema,
   coldClientSetupWarningSchema,
 } from './cold-client.ts'
@@ -127,6 +129,19 @@ const coldClientSetupDraftSchema = strict({
     ctx.addIssue({ code: 'custom', message: 'Draft values must be unique' })
   }
 })
+export const coldClientOperationSnapshotSchema = z.discriminatedUnion(
+  'status',
+  [
+    strict({ status: z.literal('idle') }),
+    strict({
+      status: z.literal('active'),
+      appId: steamIdSchema,
+      kind: z.enum(coldClientOperationKinds),
+      phase: z.enum(coldClientOperationPhases),
+      cancellable: z.boolean(),
+    }),
+  ],
+)
 const manifestTargetSchema = strict({
   depotId: steamIdSchema,
   manifestId: manifestIdSchema,
@@ -386,6 +401,8 @@ const rpcRequestSchemas = {
   }),
   openColdClientLoginDirectory: emptySchema,
   inspectColdClientSetup: idRequestSchema,
+  getColdClientOperation: emptySchema,
+  cancelColdClientOperation: idRequestSchema,
   addLibraryEntry: idRequestSchema,
   removeLibraryEntry: idRequestSchema,
   setDepotPinned: strict({
@@ -442,6 +459,14 @@ export const rpcResponseSchemas = {
   updateColdClientDependencies: coldClientDependencyStatusSchema,
   openColdClientLoginDirectory: z.void(),
   inspectColdClientSetup: coldClientSetupDraftSchema,
+  getColdClientOperation: coldClientOperationSnapshotSchema,
+  cancelColdClientOperation: z.discriminatedUnion('accepted', [
+    acceptedResultSchema,
+    strict({
+      accepted: z.literal(false),
+      reason: z.enum(['no-active-operation', 'replacement-in-progress']),
+    }),
+  ]),
   addLibraryEntry: libraryEntrySchema,
   removeLibraryEntry: z.void(),
   setDepotPinned: z.void(),
