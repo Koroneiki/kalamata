@@ -36,6 +36,12 @@ type ErrorDiagnostic =
   | { event: 'cold-client-dependencies.initialization-failed'; error: Error }
   | { event: 'cold-client-dependencies.cleanup-failed'; error: Error }
   | { event: 'cold-client-replacement.cleanup-failed'; error: Error }
+  | {
+      event: 'cold-client-operation.failed'
+      error: Error
+      appId: number
+      kind: string
+    }
   | { event: 'operation.failed'; error: Error; appId: number; kind: string }
   | { event: 'app.shutdown-failed'; error: Error }
   | { event: 'recovery.failed'; error: Error; appId: number }

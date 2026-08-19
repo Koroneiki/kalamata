@@ -24,15 +24,24 @@ interface ActiveOperation {
 export class ColdClientOperationCoordinator {
   readonly #mutex: ColdClientMutationMutex
   readonly #emit: (snapshot: ColdClientOperationSnapshot) => void
+  readonly #reportFailure: (
+    error: Error,
+    context: { appId: number; kind: ColdClientOperationKind },
+  ) => void
   #active: ActiveOperation | undefined
   #accepting = true
 
   constructor(
     mutex: ColdClientMutationMutex,
     emit: (snapshot: ColdClientOperationSnapshot) => void = () => {},
+    reportFailure: (
+      error: Error,
+      context: { appId: number; kind: ColdClientOperationKind },
+    ) => void = () => {},
   ) {
     this.#mutex = mutex
     this.#emit = emit
+    this.#reportFailure = reportFailure
   }
 
   getSnapshot(): ColdClientOperationSnapshot {
@@ -94,6 +103,15 @@ export class ColdClientOperationCoordinator {
           setPhase,
           beginReplacement,
         })
+      })
+      .catch((error) => {
+        if (!active.abortController.signal.aborted) {
+          this.#reportFailure(
+            error instanceof Error ? error : new Error(String(error)),
+            { appId, kind },
+          )
+        }
+        throw error
       })
       .finally(() => {
         if (this.#active !== active) return

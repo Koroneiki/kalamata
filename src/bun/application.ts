@@ -73,6 +73,12 @@ const coldClientOperations = new ColdClientOperationCoordinator(
   (snapshot) => {
     if (rpcReady) rpc.send.coldClientOperationChanged(snapshot)
   },
+  (error, context) =>
+    diagnostics.error({
+      event: 'cold-client-operation.failed',
+      error,
+      ...context,
+    }),
 )
 const coldClientDependencies = new ColdClientDependencyService(
   Utils.paths.userData,

@@ -123,3 +123,22 @@ test('does not cancel after replacement begins', async () => {
   await operation
   await shutdown
 })
+
+test('reports operation failures with app context', async () => {
+  const failures: Array<{ error: Error; appId: number; kind: string }> = []
+  const coordinator = new ColdClientOperationCoordinator(
+    new ColdClientMutationMutex(),
+    () => {},
+    (error, context) => failures.push({ error, ...context }),
+  )
+
+  await expect(
+    coordinator.run('update-core', 10, async () => {
+      throw new Error('core failed')
+    }),
+  ).rejects.toThrow('core failed')
+
+  expect(failures).toMatchObject([
+    { error: { message: 'core failed' }, appId: 10, kind: 'update-core' },
+  ])
+})
