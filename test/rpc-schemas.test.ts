@@ -1,6 +1,7 @@
 import { expect, mock, test } from 'bun:test'
 import {
   availableUpdateResultSchema,
+  coldClientOperationSnapshotSchema,
   downloadQueueSnapshotSchema,
   hubcapUsageSchema,
   operationStateSchema,
@@ -93,6 +94,30 @@ test('validates ColdClient setup inspection drafts', () => {
     rpcResponseSchemas.inspectColdClientSetup.parse({
       ...draft,
       launchArgumentSource: '9',
+    }),
+  ).toThrow()
+})
+
+test('validates secret-free ColdClient operation snapshots', () => {
+  const snapshot = {
+    status: 'active',
+    appId: 10,
+    kind: 'setup',
+    phase: 'waiting-for-generator',
+    cancellable: true,
+  } as const
+
+  expect(coldClientOperationSnapshotSchema.parse(snapshot)).toEqual(snapshot)
+  expect(rpcResponseSchemas.getColdClientOperation.parse(snapshot)).toEqual(
+    snapshot,
+  )
+  expect(parseRpcRequest('cancelColdClientOperation', { appId: 10 })).toEqual({
+    appId: 10,
+  })
+  expect(() =>
+    coldClientOperationSnapshotSchema.parse({
+      ...snapshot,
+      consoleOutput: 'secret',
     }),
   ).toThrow()
 })

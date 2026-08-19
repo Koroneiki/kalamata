@@ -153,3 +153,36 @@ export interface ColdClientSetupDraft {
   gbe: ColdClientSetupDependency
   gse: ColdClientSetupDependency
 }
+
+export const coldClientOperationKinds = [
+  'setup',
+  'regenerate',
+  'update-core',
+] as const
+export type ColdClientOperationKind = (typeof coldClientOperationKinds)[number]
+
+export const coldClientOperationPhases = [
+  'waiting-for-generator',
+  'building',
+  'replacing',
+  'validating',
+] as const
+export type ColdClientOperationPhase =
+  (typeof coldClientOperationPhases)[number]
+
+export type ColdClientOperationSnapshot =
+  | { status: 'idle' }
+  | {
+      status: 'active'
+      appId: number
+      kind: ColdClientOperationKind
+      phase: ColdClientOperationPhase
+      cancellable: boolean
+    }
+
+export type CancelColdClientOperationResult =
+  | { accepted: true }
+  | {
+      accepted: false
+      reason: 'no-active-operation' | 'replacement-in-progress'
+    }

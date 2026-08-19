@@ -22,3 +22,11 @@ export function openColdClientLoginDirectory() {
 export function inspectColdClientSetup(appId: number) {
   return request('inspectColdClientSetup', { appId })
 }
+
+export function getColdClientOperation() {
+  return request('getColdClientOperation', {})
+}
+
+export function cancelColdClientOperation(appId: number) {
+  return request('cancelColdClientOperation', { appId })
+}
