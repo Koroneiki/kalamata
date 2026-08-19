@@ -17,7 +17,11 @@ import {
   getDownloadQueueMessageSequence,
   subscribeToDownloadQueue,
 } from '@/api/transport'
-import { appQueryKeys, libraryQueryKey } from '@/composables/queries'
+import {
+  appQueryKeys,
+  coldClientQueryKeys,
+  libraryQueryKey,
+} from '@/composables/queries'
 import { useDepotOperationDraftStore } from '@/stores/depot-operation-drafts'
 import type {
   DownloadQueueSnapshot,
@@ -60,6 +64,10 @@ export const useOperationStore = defineStore('operation', () => {
       }),
       queryCache.invalidateQueries({
         key: appQueryKeys.summary(appId),
+        exact: true,
+      }),
+      queryCache.invalidateQueries({
+        key: coldClientQueryKeys.status(appId),
         exact: true,
       }),
     ])
