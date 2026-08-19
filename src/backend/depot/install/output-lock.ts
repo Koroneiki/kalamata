@@ -17,9 +17,10 @@ export async function acquireOutputLock(
     database.exec('PRAGMA busy_timeout = 0; BEGIN EXCLUSIVE;')
   } catch (error) {
     database?.close(false)
-    throw new Error(`Another download is already using ${outputDirectory}`, {
-      cause: error,
-    })
+    throw new Error(
+      `Another install-path operation is already using ${outputDirectory}`,
+      { cause: error },
+    )
   }
   let released = false
   return async () => {

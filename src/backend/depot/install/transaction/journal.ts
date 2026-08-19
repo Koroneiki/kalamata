@@ -1,14 +1,5 @@
-import { randomUUID } from 'node:crypto'
-import {
-  lstat,
-  mkdir,
-  open,
-  readFile,
-  readdir,
-  rename,
-  rm,
-} from 'node:fs/promises'
-import { dirname, join, resolve } from 'node:path'
+import { lstat, readFile, readdir, rm } from 'node:fs/promises'
+import { join, resolve } from 'node:path'
 import { z } from 'zod'
 import { CONFIG_DIRECTORY } from '../internal-paths.ts'
 import { resolveManifestPath } from '../filesystem.ts'
@@ -28,6 +19,7 @@ import {
   stagedFileLayout,
   sumProjectionFiles,
 } from './projection.ts'
+import { writeDurableJson } from '../../../filesystem/durable-json.ts'
 import {
   ApplicationTransactionError,
   filesystemErrorCode,
@@ -181,31 +173,7 @@ export async function writeJournal(
   path: string,
   journal: TransactionJournal,
 ): Promise<void> {
-  const temporary = `${path}.${randomUUID()}.tmp`
-  await mkdir(dirname(path), { recursive: true })
-  const contents = `${JSON.stringify(journal, null, 2)}\n`
-  try {
-    const handle = await open(temporary, 'wx')
-    try {
-      await handle.writeFile(contents)
-      await handle.sync()
-    } finally {
-      await handle.close()
-    }
-    await rename(temporary, path)
-    // Windows cannot reliably open directories for fsync. The journal file is
-    // still flushed above; sync the directory entry where the OS supports it.
-    if (process.platform !== 'win32') {
-      const directory = await open(dirname(path), 'r')
-      try {
-        await directory.sync()
-      } finally {
-        await directory.close()
-      }
-    }
-  } finally {
-    await rm(temporary, { force: true })
-  }
+  await writeDurableJson(path, journal)
 }
 
 export async function readJournal(path: string): Promise<TransactionJournal> {
