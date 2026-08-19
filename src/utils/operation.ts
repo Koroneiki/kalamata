@@ -10,12 +10,3 @@ export function operationCompletionMessage(
   if (kind === 'reconcile') return 'Finished updating'
   return 'Files have been verified'
 }
-
-export function operationLabel(
-  kind: OperationKind,
-  desiredDepotIds: number[],
-): string {
-  if (kind === 'reconcile')
-    return desiredDepotIds.length === 0 ? 'Uninstall' : 'Update'
-  return kind === 'download' ? 'Install' : 'Verify'
-}

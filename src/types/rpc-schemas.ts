@@ -229,7 +229,7 @@ const libraryEntrySchema = strict({
 })
 const acceptedResultSchema = strict({ accepted: z.literal(true) })
 
-export const rpcRequestSchemas = {
+const rpcRequestSchemas = {
   getAppSummary: idRequestSchema,
   getAppDetails: idRequestSchema,
   checkAvailableUpdate: idRequestSchema,

@@ -115,6 +115,10 @@ Put route guards in `src/router`. Keep API or Electrobun RPC calls in `src/api`,
 - Add focused tests for risky behavior and check changed UI at desktop and narrow widths.
 - Keep ignores narrow and explained. The existing health report may exit nonzero; reject new or worse findings in modified paths.
 
+## Testing
+
+Test durable behavioral contracts from the product specification. Do not add tests that only confirm code exists, duplicate type checking, lock down UI copy or presentation details, assert dependency call shapes, or reproduce external-provider responses. Test adapters at our boundary without treating a provider's current payload as our contract.
+
 ## Commands
 
 ```sh

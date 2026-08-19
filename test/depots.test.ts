@@ -2,7 +2,6 @@ import { expect, test } from 'bun:test'
 
 import type { AppDepot, EligibleAppDepot } from '../src/types/rpc.ts'
 import {
-  depotBadges,
   filterDepots,
   matchesDepotPlatform,
   summarizeDepots,
@@ -55,51 +54,6 @@ test('does not understate unknown sizes and summarizes non-ready resources', () 
     sizeBytes: null,
     missing: true,
   })
-})
-
-test('omits ready resources while preserving precise problem and install badges', () => {
-  expect(
-    depotBadges(
-      depot(1, {
-        platform: 'windows, linux',
-        language: 'english',
-        manifestStatus: 'invalid',
-        keyStatus: 'missing',
-        installStatus: 'outdated',
-      }),
-    ).map(({ label }) => label),
-  ).toEqual([
-    'windows',
-    'linux',
-    'english',
-    'Manifest invalid',
-    'Key missing',
-    'Update available',
-  ])
-})
-
-test('redistributables expose restrictions without resource badges', () => {
-  const redistributable: AppDepot = {
-    depotId: 228981,
-    mountIndex: 0,
-    ownerAppId: 10,
-    ownerAppName: null,
-    group: 'Steamworks Common Redistributables',
-    platform: 'windows',
-    language: null,
-    manifestId: '100',
-    sizeBytes: '1024',
-    downloadBytes: '512',
-    eligible: false,
-    manifestStatus: null,
-    keyStatus: null,
-    installStatus: null,
-    selectable: false,
-  }
-
-  expect(depotBadges(redistributable)).toEqual([
-    { label: 'windows', variant: 'outline' },
-  ])
 })
 
 test('filters restricted and redistributable depots using settings', () => {

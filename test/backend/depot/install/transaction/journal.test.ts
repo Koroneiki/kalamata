@@ -2,10 +2,7 @@ import { afterEach, expect, test } from 'bun:test'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import {
-  readJournal,
-  writeJournal,
-} from '../../../../../src/backend/depot/install/transaction/journal.ts'
+import { readJournal } from '../../../../../src/backend/depot/install/transaction/journal.ts'
 import type { TransactionJournal } from '../../../../../src/backend/depot/install/transaction/types.ts'
 
 let directory: string | undefined
@@ -23,15 +20,6 @@ test('parses and normalizes a valid transaction journal', async () => {
   expect(journal.source[0]?.pinned).toBe(false)
   expect(journal.desired[0]?.pinned).toBe(false)
   expect(journal.estimatedDownloadBytes).toBe('7')
-})
-
-test('atomically writes a transaction journal', async () => {
-  directory = await mkdtemp(join(tmpdir(), 'transaction-journal-'))
-  const path = join(directory, 'nested', 'journal.json')
-
-  await writeJournal(path, validJournal())
-
-  expect(await readJournal(path)).toMatchObject(validJournal())
 })
 
 test('rejects a structurally unsafe transaction journal', async () => {

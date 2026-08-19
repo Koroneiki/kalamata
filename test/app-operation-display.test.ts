@@ -2,10 +2,7 @@ import { expect, test } from 'bun:test'
 import { createPinia, setActivePinia } from 'pinia'
 import { reactive, ref } from 'vue'
 
-import {
-  mergeOperationProgress,
-  remainingOperationVisibility,
-} from '../src/composables/use-app-operation-display.ts'
+import { mergeOperationProgress } from '../src/composables/use-app-operation-display.ts'
 import { useCustomManifest } from '../src/composables/use-custom-manifest.ts'
 import {
   normalizeDepotDraftEdit,
@@ -16,7 +13,6 @@ import {
   isAppInDownloads,
   resolveAcceptedDesiredDepotIds,
 } from '../src/utils/depot-operation.ts'
-import { operationLabel } from '../src/utils/operation.ts'
 import type {
   ActiveOperationState,
   EligibleAppDepot,
@@ -120,21 +116,6 @@ test('download estimates can decrease after local reuse is verified', () => {
       displayed,
     ).estimatedDownloadBytes,
   ).toBe('500')
-})
-
-test('operation labels distinguish install, update, uninstall, and verify', () => {
-  expect(operationLabel('download', [1])).toBe('Install')
-  expect(operationLabel('reconcile', [1])).toBe('Update')
-  expect(operationLabel('reconcile', [])).toBe('Uninstall')
-  expect(operationLabel('repair', [])).toBe('Verify')
-})
-
-test('completed operation remains visible for three seconds in total', () => {
-  expect(remainingOperationVisibility(1_000, 1_500)).toBe(2_500)
-})
-
-test('completed operation remains visible for at least one second', () => {
-  expect(remainingOperationVisibility(1_000, 5_000)).toBe(1_000)
 })
 
 test('depot operation drafts retain order and clear targets on deselection', () => {

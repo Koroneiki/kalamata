@@ -4,16 +4,8 @@ import {
   downloadQueueSnapshotSchema,
   operationStateSchema,
   parseRpcRequest,
-  rpcRequestSchemas,
-  rpcResponseSchemas,
   validatedRpcHandlers,
 } from '../src/types/rpc-schemas.ts'
-
-test('defines request and response schemas for every RPC method', () => {
-  expect(Object.keys(rpcRequestSchemas).sort()).toEqual(
-    Object.keys(rpcResponseSchemas).sort(),
-  )
-})
 
 test('validates complete download queue snapshots', () => {
   expect(
@@ -64,42 +56,6 @@ test('validates RPC parameters before invoking a handler', () => {
 
   expect(() => handlers.getAppSummary({ appId: 0 })).toThrow()
   expect(getAppSummary).not.toHaveBeenCalled()
-})
-
-test('accepts unavailable depots in app details', () => {
-  expect(
-    rpcResponseSchemas.getAppDetails.parse({
-      appId: 10,
-      name: 'Game',
-      developers: [],
-      publishers: [],
-      releaseDate: null,
-      iconUrls: [],
-      artworkUrl: null,
-      inLibrary: false,
-      installPath: null,
-      installedDepotIds: [],
-      depots: [
-        {
-          depotId: 11,
-          mountIndex: 0,
-          ownerAppId: 10,
-          ownerAppName: null,
-          group: 'Unavailable',
-          platform: null,
-          language: null,
-          manifestId: '1',
-          sizeBytes: '1',
-          downloadBytes: '1',
-          eligible: false,
-          manifestStatus: null,
-          keyStatus: null,
-          installStatus: null,
-          selectable: false,
-        },
-      ],
-    }).depots[0]?.group,
-  ).toBe('Unavailable')
 })
 
 test('rejects unknown fields and malformed operation states', () => {

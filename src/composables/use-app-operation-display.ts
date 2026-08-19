@@ -76,10 +76,7 @@ export function mergeOperationProgress(
   }
 }
 
-export function remainingOperationVisibility(
-  visibleSince: number,
-  now: number,
-) {
+function remainingOperationVisibility(visibleSince: number, now: number) {
   return Math.max(1_000, 3_000 - (now - visibleSince))
 }
 

@@ -315,28 +315,6 @@ test('queueDepotUpdate preserves installs when a manifest is malformed', async (
   expect(reconcileApplication).not.toHaveBeenCalled()
 })
 
-test('queueDepotUpdate checks Steam metadata when the selection is unchanged', async () => {
-  const fixture = await setup()
-  await install(fixture, DEPOTS[0])
-  const getProductInfoWithDlc = mock(async () => products())
-  const queue = new DownloadQueueCoordinator(
-    {
-      getProductInfoWithDlc,
-      reconcileApplication: successfulReconciliation,
-    },
-    fixture.database,
-  )
-
-  await queue.queueDepotUpdate({
-    appId: APP_ID,
-    desiredDepotIds: [DEPOTS[0].depotId],
-  })
-  await waitForTerminal(queue)
-
-  expect(getProductInfoWithDlc).toHaveBeenCalledTimes(1)
-  expect(queue.getOperationState().status).toBe('completed')
-})
-
 test('startDownload is additive and preserves an omitted installed manifest', async () => {
   const fixture = await setup()
   await install(fixture, DEPOTS[1])
