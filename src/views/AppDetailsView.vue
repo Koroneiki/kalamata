@@ -18,6 +18,8 @@ import {
   libraryQueryKey,
   useSettingsQuery,
   useColdClientDependenciesQuery,
+  useColdClientStatusQuery,
+  coldClientQueryKeys,
 } from '@/composables/queries'
 import { useFallbackImage } from '@/composables/use-fallback-image'
 import { useAppOperationDisplay } from '@/composables/use-app-operation-display'
@@ -35,6 +37,7 @@ import {
   useDepotOperationDraftStore,
 } from '@/stores/depot-operation-drafts'
 import { useOperationStore } from '@/stores/operation'
+import { useColdClientOperationStore } from '@/stores/cold-client-operation'
 import type { AppDepot } from '@/types/rpc'
 import { filterDepots, matchesDepotPlatform } from '@/utils/depots'
 
@@ -43,6 +46,7 @@ import { steamIdStringSchema } from '@/types/schemas'
 const route = useRoute()
 const router = useRouter()
 const operation = useOperationStore()
+const coldClientOperation = useColdClientOperationStore()
 const availableUpdates = useAvailableUpdates()
 const depotDrafts = useDepotOperationDraftStore()
 const resourceAcquisition = useDepotResourceAcquisition()
@@ -64,6 +68,8 @@ const parsedAppId = computed(() =>
 const appId = computed(() =>
   parsedAppId.value.success ? parsedAppId.value.data : 0,
 )
+const { data: coldClientStatus, refetch: refetchColdClientStatus } =
+  useColdClientStatusQuery(appId)
 const validAppId = computed(() => parsedAppId.value.success)
 
 const { data, error, isPending, refetch } = useQuery(() => ({
@@ -302,6 +308,13 @@ const repairRequiredForApp = computed(() =>
 const globalOperationBusy = computed(
   () => operationBusy.value && !repairRequiredForApp.value,
 )
+const coldClientOperationForApp = computed(() => {
+  const state = coldClientOperation.state
+  return state.status === 'active' && state.appId === appId.value ? state : null
+})
+const coldClientMutationBusy = computed(
+  () => coldClientOperation.state.status === 'active',
+)
 const hasLocalInstallationActions = computed(
   () => hasInstalledDepots.value || repairRequiredForApp.value,
 )
@@ -377,6 +390,14 @@ function openColdClientSetup() {
     return
   }
   coldClientSetupOpen.value = true
+}
+
+async function coldClientConfigured() {
+  await queryCache.invalidateQueries({
+    key: coldClientQueryKeys.status(appId.value),
+    exact: true,
+  })
+  await refetchColdClientStatus()
 }
 
 async function removeFromLibrary() {
@@ -700,7 +721,10 @@ async function browseLocalFiles() {
             :app-id="data.appId"
             :app-name="data.name"
             :install-path="data.installPath"
+            :operation-phase="coldClientOperationForApp?.phase"
+            :operation-cancellable="coldClientOperationForApp?.cancellable"
             @update:open="coldClientSetupOpen = $event"
+            @configured="coldClientConfigured"
           />
         </template>
 
@@ -720,11 +744,9 @@ async function browseLocalFiles() {
           :app-name="data.name"
           :verify-disabled="globalOperationBusy"
           :remove-disabled="globalOperationBusy"
-          :cold-client-supported="
-            Boolean(coldClientDependencies?.supported && data.installPath)
-          "
+          :cold-client-status="coldClientStatus"
           :cold-client-ready="coldClientReady"
-          :cold-client-disabled="globalOperationBusy"
+          :cold-client-disabled="globalOperationBusy || coldClientMutationBusy"
           @update:open="gameSettingsOpen = $event"
           @verify="verifyGameFiles"
           @remove="openRemoveDialog"

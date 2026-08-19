@@ -9,7 +9,10 @@ import {
 } from '@/api/apps'
 import { getLibrary } from '@/api/library'
 import { getHubcapUsage, getSettings } from '@/api/settings'
-import { getColdClientDependencies } from '@/api/cold-client'
+import {
+  getColdClientDependencies,
+  getColdClientStatus,
+} from '@/api/cold-client'
 
 export const appQueryKeys = {
   summary: (appId: number) => ['app-summary', appId] as const,
@@ -23,6 +26,9 @@ export const hubcapUsageQueryKey = ['hubcap-usage'] as const
 export const coldClientDependenciesQueryKey = [
   'cold-client-dependencies',
 ] as const
+export const coldClientQueryKeys = {
+  status: (appId: number) => ['cold-client-status', appId] as const,
+}
 
 const appSummaryQuery = defineQueryOptions((appId: number) => ({
   key: appQueryKeys.summary(appId),
@@ -82,6 +88,10 @@ const coldClientDependenciesQuery = defineQueryOptions({
   key: coldClientDependenciesQueryKey,
   query: getColdClientDependencies,
 })
+const coldClientStatusQuery = defineQueryOptions((appId: number) => ({
+  key: coldClientQueryKeys.status(appId),
+  query: () => getColdClientStatus(appId),
+}))
 
 export function useAppSummaryQuery(appId: MaybeRefOrGetter<number>) {
   return useQuery(() => appSummaryQuery(toValue(appId)))
@@ -101,4 +111,8 @@ export function useHubcapUsageQuery() {
 
 export function useColdClientDependenciesQuery() {
   return useQuery(coldClientDependenciesQuery)
+}
+
+export function useColdClientStatusQuery(appId: MaybeRefOrGetter<number>) {
+  return useQuery(() => coldClientStatusQuery(toValue(appId)))
 }
