@@ -27,6 +27,7 @@ import { useCustomManifest } from '@/composables/use-custom-manifest'
 import { useAvailableUpdates } from '@/composables/use-available-updates'
 import { useDepotResourceAcquisition } from '@/composables/use-depot-resource-acquisition'
 import { acquireManifest, openInstallDirectory } from '@/api/apps'
+import { regenerateColdClientConfiguration } from '@/api/cold-client'
 import {
   addLibraryEntry,
   removeLibraryEntry,
@@ -122,6 +123,9 @@ const pinMutation = useMutation({
 })
 const openInstallDirectoryMutation = useMutation({
   mutation: (id: number) => openInstallDirectory(id),
+})
+const regenerateColdClientMutation = useMutation({
+  mutation: (id: number) => regenerateColdClientConfiguration(id),
 })
 const acceptedDepotIds = computed(() =>
   operation.acceptedDesiredDepotIds(appId.value),
@@ -398,6 +402,24 @@ async function coldClientConfigured() {
     exact: true,
   })
   await refetchColdClientStatus()
+}
+
+async function regenerateColdClient() {
+  const targetAppId = appId.value
+  mutationError.value = ''
+  gameSettingsOpen.value = false
+  try {
+    await regenerateColdClientMutation.mutateAsync(targetAppId)
+    await queryCache.invalidateQueries({
+      key: coldClientQueryKeys.status(targetAppId),
+      exact: true,
+    })
+  } catch (error) {
+    if (appId.value === targetAppId) {
+      mutationError.value =
+        error instanceof Error ? error.message : String(error)
+    }
+  }
 }
 
 async function removeFromLibrary() {
@@ -751,6 +773,7 @@ async function browseLocalFiles() {
           @verify="verifyGameFiles"
           @remove="openRemoveDialog"
           @setup-cold-client="openColdClientSetup"
+          @regenerate-cold-client="regenerateColdClient"
         />
       </template>
     </AppDetailsQueryState>

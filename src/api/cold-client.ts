@@ -34,6 +34,10 @@ export function configureColdClient(setup: ColdClientSetupRequest) {
   return request('configureColdClient', setup)
 }
 
+export function regenerateColdClientConfiguration(appId: number) {
+  return request('regenerateColdClientConfiguration', { appId })
+}
+
 export function getColdClientOperation() {
   return request('getColdClientOperation', {})
 }

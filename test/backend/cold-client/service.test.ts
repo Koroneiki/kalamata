@@ -87,6 +87,38 @@ test('rejects a dependency change after review before replacing game files', asy
   expect(fixture.database.current).toBeNull()
 })
 
+test('regenerates only steam_settings and preserves the configured core', async () => {
+  const fixture = await createFixture()
+  const service = createService(fixture)
+  await service.configure(fixture.request)
+  const live = join(fixture.installRoot, '_ColdClient')
+  const loaderBefore = await readFile(join(live, 'ColdClientLoader.ini'))
+  const coreBefore = await readFile(join(live, 'steamclient64.dll'))
+  await writeFile(
+    join(live, 'steam_settings', 'custom-user-file.txt'),
+    'remove me',
+  )
+  await writeGeneratedSettings(fixture.generatedSettings, 'regenerated-overlay')
+
+  const status = await service.regenerate(10)
+
+  expect(status).toMatchObject({
+    status: 'configured',
+    recommendationReasons: [],
+  })
+  expect(await readFile(join(live, 'ColdClientLoader.ini'))).toEqual(
+    loaderBefore,
+  )
+  expect(await readFile(join(live, 'steamclient64.dll'))).toEqual(coreBefore)
+  expect(
+    await readFile(join(live, 'steam_settings', 'configs.overlay.ini'), 'utf8'),
+  ).toBe('regenerated-overlay')
+  await expect(
+    access(join(live, 'steam_settings', 'custom-user-file.txt')),
+  ).rejects.toThrow()
+  expect(fixture.database.current?.configuredAt).toBe(3000)
+})
+
 function createService(
   fixture: Awaited<ReturnType<typeof createFixture>>,
   inspect: () => ColdClientSetupDraft = () => fixture.draft,
@@ -164,15 +196,8 @@ async function createFixture() {
       ),
       'generator',
     ),
-    ...['configs.app.ini', 'configs.main.ini', 'configs.user.ini'].map((name) =>
-      writeFile(join(generatedSettings, name), name),
-    ),
-    writeFile(
-      join(generatedSettings, 'configs.overlay.ini'),
-      'generated-overlay-default',
-    ),
-    writeFile(join(generatedSettings, 'steam_appid.txt'), '10'),
   ])
+  await writeGeneratedSettings(generatedSettings, 'generated-overlay-default')
 
   const gbe = artifact('gbe', 101, 'gbe-v1')
   const gse = artifact('gse', 201, 'gse-v1')
@@ -298,4 +323,18 @@ function loaderIni(): string {
     'DllsToInjectFolder=',
     '',
   ].join('\r\n')
+}
+
+async function writeGeneratedSettings(
+  directory: string,
+  overlay: string,
+): Promise<void> {
+  await mkdir(directory, { recursive: true })
+  await Promise.all([
+    ...['configs.app.ini', 'configs.main.ini', 'configs.user.ini'].map((name) =>
+      writeFile(join(directory, name), name),
+    ),
+    writeFile(join(directory, 'configs.overlay.ini'), overlay),
+    writeFile(join(directory, 'steam_appid.txt'), '10'),
+  ])
 }

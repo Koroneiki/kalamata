@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Settings2, Trash2, TriangleAlert } from '@lucide/vue'
+import { RefreshCw, Settings2, Trash2, TriangleAlert } from '@lucide/vue'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -26,6 +26,7 @@ const emit = defineEmits<{
   verify: []
   remove: []
   setupColdClient: []
+  regenerateColdClient: []
 }>()
 </script>
 
@@ -66,6 +67,26 @@ const emit = defineEmits<{
           GBE {{ coldClientStatus.installedGbeTag }} · GSE Tools
           {{ coldClientStatus.installedGseTag }}
         </p>
+        <div
+          v-if="
+            coldClientStatus?.status === 'configured' &&
+            coldClientStatus.recommendationReasons.length
+          "
+          class="bg-muted mt-3 rounded-md p-3 text-sm"
+        >
+          <p class="font-medium">Regeneration recommended</p>
+          <p class="text-muted-foreground mt-1">
+            {{
+              coldClientStatus.recommendationReasons
+                .map((reason) =>
+                  reason === 'depots-changed'
+                    ? 'Installed depots changed'
+                    : 'GSE Tools was updated',
+                )
+                .join(' · ')
+            }}
+          </p>
+        </div>
         <p
           v-else-if="coldClientStatus?.status === 'invalid'"
           class="text-destructive mt-1 text-sm"
@@ -98,6 +119,23 @@ const emit = defineEmits<{
               : 'Open ColdClient settings'
           }}
         </Button>
+        <div v-else class="mt-3">
+          <p class="text-sm">
+            Regeneration replaces every file in
+            <code>steam_settings</code>, including user edits. Loader and core
+            files are preserved.
+          </p>
+          <Button
+            type="button"
+            size="sm"
+            class="mt-3"
+            :disabled="coldClientDisabled"
+            @click="emit('regenerateColdClient')"
+          >
+            <RefreshCw aria-hidden="true" />
+            Regenerate configuration
+          </Button>
+        </div>
       </section>
 
       <div class="border-border flex items-center gap-2 border-t pt-4">

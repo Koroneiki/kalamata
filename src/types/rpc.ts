@@ -418,6 +418,10 @@ export type AppRpc = {
         params: ColdClientSetupRequest
         response: ColdClientStatus
       }
+      regenerateColdClientConfiguration: {
+        params: { appId: number }
+        response: ColdClientStatus
+      }
       getColdClientOperation: {
         params: Record<string, never>
         response: ColdClientOperationSnapshot

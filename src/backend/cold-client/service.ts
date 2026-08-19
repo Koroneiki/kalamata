@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { cp, lstat, realpath, rm } from 'node:fs/promises'
+import { cp, lstat, readFile, realpath, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import type {
   ColdClientInstallation,
@@ -66,7 +66,7 @@ interface InterfaceGeneratorProvider {
 
 interface OperationProvider {
   run<Result>(
-    kind: 'setup',
+    kind: 'setup' | 'regenerate',
     appId: number,
     operation: (context: ColdClientOperationContext) => Promise<Result>,
   ): Promise<Result>
@@ -74,6 +74,13 @@ interface OperationProvider {
 
 interface ReplacementProvider {
   replaceSetup(options: {
+    installRoot: string
+    stagingDirectory: string
+    previousInstallation: ColdClientInstallation | null
+    targetInstallation: ColdClientInstallation
+    validateLive(directory: string): Promise<void>
+  }): Promise<void>
+  replaceSettings(options: {
     installRoot: string
     stagingDirectory: string
     previousInstallation: ColdClientInstallation | null
@@ -153,6 +160,109 @@ export class ColdClientService {
         context,
       )
       return this.getStatus(request.appId)
+    })
+  }
+
+  regenerate(appId: number): Promise<ColdClientStatus> {
+    return this.operations.run('regenerate', appId, async (context) => {
+      const previous = this.database.getColdClientInstallation(appId)
+      if (!previous) throw new Error('ColdClient is not configured')
+      const library = requireInstalledLibrary(this.database, appId)
+      const installRoot = await realpath(library.installPath)
+      const initialDepots = depotSnapshot(this.database, appId)
+      const generated = await this.generator.generate(appId, context.signal)
+      context.setPhase('building')
+      const release = await this.#acquireLock(installRoot)
+      let stagingDirectory: string | undefined
+      try {
+        const currentLibrary = requireInstalledLibrary(this.database, appId)
+        if ((await realpath(currentLibrary.installPath)) !== installRoot) {
+          throw new Error('The game install path changed during regeneration')
+        }
+        const current = this.database.getColdClientInstallation(appId)
+        if (!sameInstallation(current, previous)) {
+          throw new Error('ColdClient changed during regeneration')
+        }
+        const currentDepots = depotSnapshot(this.database, appId)
+        if (JSON.stringify(currentDepots) !== JSON.stringify(initialDepots)) {
+          throw new Error('Installed depots changed during regeneration')
+        }
+        const gbe = await this.dependencies.validateArtifactSnapshot(
+          'gbe',
+          previous.gbeAssetId,
+        )
+        await this.dependencies.validateArtifactSnapshot(
+          'gse',
+          generated.gseAssetId,
+        )
+        stagingDirectory = join(
+          installRoot,
+          `.Kalamata-coldclient-settings-staging-${randomUUID()}`,
+        )
+        await cp(generated.steamSettingsDirectory, stagingDirectory, {
+          recursive: true,
+          errorOnExist: true,
+          force: false,
+        })
+        if (previous.steamApiRelativePath) {
+          const steamApiPath = join(
+            installRoot,
+            ...previous.steamApiRelativePath.split('/'),
+          )
+          await assertRegularFile(steamApiPath, previous.steamApiRelativePath)
+          await this.interfaceGenerator.generate(
+            join(
+              gbe.directory,
+              'release',
+              'tools',
+              'generate_interfaces',
+              'generate_interfaces_x64.exe',
+            ),
+            steamApiPath,
+            join(installRoot, CONFIG_TEMPORARY_DIRECTORY),
+            join(stagingDirectory, 'steam_interfaces.txt'),
+            context.signal,
+          )
+        }
+        await validateGeneratedSettings(
+          stagingDirectory,
+          appId,
+          previous.steamApiRelativePath !== null,
+        )
+        const target: ColdClientInstallation = {
+          ...previous,
+          gseAssetId: generated.gseAssetId,
+          generatedDepotFingerprint: coldClientDepotFingerprint(currentDepots),
+          configuredAt: this.#now(),
+        }
+        context.beginReplacement()
+        await this.replacement.replaceSettings({
+          installRoot,
+          stagingDirectory,
+          previousInstallation: previous,
+          targetInstallation: target,
+          validateLive: async (live) => {
+            context.setPhase('validating')
+            await validateGeneratedSettings(
+              live,
+              appId,
+              previous.steamApiRelativePath !== null,
+            )
+          },
+        })
+        stagingDirectory = undefined
+      } finally {
+        if (stagingDirectory) {
+          await rm(stagingDirectory, { recursive: true, force: true })
+        }
+        await rm(generated.appDirectory, { recursive: true, force: true })
+        await rm(join(installRoot, CONFIG_TEMPORARY_DIRECTORY), {
+          recursive: true,
+          force: true,
+        })
+        await release()
+      }
+      return this.getStatus(appId)
     })
   }
 
@@ -455,6 +565,28 @@ async function validatePreparedInstallation(
   return files
 }
 
+async function validateGeneratedSettings(
+  root: string,
+  appId: number,
+  requireInterfaces: boolean,
+): Promise<void> {
+  for (const path of requiredSettingsFiles) {
+    await assertRegularFile(join(root, path), path)
+  }
+  if (requireInterfaces) {
+    await assertRegularFile(
+      join(root, 'steam_interfaces.txt'),
+      'steam_interfaces.txt',
+    )
+  }
+  if (
+    (await readFile(join(root, 'steam_appid.txt'), 'utf8')).trim() !==
+    String(appId)
+  ) {
+    throw new Error('Generated ColdClient settings contain a different AppID')
+  }
+}
+
 async function validateInstalledCore(
   installRoot: string,
   installation: ColdClientInstallation,
@@ -487,4 +619,11 @@ function requireArtifact(
   const artifact = dependencies.artifact(dependencyId, assetId)
   if (!artifact) throw new Error('ColdClient dependency record is missing')
   return artifact
+}
+
+function sameInstallation(
+  left: ColdClientInstallation | null,
+  right: ColdClientInstallation | null,
+): boolean {
+  return JSON.stringify(left) === JSON.stringify(right)
 }

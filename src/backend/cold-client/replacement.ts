@@ -16,21 +16,24 @@ const JOURNAL_FILENAME = 'coldclient-replacement.json'
 const LIVE_NAME = '_ColdClient'
 const STAGING_PREFIX = '.Kalamata-coldclient-staging-'
 const BACKUP_PREFIX = '.Kalamata-coldclient-backup-'
+const SETTINGS_STAGING_PREFIX = '.Kalamata-coldclient-settings-staging-'
+const SETTINGS_BACKUP_PREFIX = '.Kalamata-coldclient-settings-backup-'
+const SETTINGS_LIVE_PATH = '_ColdClient/steam_settings'
 
 const journalSchema = z
   .object({
     version: z.literal(JOURNAL_VERSION),
-    kind: z.literal('setup'),
+    kind: z.enum(['setup', 'regenerate']),
     appId: z.number().int().positive().max(4_294_967_295),
     installRoot: z.string().min(1),
     previousInstallation: coldClientInstallationSchema.nullable(),
     targetInstallation: coldClientInstallationSchema,
-    liveRelativePath: z.literal(LIVE_NAME),
-    stagingRelativePath: z.string().startsWith(STAGING_PREFIX),
-    backupRelativePath: z.string().startsWith(BACKUP_PREFIX),
+    liveRelativePath: z.enum([LIVE_NAME, SETTINGS_LIVE_PATH]),
+    stagingRelativePath: z.string().min(1),
+    backupRelativePath: z.string().min(1),
     affectedFiles: z
       .array(
-        z.object({ path: z.literal(LIVE_NAME), existed: z.boolean() }).strict(),
+        z.object({ path: z.string().min(1), existed: z.boolean() }).strict(),
       )
       .length(1),
   })
@@ -41,6 +44,23 @@ const journalSchema = z
       (journal.previousInstallation?.appId ?? journal.appId) !== journal.appId
     ) {
       ctx.addIssue({ code: 'custom', message: 'Journal AppIDs must match' })
+    }
+    const pathsMatch =
+      journal.kind === 'setup'
+        ? journal.liveRelativePath === LIVE_NAME &&
+          journal.stagingRelativePath.startsWith(STAGING_PREFIX) &&
+          journal.backupRelativePath.startsWith(BACKUP_PREFIX)
+        : journal.liveRelativePath === SETTINGS_LIVE_PATH &&
+          journal.stagingRelativePath.startsWith(SETTINGS_STAGING_PREFIX) &&
+          journal.backupRelativePath.startsWith(SETTINGS_BACKUP_PREFIX)
+    if (
+      !pathsMatch ||
+      journal.affectedFiles[0]?.path !== journal.liveRelativePath
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Journal paths do not match its operation',
+      })
     }
     for (const path of [
       journal.stagingRelativePath,
@@ -73,6 +93,8 @@ interface ReplaceSetupOptions {
   validateLive(directory: string): Promise<void>
 }
 
+interface ReplaceSettingsOptions extends ReplaceSetupOptions {}
+
 interface ReplacementServiceOptions {
   acquireLock?: typeof acquireOutputLock
   reportCleanupError?: (error: Error) => void
@@ -96,26 +118,54 @@ export class ColdClientReplacementService {
   }
 
   async replaceSetup(options: ReplaceSetupOptions): Promise<void> {
+    return this.replaceDirectory(options, {
+      kind: 'setup',
+      liveRelativePath: LIVE_NAME,
+      stagingPrefix: STAGING_PREFIX,
+      backupPrefix: BACKUP_PREFIX,
+    })
+  }
+
+  async replaceSettings(options: ReplaceSettingsOptions): Promise<void> {
+    return this.replaceDirectory(options, {
+      kind: 'regenerate',
+      liveRelativePath: SETTINGS_LIVE_PATH,
+      stagingPrefix: SETTINGS_STAGING_PREFIX,
+      backupPrefix: SETTINGS_BACKUP_PREFIX,
+    })
+  }
+
+  private async replaceDirectory(
+    options: ReplaceSetupOptions,
+    paths: {
+      kind: 'setup' | 'regenerate'
+      liveRelativePath: typeof LIVE_NAME | typeof SETTINGS_LIVE_PATH
+      stagingPrefix: string
+      backupPrefix: string
+    },
+  ): Promise<void> {
     const installRoot = await canonicalDirectory(options.installRoot)
     const stagingDirectory = await canonicalDirectory(options.stagingDirectory)
     const stagingRelativePath = directChildName(
       installRoot,
       stagingDirectory,
-      STAGING_PREFIX,
+      paths.stagingPrefix,
     )
-    const live = join(installRoot, LIVE_NAME)
+    const live = join(installRoot, ...paths.liveRelativePath.split('/'))
     const oldLiveExisted = await directoryExists(live)
     const journal = journalSchema.parse({
       version: JOURNAL_VERSION,
-      kind: 'setup',
+      kind: paths.kind,
       appId: options.targetInstallation.appId,
       installRoot,
       previousInstallation: options.previousInstallation,
       targetInstallation: options.targetInstallation,
-      liveRelativePath: LIVE_NAME,
+      liveRelativePath: paths.liveRelativePath,
       stagingRelativePath,
-      backupRelativePath: `${BACKUP_PREFIX}${randomUUID()}`,
-      affectedFiles: [{ path: LIVE_NAME, existed: oldLiveExisted }],
+      backupRelativePath: `${paths.backupPrefix}${randomUUID()}`,
+      affectedFiles: [
+        { path: paths.liveRelativePath, existed: oldLiveExisted },
+      ],
     })
     const journalPath = replacementJournalPath(installRoot)
     await mkdir(join(installRoot, CONFIG_DIRECTORY), { recursive: true })
@@ -243,7 +293,7 @@ function journalPathInRoot(installRoot: string, relativePath: string): string {
     fromRoot === '..' ||
     fromRoot.startsWith(`..${sep}`) ||
     isAbsolute(fromRoot) ||
-    fromRoot.includes(sep)
+    (fromRoot.includes(sep) && relativePath !== SETTINGS_LIVE_PATH)
   ) {
     throw new Error('ColdClient journal path escaped the install root')
   }
