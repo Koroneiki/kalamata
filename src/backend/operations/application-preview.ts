@@ -11,8 +11,6 @@ import type {
   ProjectionEntry,
 } from '../depot/install/transaction/types.ts'
 import { manifestPathKey } from '../depot/manifests/manifest-utils.ts'
-import { projectionEntryNeedsStaging } from '../depot/install/transaction/local-state.ts'
-import { estimateDownloadPayload } from '../depot/install/transaction/staging.ts'
 import type { ApplicationOperationPreview } from '../../types/rpc.ts'
 import type { ApplicationPlan } from './application-planner.ts'
 
@@ -20,7 +18,6 @@ export async function previewApplicationOperation(
   appId: number,
   plan: ApplicationPlan,
   manifests: Pick<DepotDownloadService, 'loadApplicationDepots'>,
-  outputDirectory?: string,
 ): Promise<ApplicationOperationPreview> {
   const loaded = await manifests.loadApplicationDepots([
     ...plan.installedDepots,
@@ -28,30 +25,7 @@ export async function previewApplicationOperation(
   ])
   const installed = loaded.slice(0, plan.installedDepots.length)
   const desired = loaded.slice(plan.installedDepots.length)
-  const preview = compareApplicationManifests(appId, installed, desired)
-  // Without a directory, local reuse cannot refine the manifest-only estimate.
-  if (!outputDirectory) return preview
-
-  const source = buildProjection(installed, appId)
-  const target = buildProjection(desired, appId)
-  const changed = []
-  for (const entry of target.values())
-    if (
-      await projectionEntryNeedsStaging(
-        entry,
-        source.get(entry.key),
-        outputDirectory,
-        'reconcile',
-      )
-    )
-      changed.push(entry)
-  const changedFiles = changed.filter(({ file }) => !isDirectory(file))
-  return {
-    ...preview,
-    estimatedDownloadBytes: (
-      await estimateDownloadPayload(source, changedFiles, outputDirectory)
-    ).toString(),
-  }
+  return compareApplicationManifests(appId, installed, desired)
 }
 
 type Projection = Map<string, ProjectionEntry>

@@ -1,7 +1,4 @@
-import { afterEach, expect, test } from 'bun:test'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { expect, test } from 'bun:test'
 
 import {
   compareApplicationManifests,
@@ -19,8 +16,6 @@ import {
   setupDownloadQueue,
 } from './download-queue-fixtures.ts'
 
-let directory: string | undefined
-
 function input(depotId: number, manifestId: string): ApplicationDepotInput {
   return {
     depotId,
@@ -30,11 +25,6 @@ function input(depotId: number, manifestId: string): ApplicationDepotInput {
     depotKey: Buffer.alloc(32),
   }
 }
-
-afterEach(async () => {
-  if (directory) await rm(directory, { recursive: true, force: true })
-  directory = undefined
-})
 
 test('classifies install, remove, and update depots with a signed delta', () => {
   const preview = compareApplicationManifests(
@@ -221,9 +211,7 @@ test('reports files shadowed by a winning ancestor file', () => {
   ])
 })
 
-test('subtracts reusable installed chunks from the download estimate', async () => {
-  directory = await mkdtemp(join(tmpdir(), 'application-preview-'))
-  await writeFile(join(directory, 'old.bin'), 'shared')
+test('uses manifests alone for the download estimate', async () => {
   const installed = [depot(1, 'old', { 'old.bin': 'shared' })]
   const desired = [
     depot(1, 'new', { 'renamed.bin': 'shared', 'added.bin': 'new' }),
@@ -237,38 +225,16 @@ test('subtracts reusable installed chunks from the download estimate', async () 
       desiredDepotIds: [1],
     },
     { loadApplicationDepots: async () => [...installed, ...desired] },
-    directory,
   )
 
   expect(preview.networkPayloadUpperBoundBytes).toBe('9')
-  expect(preview.estimatedDownloadBytes).toBe('3')
-})
-
-test('reuses a complete target file from a first-install directory', async () => {
-  directory = await mkdtemp(join(tmpdir(), 'application-preview-'))
-  await writeFile(join(directory, 'game.bin'), 'target')
-  const desired = [depot(1, 'new', { 'game.bin': 'target' })]
-
-  const preview = await previewApplicationOperation(
-    100,
-    {
-      installedDepots: [],
-      desiredDepots: [input(1, 'new')],
-      desiredDepotIds: [1],
-    },
-    { loadApplicationDepots: async () => desired },
-    directory,
-  )
-
-  expect(preview.networkPayloadUpperBoundBytes).toBe('6')
-  expect(preview.estimatedDownloadBytes).toBe('0')
+  expect(preview.estimatedDownloadBytes).toBe('9')
 })
 
 queueTest(
   'coordinator preview does not reserve a path or persist selection',
   async () => {
     const fixture = await setupDownloadQueue()
-    let previewPath: string | undefined
     try {
       const queue = new DownloadQueueCoordinator(
         {
@@ -276,12 +242,7 @@ queueTest(
           reconcileApplication: async () => {
             throw new Error('execution must not start during preview')
           },
-          previewApplicationOperation: async (
-            _appId,
-            plan,
-            outputDirectory,
-          ) => {
-            previewPath = outputDirectory
+          previewApplicationOperation: async (_appId, plan) => {
             return {
               overlaps: [],
               depots: plan.desiredDepots.map(({ depotId }) => ({
@@ -312,7 +273,6 @@ queueTest(
       const preview = await queue.previewApplicationOperation({
         appId: APP_ID,
         desiredDepotIds: [DEPOTS[0].depotId],
-        installPath: fixture.installPath,
       })
 
       expect(preview.depots).toEqual([
@@ -326,7 +286,6 @@ queueTest(
           targetDownloadBytes: '0',
         },
       ])
-      expect(previewPath).toBe(fixture.installPath)
       expect(fixture.database.getLibraryEntry(APP_ID)?.installPath).toBeNull()
       expect(fixture.database.getInstalls(APP_ID)).toEqual([])
       expect(queue.getOperationState()).toEqual({ status: 'idle' })

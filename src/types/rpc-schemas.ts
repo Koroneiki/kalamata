@@ -293,7 +293,6 @@ const rpcRequestSchemas = {
   }),
   previewApplicationOperation: strict({
     ...operationRequestFields,
-    installPath: z.string().optional(),
   }),
   repairApplication: idRequestSchema,
   acquireManifest: strict({

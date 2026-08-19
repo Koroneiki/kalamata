@@ -83,7 +83,6 @@ const currentPreviewKey = computed(() =>
     manifestTargets: [...manifestTargets.value].sort(
       (left, right) => left.depotId - right.depotId,
     ),
-    installPath: isFirstInstall.value ? selectedPath.value : null,
   }),
 )
 const hasPlannedChanges = computed(() => {
@@ -128,14 +127,8 @@ watch(
   { immediate: true },
 )
 
-// The selected directory affects reusable content and therefore the estimate.
 watch(
-  [
-    () => props.open,
-    () => props.selectedDepotIds,
-    manifestTargets,
-    selectedPath,
-  ],
+  [() => props.open, () => props.selectedDepotIds, manifestTargets],
   ([open]) => {
     if (!open) return
     if (
@@ -154,9 +147,6 @@ async function requestPreview() {
   const requestKey = currentPreviewKey.value
   const desiredDepotIds = [...props.selectedDepotIds]
   const requestedManifestTargets = [...manifestTargets.value]
-  const installPath = isFirstInstall.value
-    ? selectedPath.value || undefined
-    : undefined
   previewLoading.value = true
   pendingPreviewKey.value = requestKey
   preview.value = null
@@ -167,7 +157,6 @@ async function requestPreview() {
       appId: props.app.appId,
       desiredDepotIds,
       manifestTargets: requestedManifestTargets,
-      installPath,
     })
     if (request === previewRequest && requestKey === currentPreviewKey.value) {
       const fullyOverridden = new Set(

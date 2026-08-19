@@ -122,7 +122,6 @@ export interface PreviewApplicationOperationRequest {
   appId: number
   desiredDepotIds: number[]
   manifestTargets?: DepotManifestTarget[]
-  installPath?: string
 }
 
 export interface DepotManifestTarget {

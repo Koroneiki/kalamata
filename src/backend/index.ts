@@ -66,14 +66,8 @@ export class SteamService {
   previewApplicationOperation(
     appId: number,
     plan: ApplicationPlan,
-    outputDirectory?: string,
   ): Promise<ApplicationOperationPreview> {
-    return previewApplicationOperation(
-      appId,
-      plan,
-      this.#downloads,
-      outputDirectory,
-    )
+    return previewApplicationOperation(appId, plan, this.#downloads)
   }
 
   // fallow-ignore-next-line unused-class-member

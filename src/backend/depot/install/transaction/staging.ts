@@ -15,12 +15,7 @@ import {
 import { normalizeManifestSeparators } from '../../manifests/manifest-utils.ts'
 import type { ManifestChunk, ManifestFile } from '../../manifests/types.ts'
 import { completeChunk } from './journal.ts'
-import {
-  chunkKey,
-  fileSize,
-  isDirectory,
-  uniqueCompressedChunkSizes,
-} from './projection.ts'
+import { chunkKey, fileSize, isDirectory } from './projection.ts'
 import {
   ApplicationTransactionError,
   emitProgress,
@@ -177,23 +172,6 @@ async function verifyStagedFiles(
       )
     }
   }
-}
-
-export async function estimateDownloadPayload(
-  source: Map<string, ProjectionEntry>,
-  changedFiles: ProjectionEntry[],
-  outputDirectory: string,
-): Promise<bigint> {
-  // Match staging behavior. Copy only installed-source chunks for partial reuse.
-  const candidates = buildChunkCandidates(source, outputDirectory)
-  const chunks = uniqueCompressedChunkSizes(changedFiles)
-
-  let total = 0n
-  for (const [key, size] of chunks) {
-    if (await reusableChunk(candidates.get(key) ?? [])) continue
-    total += BigInt(size)
-  }
-  return total
 }
 
 async function downloadChunks(
