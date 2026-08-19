@@ -27,6 +27,7 @@ const emit = defineEmits<{
   remove: []
   setupColdClient: []
   regenerateColdClient: []
+  updateColdClientCore: []
 }>()
 </script>
 
@@ -120,6 +121,28 @@ const emit = defineEmits<{
           }}
         </Button>
         <div v-else class="mt-3">
+          <div
+            v-if="coldClientStatus.coreUpdateAvailable"
+            class="bg-muted mb-3 rounded-md p-3"
+          >
+            <p class="text-sm font-medium">
+              GBE {{ coldClientStatus.availableGbeTag }} is ready to install.
+            </p>
+            <p class="text-muted-foreground mt-1 text-sm">
+              Updating replaces managed core files. Loader configuration,
+              generated settings, and custom files are preserved.
+            </p>
+            <Button
+              type="button"
+              size="sm"
+              class="mt-3"
+              :disabled="coldClientDisabled"
+              @click="emit('updateColdClientCore')"
+            >
+              <RefreshCw aria-hidden="true" />
+              Update ColdClient
+            </Button>
+          </div>
           <p class="text-sm">
             Regeneration replaces every file in
             <code>steam_settings</code>, including user edits. Loader and core

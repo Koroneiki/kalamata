@@ -38,6 +38,10 @@ export function regenerateColdClientConfiguration(appId: number) {
   return request('regenerateColdClientConfiguration', { appId })
 }
 
+export function updateColdClientCore(appId: number) {
+  return request('updateColdClientCore', { appId })
+}
+
 export function getColdClientOperation() {
   return request('getColdClientOperation', {})
 }

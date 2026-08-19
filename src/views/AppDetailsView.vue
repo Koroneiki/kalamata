@@ -27,7 +27,10 @@ import { useCustomManifest } from '@/composables/use-custom-manifest'
 import { useAvailableUpdates } from '@/composables/use-available-updates'
 import { useDepotResourceAcquisition } from '@/composables/use-depot-resource-acquisition'
 import { acquireManifest, openInstallDirectory } from '@/api/apps'
-import { regenerateColdClientConfiguration } from '@/api/cold-client'
+import {
+  regenerateColdClientConfiguration,
+  updateColdClientCore,
+} from '@/api/cold-client'
 import {
   addLibraryEntry,
   removeLibraryEntry,
@@ -126,6 +129,9 @@ const openInstallDirectoryMutation = useMutation({
 })
 const regenerateColdClientMutation = useMutation({
   mutation: (id: number) => regenerateColdClientConfiguration(id),
+})
+const updateColdClientCoreMutation = useMutation({
+  mutation: (id: number) => updateColdClientCore(id),
 })
 const acceptedDepotIds = computed(() =>
   operation.acceptedDesiredDepotIds(appId.value),
@@ -410,6 +416,24 @@ async function regenerateColdClient() {
   gameSettingsOpen.value = false
   try {
     await regenerateColdClientMutation.mutateAsync(targetAppId)
+    await queryCache.invalidateQueries({
+      key: coldClientQueryKeys.status(targetAppId),
+      exact: true,
+    })
+  } catch (error) {
+    if (appId.value === targetAppId) {
+      mutationError.value =
+        error instanceof Error ? error.message : String(error)
+    }
+  }
+}
+
+async function updateColdClient() {
+  const targetAppId = appId.value
+  mutationError.value = ''
+  gameSettingsOpen.value = false
+  try {
+    await updateColdClientCoreMutation.mutateAsync(targetAppId)
     await queryCache.invalidateQueries({
       key: coldClientQueryKeys.status(targetAppId),
       exact: true,
@@ -774,6 +798,7 @@ async function browseLocalFiles() {
           @remove="openRemoveDialog"
           @setup-cold-client="openColdClientSetup"
           @regenerate-cold-client="regenerateColdClient"
+          @update-cold-client-core="updateColdClient"
         />
       </template>
     </AppDetailsQueryState>
