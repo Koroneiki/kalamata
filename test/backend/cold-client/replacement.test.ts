@@ -109,6 +109,40 @@ describe('ColdClient setup replacement', () => {
   })
 })
 
+test('settings replacement rolls back without touching sibling core files', async () => {
+  const fixture = await createFixture()
+  const live = join(fixture.installRoot, '_ColdClient')
+  await mkdir(join(live, 'steam_settings'))
+  await writeFile(join(live, 'steam_settings', 'state.txt'), 'old settings')
+  await writeFile(join(live, 'core.dll'), 'core')
+  const settingsStaging = join(
+    fixture.installRoot,
+    '.Kalamata-coldclient-settings-staging-test',
+  )
+  await mkdir(settingsStaging)
+  await writeFile(join(settingsStaging, 'state.txt'), 'new settings')
+  const database = new FakeDatabase(previous)
+  const replacement = new ColdClientReplacementService(database)
+
+  await expect(
+    replacement.replaceSettings({
+      installRoot: fixture.installRoot,
+      stagingDirectory: settingsStaging,
+      previousInstallation: previous,
+      targetInstallation: target,
+      validateLive: async () => {
+        throw new Error('invalid settings')
+      },
+    }),
+  ).rejects.toThrow('invalid settings')
+
+  expect(
+    await readFile(join(live, 'steam_settings', 'state.txt'), 'utf8'),
+  ).toBe('old settings')
+  expect(await readFile(join(live, 'core.dll'), 'utf8')).toBe('core')
+  expect(database.current).toEqual(previous)
+})
+
 describe('ColdClient replacement recovery', () => {
   test('rolls back the filesystem while SQLite has the previous record', async () => {
     const fixture = await createFixture()
@@ -179,6 +213,32 @@ describe('ColdClient replacement recovery', () => {
       access(replacementJournalPath(fixture.installRoot)),
     ).resolves.toBeNull()
   })
+
+  test('recovers settings without changing sibling core files', async () => {
+    const fixture = await createFixture()
+    const live = join(fixture.installRoot, '_ColdClient')
+    const settings = join(live, 'steam_settings')
+    const backup = '.Kalamata-coldclient-settings-backup-test'
+    await mkdir(settings)
+    await writeFile(join(settings, 'state.txt'), 'old settings')
+    await writeFile(join(live, 'core.dll'), 'core')
+    await rename(settings, join(fixture.installRoot, backup))
+    await mkdir(settings)
+    await writeFile(join(settings, 'state.txt'), 'new settings')
+    await writeSettingsJournal(fixture.installRoot, backup)
+    const replacement = new ColdClientReplacementService(
+      new FakeDatabase(previous),
+      { acquireLock: async () => async () => {} },
+    )
+
+    await expect(
+      replacement.recover(fixture.installRoot, async () => {}),
+    ).resolves.toEqual({ status: 'recovered', direction: 'rollback' })
+    expect(await readFile(join(settings, 'state.txt'), 'utf8')).toBe(
+      'old settings',
+    )
+    expect(await readFile(join(live, 'core.dll'), 'utf8')).toBe('core')
+  })
 })
 
 class FakeDatabase {
@@ -235,6 +295,28 @@ async function writeJournal(
       stagingRelativePath: '.Kalamata-coldclient-staging-test',
       backupRelativePath: backup,
       affectedFiles: [{ path: '_ColdClient', existed: true }],
+    }),
+  )
+}
+
+async function writeSettingsJournal(
+  installRoot: string,
+  backup: string,
+): Promise<void> {
+  await mkdir(join(installRoot, '.Kalamata'), { recursive: true })
+  await writeFile(
+    replacementJournalPath(installRoot),
+    JSON.stringify({
+      version: 1,
+      kind: 'regenerate',
+      appId: 10,
+      installRoot,
+      previousInstallation: previous,
+      targetInstallation: target,
+      liveRelativePath: '_ColdClient/steam_settings',
+      stagingRelativePath: '.Kalamata-coldclient-settings-staging-test',
+      backupRelativePath: backup,
+      affectedFiles: [{ path: '_ColdClient/steam_settings', existed: true }],
     }),
   )
 }
