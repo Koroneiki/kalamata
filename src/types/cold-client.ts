@@ -1,22 +1,20 @@
 import { z } from 'zod'
 
-export const coldClientRelativePathSchema = z
-  .string()
-  .superRefine((value, ctx) => {
-    const segments = value.split('/')
-    if (
-      value.length === 0 ||
-      value.startsWith('/') ||
-      value.includes('\\') ||
-      value.includes(':') ||
-      value.includes('\0') ||
-      segments.some(
-        (segment) => segment === '' || segment === '.' || segment === '..',
-      )
-    ) {
-      ctx.addIssue({ code: 'custom', message: 'Invalid relative path' })
-    }
-  })
+const coldClientRelativePathSchema = z.string().superRefine((value, ctx) => {
+  const segments = value.split('/')
+  if (
+    value.length === 0 ||
+    value.startsWith('/') ||
+    value.includes('\\') ||
+    value.includes(':') ||
+    value.includes('\0') ||
+    segments.some(
+      (segment) => segment === '' || segment === '.' || segment === '..',
+    )
+  ) {
+    ctx.addIssue({ code: 'custom', message: 'Invalid relative path' })
+  }
+})
 
 export const managedCoreFilesSchema = z
   .array(coldClientRelativePathSchema)
@@ -64,3 +62,30 @@ export const coldClientInstallationSchema = z
 export type ColdClientInstallation = z.infer<
   typeof coldClientInstallationSchema
 >
+
+export const coldClientDependencyIds = ['7zip', 'gbe', 'gse'] as const
+export type ColdClientDependencyId = (typeof coldClientDependencyIds)[number]
+export const coldClientDependencyIdSchema = z.enum(coldClientDependencyIds)
+export type ColdClientDependencyState =
+  | 'current'
+  | 'update-available'
+  | 'missing'
+  | 'check-failed'
+
+export interface ColdClientDependencyItemStatus {
+  dependencyId: ColdClientDependencyId
+  status: ColdClientDependencyState
+  currentAssetId: number | null
+  currentTag: string | null
+  availableAssetId: number | null
+  availableTag: string | null
+  error: string | null
+}
+
+export interface ColdClientDependencyStatus {
+  supported: boolean
+  dependencies: ColdClientDependencyItemStatus[]
+  lastCheckedAt: number | null
+  loginFileExists: boolean
+  loginDirectory: string | null
+}

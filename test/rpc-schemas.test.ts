@@ -9,6 +9,50 @@ import {
   validatedRpcHandlers,
 } from '../src/types/rpc-schemas.ts'
 
+test('validates ColdClient dependency requests and secret-free status', () => {
+  expect(
+    parseRpcRequest('updateColdClientDependencies', {
+      dependencyIds: ['gbe', 'gse'],
+    }),
+  ).toEqual({ dependencyIds: ['gbe', 'gse'] })
+  expect(() =>
+    parseRpcRequest('updateColdClientDependencies', {
+      dependencyIds: ['gbe', 'gbe'],
+    }),
+  ).toThrow()
+  expect(() =>
+    parseRpcRequest('updateColdClientDependencies', {
+      dependencyIds: ['unknown'],
+    }),
+  ).toThrow()
+
+  const status = {
+    supported: true,
+    dependencies: (['7zip', 'gbe', 'gse'] as const).map((dependencyId) => ({
+      dependencyId,
+      status: 'missing' as const,
+      currentAssetId: null,
+      currentTag: null,
+      availableAssetId: null,
+      availableTag: null,
+      error: null,
+    })),
+    lastCheckedAt: null,
+    loginFileExists: false,
+    loginDirectory:
+      'C:/user-data/coldclient/dependencies/gse/1/generate_emu_config',
+  }
+  expect(rpcResponseSchemas.getColdClientDependencies.parse(status)).toEqual(
+    status,
+  )
+  expect(() =>
+    rpcResponseSchemas.getColdClientDependencies.parse({
+      ...status,
+      loginContents: 'secret',
+    }),
+  ).toThrow()
+})
+
 test('validates complete download queue snapshots', () => {
   expect(
     downloadQueueSnapshotSchema.parse({

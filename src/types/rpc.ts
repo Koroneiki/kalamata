@@ -1,3 +1,8 @@
+import type {
+  ColdClientDependencyId,
+  ColdClientDependencyStatus,
+} from './cold-client.ts'
+
 export interface AppSummary {
   appId: number
   name: string
@@ -377,6 +382,22 @@ export type AppRpc = {
         response: HubcapUsageResult
       }
       openUserDataFolder: {
+        params: Record<string, never>
+        response: void
+      }
+      getColdClientDependencies: {
+        params: Record<string, never>
+        response: ColdClientDependencyStatus
+      }
+      checkColdClientDependencyUpdates: {
+        params: Record<string, never>
+        response: ColdClientDependencyStatus
+      }
+      updateColdClientDependencies: {
+        params: { dependencyIds: ColdClientDependencyId[] }
+        response: ColdClientDependencyStatus
+      }
+      openColdClientLoginDirectory: {
         params: Record<string, never>
         response: void
       }

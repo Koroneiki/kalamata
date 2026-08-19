@@ -7,6 +7,8 @@ import Electrobun, {
 
 import { createSteamService } from '../backend/index.ts'
 import { AppService } from '../backend/apps/app-service.ts'
+import { ColdClientDependencyService } from '../backend/cold-client/dependency-service.ts'
+import { ColdClientMutationMutex } from '../backend/cold-client/mutation-mutex.ts'
 import { DownloadQueueCoordinator } from '../backend/operations/download-queue.ts'
 import {
   getResumableApplicationTransaction,
@@ -59,6 +61,19 @@ void steam.initializeDepotKeyCache(database).catch((error) => {
   })
 })
 const appService = new AppService(steam, database)
+const coldClientMutex = new ColdClientMutationMutex()
+const coldClientDependencies = new ColdClientDependencyService(
+  Utils.paths.userData,
+  {
+    mutex: coldClientMutex,
+    reportCleanupError: (error) =>
+      diagnostics.error({
+        event: 'cold-client-dependencies.cleanup-failed',
+        error,
+      }),
+  },
+)
+let coldClientDependenciesReady = false
 let queue: DownloadQueueCoordinator
 // Recovery runs before BrowserWindow attaches the RPC transport.
 let rpcReady = false
@@ -118,6 +133,22 @@ const rpc = BrowserView.defineRPC<AppRpc>({
       openUserDataFolder() {
         if (!Utils.openPath(Utils.paths.userData))
           throw new Error('The user data folder could not be opened')
+      },
+      getColdClientDependencies() {
+        return coldClientDependencies.getStatus()
+      },
+      checkColdClientDependencyUpdates() {
+        return coldClientDependencies.checkForUpdates()
+      },
+      updateColdClientDependencies({ dependencyIds }) {
+        return coldClientDependencies.updateDependencies(dependencyIds)
+      },
+      async openColdClientLoginDirectory() {
+        const directory = (await coldClientDependencies.getStatus())
+          .loginDirectory
+        if (!directory || !Utils.openPath(directory)) {
+          throw new Error('The GSE Tools login folder could not be opened')
+        }
       },
       addLibraryEntry({ appId }) {
         return database.addLibraryEntry(appId)
@@ -226,6 +257,7 @@ Electrobun.events.on(
       try {
         await startup.catch(() => {})
         await queue.shutdown()
+        await coldClientDependencies.shutdown()
         await steam.shutdownManifestAcquisitions()
         await steam.shutdownDepotKeyAcquisitions()
       } finally {
@@ -247,6 +279,21 @@ Electrobun.events.on(
 )
 
 startup = (async () => {
+  try {
+    await coldClientDependencies.initialize(
+      new Set(
+        database
+          .getColdClientInstallations()
+          .map((installation) => installation.gbeAssetId),
+      ),
+    )
+    coldClientDependenciesReady = true
+  } catch (error) {
+    diagnostics.error({
+      event: 'cold-client-dependencies.initialization-failed',
+      error: error instanceof Error ? error : new Error(String(error)),
+    })
+  }
   // Recover commits before restoring one staging operation; surface any repair
   // requirements only after resumable work has claimed the singleton queue.
   const recoveryFailures: Array<{ appId: number; installPath: string }> = []
@@ -304,6 +351,10 @@ startup = (async () => {
   for (const recoveryFailure of recoveryFailures)
     queue.markRepairRequired(recoveryFailure.appId, recoveryFailure.installPath)
   await queue.startPending()
+  if (process.platform === 'win32' && coldClientDependenciesReady) {
+    // Release discovery updates Settings state but never downloads assets.
+    void coldClientDependencies.checkForUpdates()
+  }
 })()
 await startup
 
