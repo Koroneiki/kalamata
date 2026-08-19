@@ -14,6 +14,7 @@ import {
   coldClientOperationKinds,
   coldClientOperationPhases,
   coldClientRelativePathSchema,
+  coldClientSetupRequestSchema,
   coldClientSetupWarningSchema,
 } from './cold-client.ts'
 
@@ -142,6 +143,29 @@ export const coldClientOperationSnapshotSchema = z.discriminatedUnion(
     }),
   ],
 )
+export const coldClientStatusSchema = z.discriminatedUnion('status', [
+  strict({
+    status: z.literal('unsupported'),
+    reason: z.enum(['host-platform', 'not-installed']),
+  }),
+  strict({ status: z.literal('not-configured') }),
+  strict({
+    status: z.literal('configured'),
+    coreUpdateAvailable: z.boolean(),
+    recommendationReasons: z
+      .array(z.enum(['depots-changed', 'gse-updated']))
+      .refine(
+        (reasons) => new Set(reasons).size === reasons.length,
+        'Recommendation reasons must be unique',
+      ),
+    installedGbeTag: z.string().min(1),
+    availableGbeTag: z.string().min(1).nullable(),
+    installedGseTag: z.string().min(1),
+    availableGseTag: z.string().min(1).nullable(),
+    lastConfiguredAt: z.number().int().nonnegative().safe(),
+  }),
+  strict({ status: z.literal('invalid'), message: z.string().min(1) }),
+])
 const manifestTargetSchema = strict({
   depotId: steamIdSchema,
   manifestId: manifestIdSchema,
@@ -401,6 +425,8 @@ const rpcRequestSchemas = {
   }),
   openColdClientLoginDirectory: emptySchema,
   inspectColdClientSetup: idRequestSchema,
+  getColdClientStatus: idRequestSchema,
+  configureColdClient: coldClientSetupRequestSchema,
   getColdClientOperation: emptySchema,
   cancelColdClientOperation: idRequestSchema,
   addLibraryEntry: idRequestSchema,
@@ -459,6 +485,8 @@ export const rpcResponseSchemas = {
   updateColdClientDependencies: coldClientDependencyStatusSchema,
   openColdClientLoginDirectory: z.void(),
   inspectColdClientSetup: coldClientSetupDraftSchema,
+  getColdClientStatus: coldClientStatusSchema,
+  configureColdClient: coldClientStatusSchema,
   getColdClientOperation: coldClientOperationSnapshotSchema,
   cancelColdClientOperation: z.discriminatedUnion('accepted', [
     acceptedResultSchema,
