@@ -214,6 +214,30 @@ describe('ColdClient replacement recovery', () => {
     ).resolves.toBeNull()
   })
 
+  test('full setup supersedes an ambiguous journal and commits from current state', async () => {
+    const fixture = await createFixture()
+    const oldBackup = '.Kalamata-coldclient-backup-old'
+    await mkdir(join(fixture.installRoot, oldBackup))
+    await writeJournal(fixture.installRoot, oldBackup)
+    const current = { ...previous, gbeAssetId: 999 }
+    const database = new FakeDatabase(current)
+    const replacement = new ColdClientReplacementService(database)
+
+    await replacement.replaceSetup({
+      installRoot: fixture.installRoot,
+      stagingDirectory: fixture.staging,
+      previousInstallation: current,
+      targetInstallation: target,
+      validateLive: async () => {},
+    })
+
+    expect(database.current).toEqual(target)
+    await expect(access(join(fixture.installRoot, oldBackup))).rejects.toThrow()
+    await expect(
+      access(replacementJournalPath(fixture.installRoot)),
+    ).rejects.toThrow()
+  })
+
   test('recovers settings without changing sibling core files', async () => {
     const fixture = await createFixture()
     const live = join(fixture.installRoot, '_ColdClient')

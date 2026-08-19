@@ -36,6 +36,7 @@ const journalSchema = z
         z.object({ path: z.string().min(1), existed: z.boolean() }).strict(),
       )
       .length(1),
+    deferredCleanupRelativePaths: z.array(z.string().min(1)).default([]),
   })
   .strict()
   .superRefine((journal, ctx) => {
@@ -65,8 +66,21 @@ const journalSchema = z
     for (const path of [
       journal.stagingRelativePath,
       journal.backupRelativePath,
+      ...journal.deferredCleanupRelativePaths,
     ]) {
-      if (path.includes('/') || path.includes('\\') || path.includes('\0')) {
+      const deferred = journal.deferredCleanupRelativePaths.includes(path)
+      const expectedDeferredPrefix = [
+        STAGING_PREFIX,
+        BACKUP_PREFIX,
+        SETTINGS_STAGING_PREFIX,
+        SETTINGS_BACKUP_PREFIX,
+      ].some((prefix) => path.startsWith(prefix))
+      if (
+        path.includes('/') ||
+        path.includes('\\') ||
+        path.includes('\0') ||
+        (deferred && !expectedDeferredPrefix)
+      ) {
         ctx.addIssue({
           code: 'custom',
           message: 'Journal paths must be siblings',
@@ -166,9 +180,21 @@ export class ColdClientReplacementService {
       affectedFiles: [
         { path: paths.liveRelativePath, existed: oldLiveExisted },
       ],
+      deferredCleanupRelativePaths: [],
     })
     const journalPath = replacementJournalPath(installRoot)
     await mkdir(join(installRoot, CONFIG_DIRECTORY), { recursive: true })
+    const existingJournal = await readJournal(installRoot)
+    if (existingJournal) {
+      if (paths.kind !== 'setup') {
+        throw new Error('Resolve the interrupted ColdClient operation first')
+      }
+      journal.deferredCleanupRelativePaths = [
+        existingJournal.stagingRelativePath,
+        existingJournal.backupRelativePath,
+        ...existingJournal.deferredCleanupRelativePaths,
+      ]
+    }
     await writeDurableJson(journalPath, journal)
 
     let databaseCommitted = false
@@ -265,6 +291,12 @@ export class ColdClientReplacementService {
       journalPathInRoot(journal.installRoot, journal.backupRelativePath),
       { recursive: true, force: true },
     )
+    for (const path of journal.deferredCleanupRelativePaths) {
+      await rm(journalPathInRoot(journal.installRoot, path), {
+        recursive: true,
+        force: true,
+      })
+    }
     await rm(
       journalPathInRoot(journal.installRoot, journal.stagingRelativePath),
       { recursive: true, force: true },
