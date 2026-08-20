@@ -9,6 +9,7 @@ import {
 import { AVAILABLE_UPDATE_BATCH_SIZE } from './available-updates.ts'
 import {
   coldClientDependencyIdSchema,
+  coldClientSetupModes,
   coldClientDetectionSourceSchema,
   coldClientLoaderArchitectureSchema,
   coldClientOperationKinds,
@@ -442,10 +443,13 @@ const rpcRequestSchemas = {
       ),
   }),
   openColdClientLoginDirectory: emptySchema,
-  inspectColdClientSetup: idRequestSchema,
+  inspectColdClientSetup: strict({
+    appId: steamIdSchema,
+    mode: z.enum(coldClientSetupModes),
+  }),
   getColdClientStatus: idRequestSchema,
   configureColdClient: coldClientSetupRequestSchema,
-  regenerateColdClientConfiguration: idRequestSchema,
+  regenerateColdClientConfiguration: coldClientSetupRequestSchema,
   updateColdClientCore: idRequestSchema,
   getColdClientOperation: emptySchema,
   cancelColdClientOperation: idRequestSchema,

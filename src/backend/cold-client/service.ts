@@ -4,7 +4,9 @@ import { join } from 'node:path'
 import type {
   ColdClientInstallation,
   ColdClientSetupDraft,
+  ColdClientSetupMode,
   ColdClientSetupRequest,
+  ColdClientSetupWarning,
   ColdClientStatus,
 } from '../../types/cold-client.ts'
 import { coldClientSetupRequestSchema } from '../../types/cold-client.ts'
@@ -94,10 +96,10 @@ interface ReplacementProvider {
     targetInstallation: ColdClientInstallation
     validateLive(directory: string): Promise<void>
   }): Promise<void>
-  replaceSettings(options: {
+  replaceConfiguration(options: {
     installRoot: string
     stagingDirectory: string
-    previousInstallation: ColdClientInstallation | null
+    previousInstallation: ColdClientInstallation
     targetInstallation: ColdClientInstallation
     validateLive(directory: string): Promise<void>
   }): Promise<void>
@@ -157,6 +159,18 @@ export class ColdClientService {
     this.#reportCleanupError = options.reportCleanupError ?? (() => {})
   }
 
+  async inspectSetup(
+    appId: number,
+    mode: ColdClientSetupMode,
+  ): Promise<ColdClientSetupDraft> {
+    const draft = await this.inspector.inspect(appId)
+    if (mode === 'setup') return draft
+    const previous = this.database.getColdClientInstallation(appId)
+    if (!previous) throw new Error('ColdClient is not configured')
+    const gbe = requireArtifact(this.dependencies, 'gbe', previous.gbeAssetId)
+    return applySavedConfiguration(draft, previous, gbe)
+  }
+
   configure(requestInput: ColdClientSetupRequest): Promise<ColdClientStatus> {
     this.assertSupported()
     const request = coldClientSetupRequestSchema.parse(requestInput)
@@ -189,60 +203,76 @@ export class ColdClientService {
     })
   }
 
-  regenerate(appId: number): Promise<ColdClientStatus> {
+  regenerate(requestInput: ColdClientSetupRequest): Promise<ColdClientStatus> {
     this.assertSupported()
-    return this.operations.run('regenerate', appId, async (context) => {
-      const previous = this.database.getColdClientInstallation(appId)
+    const request = coldClientSetupRequestSchema.parse(requestInput)
+    return this.operations.run('regenerate', request.appId, async (context) => {
+      const initialDraft = await this.inspectSetup(request.appId, 'regenerate')
+      validateReviewedRequest(request, initialDraft)
+      const previous = this.database.getColdClientInstallation(request.appId)
       if (!previous) throw new Error('ColdClient is not configured')
-      const library = requireInstalledLibrary(this.database, appId)
+      const library = requireInstalledLibrary(this.database, request.appId)
       const installRoot = await realpath(library.installPath)
-      const initialDepots = depotSnapshot(this.database, appId)
-      const generated = await this.generator.generate(appId, context.signal)
+      const initialDepots = depotSnapshot(this.database, request.appId)
+      const generated = await this.generator.generate(
+        request.appId,
+        context.signal,
+      )
+      if (generated.gseAssetId !== request.gseAssetId) {
+        throw new Error('GSE Tools changed after regeneration review')
+      }
       context.setPhase('building')
       const release = await this.#acquireLock(installRoot)
       let stagingDirectory: string | undefined
       try {
-        const currentLibrary = requireInstalledLibrary(this.database, appId)
+        const currentLibrary = requireInstalledLibrary(
+          this.database,
+          request.appId,
+        )
         if ((await realpath(currentLibrary.installPath)) !== installRoot) {
           throw new Error('The game install path changed during regeneration')
         }
-        const current = this.database.getColdClientInstallation(appId)
+        const current = this.database.getColdClientInstallation(request.appId)
         if (!sameInstallation(current, previous)) {
           throw new Error('ColdClient changed during regeneration')
         }
-        const currentDepots = depotSnapshot(this.database, appId)
+        const lockedDraft = await this.inspectSetup(request.appId, 'regenerate')
+        validateReviewedRequest(request, lockedDraft)
+        const currentDepots = depotSnapshot(this.database, request.appId)
         if (JSON.stringify(currentDepots) !== JSON.stringify(initialDepots)) {
           throw new Error('Installed depots changed during regeneration')
         }
         const gbe = await this.dependencies.validateArtifactSnapshot(
           'gbe',
-          previous.gbeAssetId,
+          request.gbeAssetId,
         )
         await this.dependencies.validateArtifactSnapshot(
           'gse',
-          generated.gseAssetId,
+          request.gseAssetId,
         )
-        await assertSafeDirectory(
-          join(installRoot, '_ColdClient'),
-          'ColdClient directory',
-        )
+        const liveDirectory = join(installRoot, '_ColdClient')
+        await assertSafeDirectory(liveDirectory, 'ColdClient directory')
         stagingDirectory = join(
           installRoot,
-          `.Kalamata-coldclient-settings-staging-${randomUUID()}`,
+          `.Kalamata-coldclient-regeneration-staging-${randomUUID()}`,
         )
-        await cp(generated.steamSettingsDirectory, stagingDirectory, {
+        // A full-directory transaction keeps settings, loader changes, and custom files atomic.
+        await cp(liveDirectory, stagingDirectory, {
           recursive: true,
           errorOnExist: true,
           force: false,
         })
-        if (previous.steamApiRelativePath) {
-          const steamApiPath = join(
-            installRoot,
-            ...previous.steamApiRelativePath.split('/'),
-          )
+        const settings = join(stagingDirectory, 'steam_settings')
+        await rm(settings, { recursive: true, force: true })
+        await cp(generated.steamSettingsDirectory, settings, {
+          recursive: true,
+          errorOnExist: true,
+          force: false,
+        })
+        if (request.steamApiRelativePath) {
           await assertSafeRelativeFile(
             installRoot,
-            previous.steamApiRelativePath,
+            request.steamApiRelativePath,
           )
           await this.interfaceGenerator.generate(
             join(
@@ -252,35 +282,75 @@ export class ColdClientService {
               'generate_interfaces',
               'generate_interfaces_x64.exe',
             ),
-            steamApiPath,
+            join(installRoot, ...request.steamApiRelativePath.split('/')),
             join(installRoot, CONFIG_TEMPORARY_DIRECTORY),
-            join(stagingDirectory, 'steam_interfaces.txt'),
+            join(settings, 'steam_interfaces.txt'),
             context.signal,
           )
         }
-        await validateGeneratedSettings(
+        await updateColdClientLoaderIni(
+          join(stagingDirectory, 'ColdClientLoader.ini'),
+          {
+            executableRelativePath: request.executableRelativePath,
+            appId: request.appId,
+            launchArguments: request.launchArguments,
+          },
+        )
+        const managedCoreFiles = switchedLoaderInventory(
+          previous.managedCoreFiles,
+          request.loaderArchitecture,
+        )
+        if (request.loaderArchitecture !== previous.loaderArchitecture) {
+          await rm(
+            join(
+              stagingDirectory,
+              `steamclient_loader_${previous.loaderArchitecture}.exe`,
+            ),
+          )
+          await cp(
+            join(
+              gbe.directory,
+              'release',
+              'steamclient_experimental',
+              `steamclient_loader_${request.loaderArchitecture}.exe`,
+            ),
+            join(
+              stagingDirectory,
+              `steamclient_loader_${request.loaderArchitecture}.exe`,
+            ),
+            { errorOnExist: true, force: false },
+          )
+        }
+        await validateRegeneratedInstallation(
           stagingDirectory,
-          appId,
-          previous.steamApiRelativePath !== null,
+          request,
+          managedCoreFiles,
         )
         const target: ColdClientInstallation = {
-          ...previous,
-          gseAssetId: generated.gseAssetId,
+          appId: request.appId,
+          loaderArchitecture: request.loaderArchitecture,
+          executableRelativePath: request.executableRelativePath,
+          steamApiRelativePath: request.steamApiRelativePath,
+          launchArguments: request.launchArguments,
+          launchArgumentSource: request.launchArgumentSource,
+          gbeAssetId: request.gbeAssetId,
+          gseAssetId: request.gseAssetId,
           generatedDepotFingerprint: coldClientDepotFingerprint(currentDepots),
+          managedCoreFiles,
           configuredAt: this.#now(),
         }
         context.beginReplacement()
-        await this.replacement.replaceSettings({
+        await this.replacement.replaceConfiguration({
           installRoot,
           stagingDirectory,
           previousInstallation: previous,
           targetInstallation: target,
           validateLive: async (live) => {
             context.setPhase('validating')
-            await validateGeneratedSettings(
+            await validateRegeneratedInstallation(
               live,
-              appId,
-              previous.steamApiRelativePath !== null,
+              request,
+              managedCoreFiles,
             )
           },
         })
@@ -298,7 +368,7 @@ export class ColdClientService {
           await release()
         }
       }
-      return this.getStatus(appId)
+      return this.getStatus(request.appId)
     })
   }
 
@@ -712,15 +782,21 @@ async function validatePreparedInstallation(
   root: string,
   request: ColdClientSetupRequest,
 ): Promise<string[]> {
-  for (const path of requiredSettingsFiles) {
-    await assertRegularFile(join(root, 'steam_settings', path), path)
-  }
-  if (request.steamApiRelativePath) {
-    await assertRegularFile(
-      join(root, 'steam_settings', 'steam_interfaces.txt'),
-      'steam_interfaces.txt',
-    )
-  }
+  await validateGeneratedSettings(
+    join(root, 'steam_settings'),
+    request.appId,
+    request.steamApiRelativePath !== null,
+  )
+  await validateReviewedLoader(root, request)
+  const files = await collectManagedCoreFiles(root)
+  assertRequiredManagedCoreFiles(files, request.loaderArchitecture)
+  return files
+}
+
+async function validateReviewedLoader(
+  root: string,
+  request: ColdClientSetupRequest,
+): Promise<void> {
   const ini = await readColdClientLoaderIniValues(
     join(root, 'ColdClientLoader.ini'),
   )
@@ -733,9 +809,42 @@ async function validatePreparedInstallation(
   ) {
     throw new Error('ColdClient loader INI does not match the reviewed setup')
   }
-  const files = await collectManagedCoreFiles(root)
-  assertRequiredManagedCoreFiles(files, request.loaderArchitecture)
-  return files
+}
+
+function switchedLoaderInventory(
+  files: string[],
+  architecture: 'x86' | 'x64',
+): string[] {
+  return [
+    ...files.filter(
+      (path) => !/^steamclient_loader_(?:x86|x64)\.exe$/iu.test(path),
+    ),
+    `steamclient_loader_${architecture}.exe`,
+  ].toSorted((left, right) => (left < right ? -1 : left > right ? 1 : 0))
+}
+
+async function validateRegeneratedInstallation(
+  root: string,
+  request: ColdClientSetupRequest,
+  managedCoreFiles: string[],
+): Promise<void> {
+  await validateGeneratedSettings(
+    join(root, 'steam_settings'),
+    request.appId,
+    request.steamApiRelativePath !== null,
+  )
+  await validateReviewedLoader(root, request)
+  assertRequiredManagedCoreFiles(managedCoreFiles, request.loaderArchitecture)
+  for (const path of managedCoreFiles) {
+    await assertRegularFile(join(root, ...path.split('/')), path)
+  }
+  const unusedLoader =
+    request.loaderArchitecture === 'x86'
+      ? 'steamclient_loader_x64.exe'
+      : 'steamclient_loader_x86.exe'
+  if (await lstatOrNull(join(root, unusedLoader))) {
+    throw new Error('ColdClient core contains the unused loader')
+  }
 }
 
 async function validateGeneratedSettings(
@@ -833,6 +942,54 @@ function requireArtifact(
   const artifact = dependencies.artifact(dependencyId, assetId)
   if (!artifact) throw new Error('ColdClient dependency record is missing')
   return artifact
+}
+
+function applySavedConfiguration(
+  draft: ColdClientSetupDraft,
+  installation: ColdClientInstallation,
+  gbe: ArtifactDescriptor,
+): ColdClientSetupDraft {
+  const selectedExecutable = draft.executableCandidates.includes(
+    installation.executableRelativePath,
+  )
+    ? installation.executableRelativePath
+    : null
+  const selectedSteamApi =
+    installation.steamApiRelativePath === null
+      ? null
+      : draft.steamApiCandidates.includes(installation.steamApiRelativePath)
+        ? installation.steamApiRelativePath
+        : null
+  const warnings: ColdClientSetupWarning[] = draft.warnings.filter(
+    (warning) =>
+      warning !== 'multiple-shipping-executables' &&
+      warning !== 'executable-choice-required' &&
+      warning !== 'steam-api-choice-required' &&
+      warning !== 'existing-cold-client-will-be-replaced',
+  )
+  if (!selectedExecutable) warnings.push('executable-choice-required')
+  if (draft.steamApiCandidates.length > 0 && !selectedSteamApi) {
+    warnings.push('steam-api-choice-required')
+  }
+  const launchSource = draft.launchOptions.some(
+    ({ key }) => key === installation.launchArgumentSource,
+  )
+    ? installation.launchArgumentSource
+    : null
+  return {
+    ...draft,
+    selectedExecutableRelativePath: selectedExecutable,
+    selectedSteamApiRelativePath: selectedSteamApi,
+    loaderArchitecture: selectedSteamApi
+      ? selectedSteamApi.toLowerCase().endsWith('steam_api.dll')
+        ? 'x86'
+        : 'x64'
+      : installation.loaderArchitecture,
+    launchArguments: installation.launchArguments,
+    launchArgumentSource: launchSource,
+    warnings,
+    gbe: { assetId: gbe.assetId, tag: gbe.tag },
+  }
 }
 
 function sameInstallation(

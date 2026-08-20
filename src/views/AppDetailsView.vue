@@ -32,10 +32,7 @@ import { useCustomManifest } from '@/composables/use-custom-manifest'
 import { useAvailableUpdates } from '@/composables/use-available-updates'
 import { useDepotResourceAcquisition } from '@/composables/use-depot-resource-acquisition'
 import { acquireManifest, openInstallDirectory } from '@/api/apps'
-import {
-  regenerateColdClientConfiguration,
-  updateColdClientCore,
-} from '@/api/cold-client'
+import { updateColdClientCore } from '@/api/cold-client'
 import {
   addLibraryEntry,
   removeLibraryEntry,
@@ -48,6 +45,7 @@ import {
 import { useOperationStore } from '@/stores/operation'
 import { useColdClientOperationStore } from '@/stores/cold-client-operation'
 import type { AppDepot } from '@/types/rpc'
+import type { ColdClientSetupMode } from '@/types/cold-client'
 import { filterDepots, matchesDepotPlatform } from '@/utils/depots'
 
 import { steamIdStringSchema } from '@/types/schemas'
@@ -92,6 +90,7 @@ const dialogOpen = ref(false)
 const gameSettingsOpen = ref(false)
 const removeDialogOpen = ref(false)
 const coldClientSetupOpen = ref(false)
+const coldClientSetupMode = ref<ColdClientSetupMode>('setup')
 const mutationError = ref('')
 const manifestError = ref('')
 const acquiringManifests = reactive(new Set<string>())
@@ -131,9 +130,6 @@ const pinMutation = useMutation({
 })
 const openInstallDirectoryMutation = useMutation({
   mutation: (id: number) => openInstallDirectory(id),
-})
-const regenerateColdClientMutation = useMutation({
-  mutation: (id: number) => regenerateColdClientConfiguration(id),
 })
 const updateColdClientCoreMutation = useMutation({
   mutation: (id: number) => updateColdClientCore(id),
@@ -404,25 +400,20 @@ function openRemoveDialog() {
 
 function openColdClientSetup() {
   gameSettingsOpen.value = false
+  mutationError.value = ''
   if (!coldClientReady.value) {
     void router.push('/settings')
     return
   }
+  coldClientSetupMode.value = 'setup'
   coldClientSetupOpen.value = true
 }
 
-async function regenerateColdClient() {
-  const targetAppId = appId.value
-  mutationError.value = ''
+function regenerateColdClient() {
   gameSettingsOpen.value = false
-  try {
-    await regenerateColdClientMutation.mutateAsync(targetAppId)
-  } catch (error) {
-    if (appId.value === targetAppId) {
-      mutationError.value =
-        error instanceof Error ? error.message : String(error)
-    }
-  }
+  mutationError.value = ''
+  coldClientSetupMode.value = 'regenerate'
+  coldClientSetupOpen.value = true
 }
 
 async function updateColdClient() {
@@ -760,9 +751,9 @@ async function browseLocalFiles() {
             :app-id="data.appId"
             :app-name="data.name"
             :install-path="data.installPath"
-            :operation-phase="coldClientOperationForApp?.phase"
-            :operation-cancellable="coldClientOperationForApp?.cancellable"
+            :mode="coldClientSetupMode"
             @update:open="coldClientSetupOpen = $event"
+            @error="mutationError = $event"
           />
         </template>
 

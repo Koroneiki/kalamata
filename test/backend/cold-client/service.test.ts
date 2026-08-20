@@ -191,33 +191,62 @@ test('rejects every mutating operation outside Windows', async () => {
   })
 
   expect(() => service.configure(fixture.request)).toThrow('only on Windows')
-  expect(() => service.regenerate(10)).toThrow('only on Windows')
+  expect(() => service.regenerate(fixture.request)).toThrow('only on Windows')
   expect(() => service.updateCore(10)).toThrow('only on Windows')
 })
 
-test('regenerates only steam_settings and preserves the configured core', async () => {
+test('regenerates reviewed settings and loader choices while preserving custom files', async () => {
   const fixture = await createFixture()
   const service = createService(fixture)
   await service.configure(fixture.request)
+  const review = await service.inspectSetup(10, 'regenerate')
+  expect(review).toMatchObject({
+    selectedExecutableRelativePath: 'Game/Binaries/Game.exe',
+    selectedSteamApiRelativePath: 'Game/Binaries/steam_api64.dll',
+    loaderArchitecture: 'x64',
+    launchArguments: '-windowed',
+    launchArgumentSource: '0',
+    gbe: { assetId: 101, tag: 'gbe-v1' },
+  })
+  expect(review.warnings).not.toContain('existing-cold-client-will-be-replaced')
   const live = join(fixture.installRoot, '_ColdClient')
-  const loaderBefore = await readFile(join(live, 'ColdClientLoader.ini'))
   const coreBefore = await readFile(join(live, 'steamclient64.dll'))
+  await writeFile(join(live, 'custom-user-file.dll'), 'preserve me')
   await writeFile(
     join(live, 'steam_settings', 'custom-user-file.txt'),
     'remove me',
   )
   await writeGeneratedSettings(fixture.generatedSettings, 'regenerated-overlay')
 
-  const status = await service.regenerate(10)
+  const status = await service.regenerate({
+    ...fixture.request,
+    executableRelativePath: 'Alternate.exe',
+    steamApiRelativePath: 'Game/Binaries/steam_api.dll',
+    loaderArchitecture: 'x86',
+    launchArguments: '-custom',
+    launchArgumentSource: null,
+  })
 
   expect(status).toMatchObject({
     status: 'configured',
     recommendationReasons: [],
   })
-  expect(await readFile(join(live, 'ColdClientLoader.ini'))).toEqual(
-    loaderBefore,
+  expect(await readFile(join(live, 'ColdClientLoader.ini'), 'utf8')).toContain(
+    'Exe=..\\Alternate.exe\r\n',
+  )
+  expect(await readFile(join(live, 'ColdClientLoader.ini'), 'utf8')).toContain(
+    'ExeCommandLine=-custom\r\n',
   )
   expect(await readFile(join(live, 'steamclient64.dll'))).toEqual(coreBefore)
+  expect(await readFile(join(live, 'custom-user-file.dll'), 'utf8')).toBe(
+    'preserve me',
+  )
+  await expect(
+    access(join(live, 'steamclient_loader_x86.exe')),
+  ).resolves.toBeNull()
+  await expect(
+    access(join(live, 'steamclient_loader_x64.exe')),
+  ).rejects.toThrow()
   expect(
     await readFile(join(live, 'steam_settings', 'configs.overlay.ini'), 'utf8'),
   ).toBe('regenerated-overlay')
@@ -225,6 +254,13 @@ test('regenerates only steam_settings and preserves the configured core', async 
     access(join(live, 'steam_settings', 'custom-user-file.txt')),
   ).rejects.toThrow()
   expect(fixture.database.current?.configuredAt).toBe(3000)
+  expect(fixture.database.current).toMatchObject({
+    executableRelativePath: 'Alternate.exe',
+    steamApiRelativePath: 'Game/Binaries/steam_api.dll',
+    loaderArchitecture: 'x86',
+    launchArguments: '-custom',
+    launchArgumentSource: null,
+  })
 })
 
 test('updates only managed core files and preserves custom configuration', async () => {
@@ -337,6 +373,11 @@ async function createFixture() {
   ])
   await Promise.all([
     writeFile(join(installRoot, 'Game', 'Binaries', 'Game.exe'), 'game'),
+    writeFile(join(installRoot, 'Alternate.exe'), 'alternate'),
+    writeFile(
+      join(installRoot, 'Game', 'Binaries', 'steam_api.dll'),
+      'steam api x86',
+    ),
     writeFile(
       join(installRoot, 'Game', 'Binaries', 'steam_api64.dll'),
       'steam api',
@@ -418,11 +459,17 @@ async function createFixture() {
   const draft: ColdClientSetupDraft = {
     appId: 10,
     targetRelativePath: '_ColdClient',
-    executableCandidates: ['Game/Binaries/Game.exe'],
-    executableArchitectures: { 'Game/Binaries/Game.exe': 'x64' },
+    executableCandidates: ['Alternate.exe', 'Game/Binaries/Game.exe'],
+    executableArchitectures: {
+      'Alternate.exe': 'x86',
+      'Game/Binaries/Game.exe': 'x64',
+    },
     selectedExecutableRelativePath: 'Game/Binaries/Game.exe',
     executableDetectionSource: 'sole-executable',
-    steamApiCandidates: ['Game/Binaries/steam_api64.dll'],
+    steamApiCandidates: [
+      'Game/Binaries/steam_api.dll',
+      'Game/Binaries/steam_api64.dll',
+    ],
     selectedSteamApiRelativePath: 'Game/Binaries/steam_api64.dll',
     steamApiDetectionSource: 'binary-directory',
     loaderArchitecture: 'x64',

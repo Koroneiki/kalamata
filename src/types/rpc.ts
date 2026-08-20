@@ -5,6 +5,7 @@ import type {
   ColdClientOperationSnapshot,
   ColdClientSetupRequest,
   ColdClientSetupDraft,
+  ColdClientSetupMode,
   ColdClientStatus,
 } from './cold-client.ts'
 
@@ -407,7 +408,7 @@ export type AppRpc = {
         response: void
       }
       inspectColdClientSetup: {
-        params: { appId: number }
+        params: { appId: number; mode: ColdClientSetupMode }
         response: ColdClientSetupDraft
       }
       getColdClientStatus: {
@@ -419,7 +420,7 @@ export type AppRpc = {
         response: ColdClientStatus
       }
       regenerateColdClientConfiguration: {
-        params: { appId: number }
+        params: ColdClientSetupRequest
         response: ColdClientStatus
       }
       updateColdClientCore: {
