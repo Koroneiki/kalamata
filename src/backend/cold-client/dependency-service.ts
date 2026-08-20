@@ -137,10 +137,6 @@ export class ColdClientDependencyService {
     await mkdir(this.dependenciesRoot, { recursive: true })
     await this.cleanupTemporaryPaths()
     this.#metadata = await this.loadMetadata()
-    for (const dependencyId of coldClientDependencyIds) {
-      const activeId = this.#metadata.active[dependencyId]
-      if (activeId !== null) await this.validateArtifact(dependencyId, activeId)
-    }
     await this.cleanupInactiveArtifacts(referencedGbeAssetIds)
     this.#initialized = true
   }
@@ -160,11 +156,17 @@ export class ColdClientDependencyService {
             this.artifactDirectory('gse', activeGseId),
             'generate_emu_config',
           )
+    const dependencies = await Promise.all(
+      coldClientDependencyIds.map(async (dependencyId) =>
+        this.dependencyStatus(
+          dependencyId,
+          await this.installedArtifact(dependencyId),
+        ),
+      ),
+    )
     return {
       supported: this.#platform === 'win32',
-      dependencies: coldClientDependencyIds.map((dependencyId) =>
-        this.dependencyStatus(dependencyId),
-      ),
+      dependencies,
       lastCheckedAt: this.#metadata.lastCheckedAt,
       loginFileExists:
         loginDirectory !== null &&
@@ -409,12 +411,28 @@ export class ColdClientDependencyService {
       )
       await mkdir(dirname(destination), { recursive: true })
       if (await exists(destination)) {
-        await this.validateArtifact(dependencyId, descriptor.assetId)
-        if (oldLogin) {
-          await copyFile(
-            oldLogin,
-            join(destination, 'generate_emu_config', this.loginFilename),
-          )
+        let valid = true
+        try {
+          await this.validateArtifact(dependencyId, descriptor.assetId)
+        } catch {
+          valid = false
+        }
+        if (valid) {
+          if (oldLogin) {
+            await copyFile(
+              oldLogin,
+              join(destination, 'generate_emu_config', this.loginFilename),
+            )
+          }
+        } else {
+          if (oldLogin) {
+            await copyFile(
+              oldLogin,
+              join(stagingDirectory, 'generate_emu_config', this.loginFilename),
+            )
+          }
+          await rm(destination, { recursive: true, force: true })
+          await rename(stagingDirectory, destination)
         }
       } else {
         if (oldLogin) {
@@ -511,8 +529,8 @@ export class ColdClientDependencyService {
 
   private dependencyStatus(
     dependencyId: ColdClientDependencyId,
+    current: ArtifactDescriptor | null,
   ): ColdClientDependencyItemStatus {
-    const current = this.activeArtifact(dependencyId)
     const available = this.#remote.get(dependencyId) ?? null
     const error = this.#checkErrors.get(dependencyId) ?? null
     return {
@@ -523,6 +541,22 @@ export class ColdClientDependencyService {
       availableAssetId: available?.assetId ?? null,
       availableTag: available?.tag ?? null,
       error,
+    }
+  }
+
+  private async installedArtifact(
+    dependencyId: ColdClientDependencyId,
+  ): Promise<ArtifactDescriptor | null> {
+    const current = this.activeArtifact(dependencyId)
+    if (!current) return null
+    try {
+      await validateRequiredFiles(
+        this.artifactDirectory(dependencyId, current.assetId),
+        definitions[dependencyId].requiredFiles,
+      )
+      return current
+    } catch {
+      return null
     }
   }
 
@@ -609,8 +643,8 @@ function dependencyState(
   available: RemoteArtifact | null,
   error: string | null,
 ): ColdClientDependencyItemStatus['status'] {
-  if (error) return 'check-failed'
   if (!current) return 'missing'
+  if (error) return 'check-failed'
   if (available && available.assetId !== current.assetId)
     return 'update-available'
   return 'current'
@@ -621,6 +655,13 @@ async function validateInventory(
   requiredFiles: string[],
 ): Promise<void> {
   await validateExtractedTree(root)
+  await validateRequiredFiles(root, requiredFiles)
+}
+
+async function validateRequiredFiles(
+  root: string,
+  requiredFiles: string[],
+): Promise<void> {
   for (const relativePath of requiredFiles) {
     const metadata = await stat(join(root, relativePath))
     if (!metadata.isFile() || metadata.size === 0) {

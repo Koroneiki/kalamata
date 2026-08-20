@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { afterEach, expect, test } from 'bun:test'
-import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ArchiveExtractor } from '../../../src/backend/cold-client/archive-extractor.ts'
@@ -142,6 +142,43 @@ test('keeps validated cached dependencies usable after a check failure', async (
     currentAssetId: 201,
   })
   expect(fixture.service.activeArtifact('gbe')?.assetId).toBe(201)
+})
+
+test('reports and repairs deleted active dependency files and directories', async () => {
+  const fixture = await createFixture()
+  await fixture.service.checkForUpdates()
+  await fixture.service.updateDependencies(['gbe'])
+  const directory = fixture.service.artifactDirectory('gbe', 201)
+
+  await rm(join(directory, gbeFiles[0]!))
+  expect((await fixture.service.getStatus()).dependencies[1]).toMatchObject({
+    dependencyId: 'gbe',
+    status: 'missing',
+    currentAssetId: null,
+    currentTag: null,
+  })
+
+  await fixture.service.updateDependencies(['gbe'])
+  expect((await fixture.service.getStatus()).dependencies[1]).toMatchObject({
+    dependencyId: 'gbe',
+    status: 'current',
+    currentAssetId: 201,
+  })
+
+  await rm(directory, { recursive: true })
+  const restarted = await fixture.restart()
+  expect((await restarted.getStatus()).dependencies[1]).toMatchObject({
+    dependencyId: 'gbe',
+    status: 'missing',
+    currentAssetId: null,
+  })
+
+  await restarted.updateDependencies(['gbe'])
+  expect((await restarted.getStatus()).dependencies[1]).toMatchObject({
+    dependencyId: 'gbe',
+    status: 'current',
+    currentAssetId: 201,
+  })
 })
 
 test('stops a selected dependency update after the first failure', async () => {
