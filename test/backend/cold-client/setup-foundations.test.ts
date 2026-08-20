@@ -103,7 +103,10 @@ describe('managed core inventory', () => {
     const files = await collectManagedCoreFiles(root)
 
     expect(files).toEqual([
-      'extra_dlls/nested/extra.dll',
+      'GameOverlayRenderer.dll',
+      'GameOverlayRenderer64.dll',
+      'extra_dlls/steamclient_extra_x64.dll',
+      'extra_dlls/steamclient_extra_x86.dll',
       'steamclient.dll',
       'steamclient64.dll',
       'steamclient_loader_x64.exe',
@@ -127,7 +130,10 @@ describe('managed core inventory', () => {
           'steamclient64.dll',
           'steamclient_loader_x64.exe',
           'steamclient_loader_x86.exe',
-          'extra_dlls/extra.dll',
+          'GameOverlayRenderer.dll',
+          'GameOverlayRenderer64.dll',
+          'extra_dlls/steamclient_extra_x86.dll',
+          'extra_dlls/steamclient_extra_x64.dll',
         ],
         'x64',
       ),
@@ -217,14 +223,23 @@ test('runs the interface generator in an isolated directory', async () => {
 })
 
 async function writeCoreFixture(directory: string): Promise<void> {
-  await mkdir(join(directory, 'extra_dlls', 'nested'), { recursive: true })
+  await mkdir(join(directory, 'extra_dlls'), { recursive: true })
   await mkdir(join(directory, 'steam_settings'), { recursive: true })
   await Promise.all([
     writeFile(join(directory, 'ColdClientLoader.ini'), 'template'),
     writeFile(join(directory, 'steamclient.dll'), 'x86'),
     writeFile(join(directory, 'steamclient64.dll'), 'x64'),
     writeFile(join(directory, 'steamclient_loader_x64.exe'), 'loader'),
-    writeFile(join(directory, 'extra_dlls', 'nested', 'extra.dll'), 'extra'),
+    writeFile(join(directory, 'GameOverlayRenderer.dll'), 'overlay x86'),
+    writeFile(join(directory, 'GameOverlayRenderer64.dll'), 'overlay'),
+    writeFile(
+      join(directory, 'extra_dlls', 'steamclient_extra_x86.dll'),
+      'extra x86',
+    ),
+    writeFile(
+      join(directory, 'extra_dlls', 'steamclient_extra_x64.dll'),
+      'extra',
+    ),
     writeFile(
       join(directory, 'steam_settings', 'configs.main.ini'),
       'settings',

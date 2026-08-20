@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { cp, lstat, readFile, realpath, rm } from 'node:fs/promises'
+import { cp, lstat, mkdir, readFile, realpath, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import type {
   ColdClientInstallation,
@@ -68,6 +68,15 @@ interface InterfaceGeneratorProvider {
     signal: AbortSignal,
   ): Promise<void>
 }
+
+const gbeSharedCoreFiles = [
+  'steamclient.dll',
+  'steamclient64.dll',
+  'GameOverlayRenderer.dll',
+  'GameOverlayRenderer64.dll',
+  'extra_dlls/steamclient_extra_x86.dll',
+  'extra_dlls/steamclient_extra_x64.dll',
+] as const
 
 interface OperationProvider {
   run<Result>(
@@ -335,23 +344,12 @@ export class ColdClientService {
           installRoot,
           `.Kalamata-coldclient-core-staging-${randomUUID()}`,
         )
-        await cp(
+        await copyGbeCore(
           join(gbe.directory, 'release', 'steamclient_experimental'),
           stagingDirectory,
-          { recursive: true, errorOnExist: true, force: false },
+          previous.loaderArchitecture,
+          false,
         )
-        const unusedLoader =
-          previous.loaderArchitecture === 'x86'
-            ? 'steamclient_loader_x64.exe'
-            : 'steamclient_loader_x86.exe'
-        await Promise.all([
-          rm(join(stagingDirectory, unusedLoader), { force: true }),
-          rm(join(stagingDirectory, 'ColdClientLoader.ini'), { force: true }),
-          rm(join(stagingDirectory, 'steam_settings'), {
-            recursive: true,
-            force: true,
-          }),
-        ])
         const managedCoreFiles = await collectManagedCoreFiles(stagingDirectory)
         assertRequiredManagedCoreFiles(
           managedCoreFiles,
@@ -520,18 +518,13 @@ export class ColdClientService {
         `.Kalamata-coldclient-staging-${randomUUID()}`,
       )
       const source = join(gbe.directory, 'release', 'steamclient_experimental')
-      await cp(source, stagingDirectory, {
-        recursive: true,
-        errorOnExist: true,
-        force: false,
-      })
-      const unusedLoader =
-        request.loaderArchitecture === 'x86'
-          ? 'steamclient_loader_x64.exe'
-          : 'steamclient_loader_x86.exe'
-      await rm(join(stagingDirectory, unusedLoader), { force: true })
+      await copyGbeCore(
+        source,
+        stagingDirectory,
+        request.loaderArchitecture,
+        true,
+      )
       const settings = join(stagingDirectory, 'steam_settings')
-      await rm(settings, { recursive: true, force: true })
       await cp(generated.steamSettingsDirectory, settings, {
         recursive: true,
         errorOnExist: true,
@@ -686,6 +679,33 @@ function validateReviewedRequest(
   if (request.loaderArchitecture !== architecture) {
     throw new Error('The reviewed loader architecture is inconsistent')
   }
+}
+
+async function copyGbeCore(
+  source: string,
+  destination: string,
+  architecture: 'x86' | 'x64',
+  includeLoaderIni: boolean,
+): Promise<void> {
+  const files = [
+    ...gbeSharedCoreFiles,
+    `steamclient_loader_${architecture}.exe`,
+    ...(includeLoaderIni ? ['ColdClientLoader.ini'] : []),
+  ]
+  await mkdir(destination)
+  await mkdir(join(destination, 'extra_dlls'))
+  await Promise.all(
+    files.map((path) =>
+      cp(
+        join(source, ...path.split('/')),
+        join(destination, ...path.split('/')),
+        {
+          errorOnExist: true,
+          force: false,
+        },
+      ),
+    ),
+  )
 }
 
 async function validatePreparedInstallation(

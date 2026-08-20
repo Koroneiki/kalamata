@@ -61,12 +61,13 @@ export function assertRequiredManagedCoreFiles(
     `steamclient_loader_${architecture}.exe`,
     'steamclient.dll',
     'steamclient64.dll',
+    'gameoverlayrenderer.dll',
+    'gameoverlayrenderer64.dll',
+    'extra_dlls/steamclient_extra_x86.dll',
+    'extra_dlls/steamclient_extra_x64.dll',
   ]
   for (const path of required) {
     if (!keys.has(path)) throw new Error(`ColdClient core is missing ${path}`)
-  }
-  if (![...keys].some((path) => path.startsWith('extra_dlls/'))) {
-    throw new Error('ColdClient core is missing official extra DLLs')
   }
   const unused =
     architecture === 'x86'
