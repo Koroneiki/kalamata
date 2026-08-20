@@ -35,8 +35,12 @@ test('rejects unsupported hosts and games without installed depots', async () =>
 
 test('prefers a unique Shipping executable and a Steam API DLL in Binaries', async () => {
   const directory = await gameDirectory()
-  await file(directory, 'Alpha.exe')
-  await file(directory, 'Game/Binaries/Win64/MyGame-Win64-Shipping.exe')
+  await portableExecutable(directory, 'Alpha.exe', 'x86')
+  await portableExecutable(
+    directory,
+    'Game/Binaries/Win64/MyGame-Win64-Shipping.exe',
+    'x64',
+  )
   await file(directory, 'Game/Binaries/Win64/steam_api.dll')
   await file(directory, 'Other/steam_api64.dll')
 
@@ -55,6 +59,10 @@ test('prefers a unique Shipping executable and a Steam API DLL in Binaries', asy
     'Game/Binaries/Win64/MyGame-Win64-Shipping.exe',
   )
   expect(draft.executableDetectionSource).toBe('shipping-executable')
+  expect(draft.executableArchitectures).toEqual({
+    'Alpha.exe': 'x86',
+    'Game/Binaries/Win64/MyGame-Win64-Shipping.exe': 'x64',
+  })
   expect(draft.selectedSteamApiRelativePath).toBe(
     'Game/Binaries/Win64/steam_api.dll',
   )
@@ -80,6 +88,10 @@ test('leaves multiple Shipping executables and ambiguous DLLs unresolved', async
     'A/GameShipping.exe',
     'B/OtherShipping.exe',
   ])
+  expect(draft.executableArchitectures).toEqual({
+    'A/GameShipping.exe': null,
+    'B/OtherShipping.exe': null,
+  })
   expect(draft.selectedSteamApiRelativePath).toBeNull()
   expect(draft.loaderArchitecture).toBe('x64')
   expect(draft.warnings).toEqual([
@@ -248,4 +260,19 @@ async function file(directory: string, relativePath: string): Promise<void> {
   const path = join(directory, ...relativePath.split('/'))
   await mkdir(join(path, '..'), { recursive: true })
   await writeFile(path, 'fixture')
+}
+
+async function portableExecutable(
+  directory: string,
+  relativePath: string,
+  architecture: 'x86' | 'x64',
+): Promise<void> {
+  const contents = Buffer.alloc(134)
+  contents.writeUInt16LE(0x5a4d, 0)
+  contents.writeUInt32LE(128, 0x3c)
+  contents.writeUInt32LE(0x4550, 128)
+  contents.writeUInt16LE(architecture === 'x86' ? 0x014c : 0x8664, 132)
+  const path = join(directory, ...relativePath.split('/'))
+  await mkdir(join(path, '..'), { recursive: true })
+  await writeFile(path, contents)
 }

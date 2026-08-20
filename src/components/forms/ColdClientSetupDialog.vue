@@ -3,6 +3,7 @@ import { useMutation } from '@pinia/colada'
 import { computed, ref, watch } from 'vue'
 
 import { configureColdClient, inspectColdClientSetup } from '@/api/cold-client'
+import ColdClientArchitectureSelect from '@/components/forms/ColdClientArchitectureSelect.vue'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -60,6 +61,20 @@ const reviewedArchitecture = computed(() =>
   selectedSteamApi.value.toLowerCase().endsWith('steam_api.dll')
     ? 'x86'
     : 'x64',
+)
+const steamApiArchitecture = (path: string): 'x86' | 'x64' =>
+  path.toLowerCase().endsWith('steam_api.dll') ? 'x86' : 'x64'
+const executableOptions = computed(() =>
+  (draft.value?.executableCandidates ?? []).map((value) => ({
+    value,
+    architecture: draft.value?.executableArchitectures[value] ?? null,
+  })),
+)
+const steamApiOptions = computed(() =>
+  (draft.value?.steamApiCandidates ?? []).map((value) => ({
+    value,
+    architecture: steamApiArchitecture(value),
+  })),
 )
 const setupRunning = computed(() => Boolean(props.operationPhase))
 const visibleWarnings = computed(() => {
@@ -230,20 +245,12 @@ function selectLaunchSource(event: Event) {
 
         <div class="space-y-2">
           <Label for="cold-client-executable">Game executable</Label>
-          <select
+          <ColdClientArchitectureSelect
             id="cold-client-executable"
             v-model="selectedExecutable"
-            class="border-input bg-background ring-offset-background focus-visible:ring-ring h-9 w-full rounded-md border px-3 text-sm shadow-xs focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
-          >
-            <option value="" disabled>Choose an executable</option>
-            <option
-              v-for="candidate in draft.executableCandidates"
-              :key="candidate"
-              :value="candidate"
-            >
-              {{ candidate }}
-            </option>
-          </select>
+            placeholder="Choose an executable"
+            :options="executableOptions"
+          />
           <p class="text-muted-foreground text-xs">
             Detection: {{ draft.executableDetectionSource }}
           </p>
@@ -251,21 +258,13 @@ function selectLaunchSource(event: Event) {
 
         <div class="space-y-2">
           <Label for="cold-client-steam-api">Steam API DLL</Label>
-          <select
+          <ColdClientArchitectureSelect
             v-if="draft.steamApiCandidates.length"
             id="cold-client-steam-api"
             v-model="selectedSteamApi"
-            class="border-input bg-background ring-offset-background focus-visible:ring-ring h-9 w-full rounded-md border px-3 text-sm shadow-xs focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
-          >
-            <option value="" disabled>Choose a Steam API DLL</option>
-            <option
-              v-for="candidate in draft.steamApiCandidates"
-              :key="candidate"
-              :value="candidate"
-            >
-              {{ candidate }}
-            </option>
-          </select>
+            placeholder="Choose a Steam API DLL"
+            :options="steamApiOptions"
+          />
           <p v-else class="bg-muted rounded-md p-3 text-sm">
             No Steam API DLL found. x64 is assumed.
           </p>

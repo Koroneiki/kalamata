@@ -1,4 +1,4 @@
-import { lstat, readdir, realpath } from 'node:fs/promises'
+import { lstat, open, readdir, realpath } from 'node:fs/promises'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { z } from 'zod'
 import type { ProductInfo } from '../steam/types.ts'
@@ -7,6 +7,7 @@ import { filesystemErrorCode } from '../depot/install/transaction/types.ts'
 import type {
   ColdClientDetectionSource,
   ColdClientLaunchOption,
+  ColdClientLoaderArchitecture,
   ColdClientSetupDependency,
   ColdClientSetupDraft,
   ColdClientSetupWarning,
@@ -74,6 +75,7 @@ interface SteamApiSelection {
 interface DraftInput {
   appId: number
   files: string[]
+  executableArchitectures: Record<string, ColdClientLoaderArchitecture | null>
   launchSource: LaunchSource
   existingColdClient: boolean
   gbe: { assetId: number; tag: string }
@@ -113,12 +115,17 @@ export class ColdClientGameInspector {
       throw new Error('ColdClient setup requires a Steam game')
     }
     const files = await collectGameFiles(installRoot)
+    const executableArchitectures = await inspectExecutableArchitectures(
+      installRoot,
+      files,
+    )
     const existingColdClient = await pathExists(
       join(installRoot, '_ColdClient'),
     )
     return buildDraft({
       appId,
       files,
+      executableArchitectures,
       launchSource: appInfo.config?.launch ?? {},
       existingColdClient,
       gbe,
@@ -160,6 +167,12 @@ function buildDraft(input: DraftInput): ColdClientSetupDraft {
     appId: input.appId,
     targetRelativePath: '_ColdClient',
     executableCandidates: executable.candidates,
+    executableArchitectures: Object.fromEntries(
+      executable.candidates.map((path) => [
+        path,
+        input.executableArchitectures[path] ?? null,
+      ]),
+    ),
     selectedExecutableRelativePath: executable.selected,
     executableDetectionSource: executable.source,
     steamApiCandidates,
@@ -244,6 +257,61 @@ async function collectGameFiles(root: string): Promise<string[]> {
   }
   await visit(root)
   return files.sort(comparePaths)
+}
+
+async function inspectExecutableArchitectures(
+  root: string,
+  files: string[],
+): Promise<Record<string, ColdClientLoaderArchitecture | null>> {
+  const architectures: Record<string, ColdClientLoaderArchitecture | null> = {}
+  for (const path of files) {
+    if (!path.toLowerCase().endsWith('.exe')) continue
+    architectures[path] = await readPortableExecutableArchitecture(
+      join(root, ...path.split('/')),
+    )
+  }
+  return architectures
+}
+
+async function readPortableExecutableArchitecture(
+  path: string,
+): Promise<ColdClientLoaderArchitecture | null> {
+  try {
+    const file = await open(path, 'r')
+    try {
+      const dosHeader = Buffer.alloc(64)
+      const dosRead = await file.read(dosHeader, 0, dosHeader.length, 0)
+      if (
+        dosRead.bytesRead < dosHeader.length ||
+        dosHeader.readUInt16LE(0) !== 0x5a4d
+      ) {
+        return null
+      }
+
+      const peHeader = Buffer.alloc(6)
+      const peRead = await file.read(
+        peHeader,
+        0,
+        peHeader.length,
+        dosHeader.readUInt32LE(0x3c),
+      )
+      if (
+        peRead.bytesRead < peHeader.length ||
+        peHeader.readUInt32LE(0) !== 0x4550
+      ) {
+        return null
+      }
+
+      const machine = peHeader.readUInt16LE(4)
+      if (machine === 0x014c) return 'x86'
+      if (machine === 0x8664) return 'x64'
+      return null
+    } finally {
+      await file.close()
+    }
+  } catch {
+    return null
+  }
 }
 
 function isExcludedDirectory(path: string): boolean {

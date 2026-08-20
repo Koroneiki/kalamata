@@ -60,6 +60,7 @@ test('validates ColdClient setup inspection drafts', () => {
     appId: 10,
     targetRelativePath: '_ColdClient',
     executableCandidates: ['Game/Binaries/Game.exe'],
+    executableArchitectures: { 'Game/Binaries/Game.exe': 'x64' },
     selectedExecutableRelativePath: 'Game/Binaries/Game.exe',
     executableDetectionSource: 'steam-launch',
     steamApiCandidates: ['Game/Binaries/steam_api64.dll'],
