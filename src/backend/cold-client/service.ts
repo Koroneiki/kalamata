@@ -12,6 +12,7 @@ import { acquireOutputLock } from '../depot/install/output-lock.ts'
 import { filesystemErrorCode } from '../depot/install/transaction/types.ts'
 import type { ArtifactDescriptor } from './dependency-schema.ts'
 import { coldClientDepotFingerprint } from './depot-fingerprint.ts'
+import { asError } from './error.ts'
 import type { GeneratedGseConfiguration } from './generator.ts'
 import {
   readColdClientLoaderIniValues,
@@ -112,6 +113,7 @@ interface ColdClientServiceOptions {
   platform?: NodeJS.Platform
   now?: () => number
   acquireLock?: typeof acquireOutputLock
+  reportCleanupError?: (error: Error) => void
 }
 
 const requiredSettingsFiles = [
@@ -126,6 +128,7 @@ export class ColdClientService {
   readonly #platform: NodeJS.Platform
   readonly #now: () => number
   readonly #acquireLock: typeof acquireOutputLock
+  readonly #reportCleanupError: (error: Error) => void
 
   constructor(
     private readonly database: ServiceDatabase,
@@ -140,6 +143,7 @@ export class ColdClientService {
     this.#platform = options.platform ?? process.platform
     this.#now = options.now ?? Date.now
     this.#acquireLock = options.acquireLock ?? acquireOutputLock
+    this.#reportCleanupError = options.reportCleanupError ?? (() => {})
   }
 
   configure(requestInput: ColdClientSetupRequest): Promise<ColdClientStatus> {
@@ -262,12 +266,17 @@ export class ColdClientService {
         })
         stagingDirectory = undefined
       } finally {
-        await cleanupGeneratedOperation(
-          installRoot,
-          generated,
-          stagingDirectory,
-        )
-        await release()
+        try {
+          await cleanupGeneratedOperation(
+            installRoot,
+            generated,
+            stagingDirectory,
+          )
+        } catch (error) {
+          this.#reportCleanupError(asError(error))
+        } finally {
+          await release()
+        }
       }
       return this.getStatus(appId)
     })
@@ -359,10 +368,15 @@ export class ColdClientService {
         })
         stagingDirectory = undefined
       } finally {
-        if (stagingDirectory) {
-          await rm(stagingDirectory, { recursive: true, force: true })
+        try {
+          if (stagingDirectory) {
+            await rm(stagingDirectory, { recursive: true, force: true })
+          }
+        } catch (error) {
+          this.#reportCleanupError(asError(error))
+        } finally {
+          await release()
         }
-        await release()
       }
       return this.getStatus(appId)
     })
@@ -568,8 +582,17 @@ export class ColdClientService {
       })
       stagingDirectory = undefined
     } finally {
-      await cleanupGeneratedOperation(initialRoot, generated, stagingDirectory)
-      await release()
+      try {
+        await cleanupGeneratedOperation(
+          initialRoot,
+          generated,
+          stagingDirectory,
+        )
+      } catch (error) {
+        this.#reportCleanupError(asError(error))
+      } finally {
+        await release()
+      }
     }
   }
 }
@@ -708,6 +731,12 @@ async function validateInstalledCore(
   )
   for (const path of requiredSettingsFiles) {
     await assertRegularFile(join(root, 'steam_settings', path), path)
+  }
+  if (installation.steamApiRelativePath) {
+    await assertRegularFile(
+      join(root, 'steam_settings', 'steam_interfaces.txt'),
+      'steam_interfaces.txt',
+    )
   }
   for (const path of installation.managedCoreFiles) {
     await assertRegularFile(join(root, ...path.split('/')), path)

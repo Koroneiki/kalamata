@@ -167,6 +167,33 @@ test('startup leaves a queued paused journal under queue ownership', async () =>
   expect(queue.getDownloadQueue().pending).toHaveLength(1)
 })
 
+test('startup does not claim queued work blocked by ColdClient recovery', async () => {
+  const fixture = await setup()
+  fixture.database.appendApplicationQueueItem({
+    id: 'cold-client-blocked',
+    appId: APP_ID,
+    kind: 'download',
+    installPath: fixture.installPath,
+    depotIds: [DEPOTS[0].depotId],
+    createdAt: 1,
+  })
+  const reconcileApplication = mock(successfulReconciliation)
+  const queue = new DownloadQueueCoordinator(
+    {
+      getProductInfoWithDlc: async () => products(),
+      reconcileApplication,
+    },
+    fixture.database,
+  )
+  queue.markColdClientBlocked(APP_ID)
+
+  await queue.startPending()
+
+  expect(queue.getOperationState()).toEqual({ status: 'idle' })
+  expect(queue.getDownloadQueue().pending).toHaveLength(1)
+  expect(reconcileApplication).not.toHaveBeenCalled()
+})
+
 test('removing queued paused work discards its journal first', async () => {
   const fixture = await setup()
   fixture.database.reserveInstallPath(APP_ID, fixture.installPath)

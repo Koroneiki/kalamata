@@ -36,6 +36,7 @@ type ErrorDiagnostic =
   | { event: 'cold-client-dependencies.initialization-failed'; error: Error }
   | { event: 'cold-client-dependencies.cleanup-failed'; error: Error }
   | { event: 'cold-client-replacement.cleanup-failed'; error: Error }
+  | { event: 'cold-client-operation.cleanup-failed'; error: Error }
   | {
       event: 'cold-client-operation.failed'
       error: Error

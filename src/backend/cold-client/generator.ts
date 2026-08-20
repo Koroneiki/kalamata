@@ -7,7 +7,10 @@ import type { ArtifactDescriptor } from './dependency-schema.ts'
 interface GseDependencyProvider {
   readonly loginFilename: string
   activeArtifact(dependencyId: 'gse'): ArtifactDescriptor | null
-  artifactDirectory(dependencyId: 'gse', assetId: number): string
+  validateArtifactSnapshot(
+    dependencyId: 'gse',
+    assetId: number,
+  ): Promise<{ descriptor: ArtifactDescriptor; directory: string }>
 }
 
 interface ProcessHandle {
@@ -83,10 +86,12 @@ export class ColdClientGenerator {
 
     const artifact = this.#dependencies.activeArtifact('gse')
     if (!artifact) throw new Error('GSE Tools is not installed')
-    const artifactRoot = this.#dependencies.artifactDirectory(
+    const snapshot = await this.#dependencies.validateArtifactSnapshot(
       'gse',
       artifact.assetId,
     )
+    signal.throwIfAborted()
+    const artifactRoot = snapshot.directory
     const workingDirectory = join(artifactRoot, 'generate_emu_config')
     const executable = join(workingDirectory, 'generate_emu_config.exe')
     const loginPath = join(workingDirectory, this.#dependencies.loginFilename)
