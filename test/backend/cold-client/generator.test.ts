@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from 'bun:test'
-import { access, mkdir, mkdtemp, writeFile } from 'node:fs/promises'
+import { access, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -30,8 +30,12 @@ test('runs GSE directly and validates only the expected AppID output', async () 
   }> = []
   const generator = new ColdClientGenerator(fixture.dependencies, {
     platform: 'win32',
+    loadTopOwners: fixture.loadTopOwners,
     runProcess: async (executable, arguments_, cwd) => {
       await expect(access(staleFile)).rejects.toThrow()
+      expect(await readFile(join(cwd, 'top_owners_ids.txt'), 'utf8')).toBe(
+        `${topOwnerIds.join('\n')}\n`,
+      )
       invocations.push({ executable, arguments_, cwd })
       await writeGeneratedOutput(cwd, 10)
       return 0
@@ -63,6 +67,7 @@ test('requires login existence without passing credential environment variables'
   const fixture = await createFixture(false)
   const generator = new ColdClientGenerator(fixture.dependencies, {
     platform: 'win32',
+    loadTopOwners: fixture.loadTopOwners,
     runProcess: async () => {
       throw new Error('should not run')
     },
@@ -109,6 +114,7 @@ test('validates the active GSE artifact before starting its executable', async (
     },
     {
       platform: 'win32',
+      loadTopOwners: fixture.loadTopOwners,
       runProcess: async () => {
         processStarted = true
         return 0
@@ -126,6 +132,7 @@ test('rejects incomplete generated settings after a successful process exit', as
   const fixture = await createFixture()
   const generator = new ColdClientGenerator(fixture.dependencies, {
     platform: 'win32',
+    loadTopOwners: fixture.loadTopOwners,
     runProcess: async (_executable, _arguments, cwd) => {
       const settings = join(cwd, '_OUTPUT', '10', 'steam_settings')
       await mkdir(settings, { recursive: true })
@@ -137,6 +144,25 @@ test('rejects incomplete generated settings after a successful process exit', as
   await expect(
     generator.generate(10, new AbortController().signal),
   ).rejects.toThrow('configs.app.ini')
+})
+
+test('keeps the bundled top-owner list when refresh fails', async () => {
+  const fixture = await createFixture()
+  const destination = join(fixture.workingDirectory, 'top_owners_ids.txt')
+  await writeFile(destination, 'bundled\n')
+  const generator = new ColdClientGenerator(fixture.dependencies, {
+    platform: 'win32',
+    loadTopOwners: async () => {
+      throw new Error('SteamLadder unavailable')
+    },
+    runProcess: async (_executable, _arguments, cwd) => {
+      expect(await readFile(destination, 'utf8')).toBe('bundled\n')
+      await writeGeneratedOutput(cwd, 10)
+      return 0
+    },
+  })
+
+  await generator.generate(10, new AbortController().signal)
 })
 
 test('cancellation terminates and reaps the Windows process tree', async () => {
@@ -212,8 +238,16 @@ async function createFixture(login = true) {
         directory: artifactRoot,
       }),
     },
+    loadTopOwners: async () =>
+      topOwnerIds
+        .map((steamId) => `<a href="/profile/${steamId}/">owner</a>`)
+        .join(''),
   }
 }
+
+const topOwnerIds = Array.from({ length: 10 }, (_, index) =>
+  String(76_561_198_000_000_000n + BigInt(index)),
+)
 
 async function writeGeneratedOutput(cwd: string, appId: number) {
   const settings = join(cwd, '_OUTPUT', String(appId), 'steam_settings')
