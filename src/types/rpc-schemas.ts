@@ -76,6 +76,10 @@ const coldClientSetupDraftSchema = strict({
   appId: steamIdSchema,
   targetRelativePath: z.literal('_ColdClient'),
   executableCandidates: z.array(coldClientRelativePathSchema).min(1),
+  executableArchitectures: z.record(
+    coldClientRelativePathSchema,
+    coldClientLoaderArchitectureSchema.nullable(),
+  ),
   selectedExecutableRelativePath: coldClientRelativePathSchema.nullable(),
   executableDetectionSource: coldClientDetectionSourceSchema,
   steamApiCandidates: z.array(coldClientRelativePathSchema),
@@ -98,6 +102,20 @@ const coldClientSetupDraftSchema = strict({
       code: 'custom',
       message: 'Selected executable must be a candidate',
       path: ['selectedExecutableRelativePath'],
+    })
+  }
+  if (
+    draft.executableCandidates.some(
+      (candidate) => !(candidate in draft.executableArchitectures),
+    ) ||
+    Object.keys(draft.executableArchitectures).some(
+      (candidate) => !draft.executableCandidates.includes(candidate),
+    )
+  ) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'Executable architectures must match the candidates',
+      path: ['executableArchitectures'],
     })
   }
   if (

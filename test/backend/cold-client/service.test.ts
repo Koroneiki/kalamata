@@ -347,6 +347,7 @@ async function createFixture() {
     appId: 10,
     targetRelativePath: '_ColdClient',
     executableCandidates: ['Game/Binaries/Game.exe'],
+    executableArchitectures: { 'Game/Binaries/Game.exe': 'x64' },
     selectedExecutableRelativePath: 'Game/Binaries/Game.exe',
     executableDetectionSource: 'sole-executable',
     steamApiCandidates: ['Game/Binaries/steam_api64.dll'],

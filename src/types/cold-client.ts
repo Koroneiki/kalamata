@@ -197,6 +197,7 @@ export interface ColdClientSetupDraft {
   appId: number
   targetRelativePath: '_ColdClient'
   executableCandidates: string[]
+  executableArchitectures: Record<string, ColdClientLoaderArchitecture | null>
   selectedExecutableRelativePath: string | null
   executableDetectionSource: ColdClientDetectionSource
   steamApiCandidates: string[]
