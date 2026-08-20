@@ -1,5 +1,12 @@
 import { afterEach, expect, test } from 'bun:test'
-import { access, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import {
+  access,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ColdClientMutationMutex } from '../../../src/backend/cold-client/mutation-mutex.ts'
@@ -65,6 +72,43 @@ test('configures a complete reviewed ColdClient installation', async () => {
   expect(fixture.database.current?.managedCoreFiles).toContain(
     'extra_dlls/nested/extra.dll',
   )
+})
+
+test('reports configured installations with missing interfaces as invalid', async () => {
+  const fixture = await createFixture()
+  const service = createService(fixture)
+  await service.configure(fixture.request)
+  await rm(
+    join(
+      fixture.installRoot,
+      '_ColdClient',
+      'steam_settings',
+      'steam_interfaces.txt',
+    ),
+  )
+
+  await expect(service.getStatus(10)).resolves.toMatchObject({
+    status: 'invalid',
+  })
+})
+
+test('releases the install-path lock when post-commit cleanup fails', async () => {
+  const fixture = await createFixture()
+  fixture.generatedApp = '\0'
+  let released = false
+  const cleanupErrors: Error[] = []
+  const service = createService(fixture, () => fixture.draft, {
+    acquireLock: async () => async () => {
+      released = true
+    },
+    reportCleanupError: (error) => cleanupErrors.push(error),
+  })
+
+  await expect(service.configure(fixture.request)).resolves.toMatchObject({
+    status: 'configured',
+  })
+  expect(released).toBe(true)
+  expect(cleanupErrors).toHaveLength(1)
 })
 
 test('rejects a dependency change after review before replacing game files', async () => {
@@ -167,6 +211,10 @@ test('updates only managed core files and preserves custom configuration', async
 function createService(
   fixture: Awaited<ReturnType<typeof createFixture>>,
   inspect: () => ColdClientSetupDraft = () => fixture.draft,
+  options: {
+    acquireLock?: () => Promise<() => Promise<void>>
+    reportCleanupError?: (error: Error) => void
+  } = {},
 ): ColdClientService {
   const operations = new ColdClientOperationCoordinator(
     new ColdClientMutationMutex(),
@@ -195,7 +243,8 @@ function createService(
     {
       platform: 'win32',
       now: () => 3000,
-      acquireLock: async () => async () => {},
+      acquireLock: options.acquireLock ?? (async () => async () => {}),
+      reportCleanupError: options.reportCleanupError,
     },
   )
 }

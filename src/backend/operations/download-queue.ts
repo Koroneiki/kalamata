@@ -940,7 +940,10 @@ export class DownloadQueueCoordinator {
       while (!this.#shuttingDown) {
         // A finishing run may pump while queue acceptance awaits pause or cleanup.
         const item = this.database.claimFirstApplicationQueueItem(
-          new Set(this.#repairRequirements.keys()),
+          new Set([
+            ...this.#repairRequirements.keys(),
+            ...this.#coldClientBlocks,
+          ]),
           new Set([
             ...this.#queuePreparationFailures,
             ...this.#removingQueueItems,

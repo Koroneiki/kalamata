@@ -113,6 +113,13 @@ const coldClient = new ColdClientService(
   coldClientInterfaceGenerator,
   coldClientOperations,
   coldClientReplacement,
+  {
+    reportCleanupError: (error) =>
+      diagnostics.error({
+        event: 'cold-client-operation.cleanup-failed',
+        error,
+      }),
+  },
 )
 let coldClientDependenciesReady = false
 let queue: DownloadQueueCoordinator

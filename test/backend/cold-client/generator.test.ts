@@ -97,6 +97,31 @@ test('requires login existence without passing credential environment variables'
   expect(environment).not.toHaveProperty('GSE_CFG_PASSWORD')
 })
 
+test('validates the active GSE artifact before starting its executable', async () => {
+  const fixture = await createFixture()
+  let processStarted = false
+  const generator = new ColdClientGenerator(
+    {
+      ...fixture.dependencies,
+      validateArtifactSnapshot: async () => {
+        throw new Error('GSE artifact inventory is invalid')
+      },
+    },
+    {
+      platform: 'win32',
+      runProcess: async () => {
+        processStarted = true
+        return 0
+      },
+    },
+  )
+
+  await expect(
+    generator.generate(10, new AbortController().signal),
+  ).rejects.toThrow('artifact inventory is invalid')
+  expect(processStarted).toBe(false)
+})
+
 test('rejects incomplete generated settings after a successful process exit', async () => {
   const fixture = await createFixture()
   const generator = new ColdClientGenerator(fixture.dependencies, {
@@ -182,7 +207,10 @@ async function createFixture(login = true) {
     dependencies: {
       loginFilename: 'my_login.txt',
       activeArtifact: () => descriptor,
-      artifactDirectory: () => artifactRoot,
+      validateArtifactSnapshot: async () => ({
+        descriptor,
+        directory: artifactRoot,
+      }),
     },
   }
 }

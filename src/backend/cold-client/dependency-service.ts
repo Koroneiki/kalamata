@@ -32,6 +32,7 @@ import {
   githubReleaseSchema,
   parseRemoteArtifact,
 } from './dependency-schema.ts'
+import { asError } from './error.ts'
 import { ColdClientMutationMutex } from './mutation-mutex.ts'
 
 interface DependencyDefinition {
@@ -637,11 +638,6 @@ function filesystemErrorCode<ErrorValue>(
 ): string | undefined {
   const result = z.object({ code: z.coerce.string() }).safeParse(error)
   return result.success ? result.data.code : undefined
-}
-
-function asError<ErrorValue>(error: ErrorValue): Error {
-  const result = z.instanceof(Error).safeParse(error)
-  return result.success ? result.data : new Error(String(error))
 }
 
 function errorMessage<ErrorValue>(error: ErrorValue): string {
