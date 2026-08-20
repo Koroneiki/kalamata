@@ -7,6 +7,7 @@ import { filesystemErrorCode } from '../depot/install/transaction/types.ts'
 import type {
   ColdClientDetectionSource,
   ColdClientLaunchOption,
+  ColdClientSetupDependency,
   ColdClientSetupDraft,
   ColdClientSetupWarning,
 } from '../../types/cold-client.ts'
@@ -129,12 +130,12 @@ export class ColdClientGameInspector {
 function requireActiveDependency(
   dependencies: DependencyProvider,
   dependencyId: 'gbe' | 'gse',
-): { assetId: number; tag: string } {
+): ColdClientSetupDependency {
   const artifact = dependencies.activeArtifact(dependencyId)
   if (!artifact) {
     throw new Error('Download the ColdClient dependencies before setup')
   }
-  return artifact
+  return { assetId: artifact.assetId, tag: artifact.tag }
 }
 
 function buildDraft(input: DraftInput): ColdClientSetupDraft {
