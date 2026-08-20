@@ -131,6 +131,17 @@ test('rejects a dependency change after review before replacing game files', asy
   expect(fixture.database.current).toBeNull()
 })
 
+test('rejects every mutating operation outside Windows', async () => {
+  const fixture = await createFixture()
+  const service = createService(fixture, () => fixture.draft, {
+    platform: 'darwin',
+  })
+
+  expect(() => service.configure(fixture.request)).toThrow('only on Windows')
+  expect(() => service.regenerate(10)).toThrow('only on Windows')
+  expect(() => service.updateCore(10)).toThrow('only on Windows')
+})
+
 test('regenerates only steam_settings and preserves the configured core', async () => {
   const fixture = await createFixture()
   const service = createService(fixture)
@@ -214,6 +225,7 @@ function createService(
   options: {
     acquireLock?: () => Promise<() => Promise<void>>
     reportCleanupError?: (error: Error) => void
+    platform?: NodeJS.Platform
   } = {},
 ): ColdClientService {
   const operations = new ColdClientOperationCoordinator(
@@ -241,7 +253,7 @@ function createService(
     operations,
     replacement,
     {
-      platform: 'win32',
+      platform: options.platform ?? 'win32',
       now: () => 3000,
       acquireLock: options.acquireLock ?? (async () => async () => {}),
       reportCleanupError: options.reportCleanupError,

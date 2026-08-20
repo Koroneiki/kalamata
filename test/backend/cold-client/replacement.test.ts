@@ -6,6 +6,7 @@ import {
   readFile,
   rename,
   realpath,
+  rm,
   writeFile,
 } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -270,6 +271,22 @@ describe('ColdClient replacement recovery', () => {
     ).resolves.toBeNull()
   })
 
+  test('distinguishes cleanup-only and unresolved journals', async () => {
+    const fixture = await createFixture()
+    await writeJournal(fixture.installRoot, '.Kalamata-coldclient-backup-test')
+    const committed = new ColdClientReplacementService(new FakeDatabase(target))
+    const unrelated = new ColdClientReplacementService(
+      new FakeDatabase({ ...previous, gbeAssetId: 999 }),
+    )
+
+    await expect(
+      committed.hasUnresolvedJournal(fixture.installRoot, 10),
+    ).resolves.toBe(false)
+    await expect(
+      unrelated.hasUnresolvedJournal(fixture.installRoot, 10),
+    ).resolves.toBe(true)
+  })
+
   test('full setup supersedes an ambiguous journal and commits from current state', async () => {
     const fixture = await createFixture()
     const oldBackup = '.Kalamata-coldclient-backup-old'
@@ -292,6 +309,36 @@ describe('ColdClient replacement recovery', () => {
     await expect(
       access(replacementJournalPath(fixture.installRoot)),
     ).rejects.toThrow()
+  })
+
+  test('failed full setup restores the superseded journal', async () => {
+    const fixture = await createFixture()
+    const oldBackup = '.Kalamata-coldclient-backup-old'
+    await mkdir(join(fixture.installRoot, oldBackup))
+    await writeJournal(fixture.installRoot, oldBackup)
+    const current = { ...previous, gbeAssetId: 999 }
+    const replacement = new ColdClientReplacementService(
+      new FakeDatabase(current),
+    )
+
+    await expect(
+      replacement.replaceSetup({
+        installRoot: fixture.installRoot,
+        stagingDirectory: fixture.staging,
+        previousInstallation: current,
+        targetInstallation: target,
+        validateLive: async () => {
+          throw new Error('invalid replacement')
+        },
+      }),
+    ).rejects.toThrow('invalid replacement')
+
+    await expect(
+      replacement.hasUnresolvedJournal(fixture.installRoot, 10),
+    ).resolves.toBe(true)
+    await expect(
+      access(join(fixture.installRoot, oldBackup)),
+    ).resolves.toBeNull()
   })
 
   test('recovers settings without changing sibling core files', async () => {
@@ -346,6 +393,25 @@ describe('ColdClient replacement recovery', () => {
     expect(await readFile(join(fixture.live, 'custom.txt'), 'utf8')).toBe(
       'custom',
     )
+  })
+
+  test('finishes a core rollback whose files were already restored', async () => {
+    const fixture = await createCoreFixture()
+    const backup = '.Kalamata-coldclient-core-backup-test'
+    await rm(fixture.staging, { recursive: true })
+    await writeCoreJournal(fixture.installRoot, backup)
+    const replacement = new ColdClientReplacementService(
+      new FakeDatabase(previous),
+      { acquireLock: async () => async () => {} },
+    )
+
+    await expect(
+      replacement.recover(fixture.installRoot, 10, async () => {}),
+    ).resolves.toEqual({ status: 'recovered', direction: 'rollback' })
+    expect(await readFile(join(fixture.live, 'old.dll'), 'utf8')).toBe('old')
+    await expect(
+      access(replacementJournalPath(fixture.installRoot)),
+    ).rejects.toThrow()
   })
 
   test('finishes a committed core update and rejects a journal for another app', async () => {

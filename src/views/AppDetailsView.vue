@@ -1,5 +1,10 @@
 <script setup lang="ts">
-import { useMutation, useQuery, useQueryCache } from '@pinia/colada'
+import {
+  useMutation,
+  useMutationCache,
+  useQuery,
+  useQueryCache,
+} from '@pinia/colada'
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -19,7 +24,7 @@ import {
   useSettingsQuery,
   useColdClientDependenciesQuery,
   useColdClientStatusQuery,
-  coldClientQueryKeys,
+  coldClientDependencyUpdateMutationKey,
 } from '@/composables/queries'
 import { useFallbackImage } from '@/composables/use-fallback-image'
 import { useAppOperationDisplay } from '@/composables/use-app-operation-display'
@@ -55,6 +60,7 @@ const availableUpdates = useAvailableUpdates()
 const depotDrafts = useDepotOperationDraftStore()
 const resourceAcquisition = useDepotResourceAcquisition()
 const queryCache = useQueryCache()
+const mutationCache = useMutationCache()
 const { data: settings } = useSettingsQuery()
 const { data: coldClientDependencies } = useColdClientDependenciesQuery()
 const coldClientReady = computed(
@@ -72,8 +78,7 @@ const parsedAppId = computed(() =>
 const appId = computed(() =>
   parsedAppId.value.success ? parsedAppId.value.data : 0,
 )
-const { data: coldClientStatus, refetch: refetchColdClientStatus } =
-  useColdClientStatusQuery(appId)
+const { data: coldClientStatus } = useColdClientStatusQuery(appId)
 const validAppId = computed(() => parsedAppId.value.success)
 
 const { data, error, isPending, refetch } = useQuery(() => ({
@@ -323,7 +328,11 @@ const coldClientOperationForApp = computed(() => {
   return state.status === 'active' && state.appId === appId.value ? state : null
 })
 const coldClientMutationBusy = computed(
-  () => coldClientOperation.state.status === 'active',
+  () =>
+    coldClientOperation.state.status === 'active' ||
+    mutationCache
+      .getEntries({ key: coldClientDependencyUpdateMutationKey })
+      .some((entry) => entry.asyncStatus.value === 'loading'),
 )
 const hasLocalInstallationActions = computed(
   () => hasInstalledDepots.value || repairRequiredForApp.value,
@@ -402,24 +411,12 @@ function openColdClientSetup() {
   coldClientSetupOpen.value = true
 }
 
-async function coldClientConfigured() {
-  await queryCache.invalidateQueries({
-    key: coldClientQueryKeys.status(appId.value),
-    exact: true,
-  })
-  await refetchColdClientStatus()
-}
-
 async function regenerateColdClient() {
   const targetAppId = appId.value
   mutationError.value = ''
   gameSettingsOpen.value = false
   try {
     await regenerateColdClientMutation.mutateAsync(targetAppId)
-    await queryCache.invalidateQueries({
-      key: coldClientQueryKeys.status(targetAppId),
-      exact: true,
-    })
   } catch (error) {
     if (appId.value === targetAppId) {
       mutationError.value =
@@ -434,10 +431,6 @@ async function updateColdClient() {
   gameSettingsOpen.value = false
   try {
     await updateColdClientCoreMutation.mutateAsync(targetAppId)
-    await queryCache.invalidateQueries({
-      key: coldClientQueryKeys.status(targetAppId),
-      exact: true,
-    })
   } catch (error) {
     if (appId.value === targetAppId) {
       mutationError.value =
@@ -770,7 +763,6 @@ async function browseLocalFiles() {
             :operation-phase="coldClientOperationForApp?.phase"
             :operation-cancellable="coldClientOperationForApp?.cancellable"
             @update:open="coldClientSetupOpen = $event"
-            @configured="coldClientConfigured"
           />
         </template>
 

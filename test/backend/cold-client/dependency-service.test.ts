@@ -125,6 +125,22 @@ test('keeps validated cached dependencies usable after a check failure', async (
   expect(fixture.service.activeArtifact('gbe')?.assetId).toBe(201)
 })
 
+test('stops a selected dependency update after the first failure', async () => {
+  const fixture = await createFixture()
+  await fixture.service.checkForUpdates()
+  await fixture.service.updateDependencies(['7zip'])
+  fixture.setArtifact('gbe', 202, 'gbe-two', '0'.repeat(64))
+  await fixture.service.checkForUpdates()
+  const downloadsBefore = fixture.downloads.length
+
+  await expect(
+    fixture.service.updateDependencies(['gbe', 'gse']),
+  ).rejects.toThrow('digest does not match')
+
+  expect(fixture.downloads.slice(downloadsBefore)).toEqual([202])
+  expect(fixture.service.activeArtifact('gse')).toBeNull()
+})
+
 test('shutdown cancels activation waiting for the mutation mutex', async () => {
   const mutex = new ColdClientMutationMutex()
   let releaseMutex!: () => void

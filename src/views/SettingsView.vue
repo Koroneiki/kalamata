@@ -22,6 +22,8 @@ import { Skeleton } from '@/components/ui/skeleton'
 import {
   hubcapUsageQueryKey,
   coldClientDependenciesQueryKey,
+  coldClientDependencyUpdateMutationKey,
+  coldClientQueryKeys,
   settingsQueryKey,
   useColdClientDependenciesQuery,
   useHubcapUsageQuery,
@@ -57,7 +59,17 @@ const checkColdClientMutation = useMutation({
   mutation: checkColdClientDependencyUpdates,
 })
 const updateColdClientMutation = useMutation({
+  key: coldClientDependencyUpdateMutationKey,
   mutation: updateColdClientDependencies,
+  onSettled: async () => {
+    await Promise.allSettled([
+      queryCache.invalidateQueries({
+        key: coldClientDependenciesQueryKey,
+        exact: true,
+      }),
+      queryCache.invalidateQueries({ key: coldClientQueryKeys.all }),
+    ])
+  },
 })
 const openLoginFolderMutation = useMutation({
   mutation: openColdClientLoginDirectory,

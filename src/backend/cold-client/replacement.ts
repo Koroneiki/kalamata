@@ -50,6 +50,10 @@ const journalSchema = z
       z.union([directoryAffectedFileSchema, coreAffectedFileSchema]),
     ),
     deferredCleanupRelativePaths: z.array(z.string().min(1)).default([]),
+    supersededJournal: z
+      .record(z.string(), z.unknown())
+      .nullable()
+      .default(null),
   })
   .strict()
   .superRefine((journal, ctx) => {
@@ -221,10 +225,16 @@ export class ColdClientReplacementService {
       backupRelativePath: `${CORE_BACKUP_PREFIX}${randomUUID()}`,
       affectedFiles,
       deferredCleanupRelativePaths: [],
+      supersededJournal: null,
     })
     await mkdir(join(installRoot, CONFIG_DIRECTORY), { recursive: true })
-    if (await readJournal(installRoot)) {
-      throw new Error('Resolve the interrupted ColdClient operation first')
+    const existingJournal = await readJournal(installRoot)
+    if (existingJournal) {
+      if (!this.isCleanupOnly(existingJournal)) {
+        throw new Error('Run full ColdClient setup to repair the installation')
+      }
+      journal.deferredCleanupRelativePaths = cleanupPaths(existingJournal)
+      journal.supersededJournal = existingJournal
     }
     await writeDurableJson(replacementJournalPath(installRoot), journal)
 
@@ -285,19 +295,17 @@ export class ColdClientReplacementService {
         { path: paths.liveRelativePath, existed: oldLiveExisted },
       ],
       deferredCleanupRelativePaths: [],
+      supersededJournal: null,
     })
     const journalPath = replacementJournalPath(installRoot)
     await mkdir(join(installRoot, CONFIG_DIRECTORY), { recursive: true })
     const existingJournal = await readJournal(installRoot)
     if (existingJournal) {
-      if (paths.kind !== 'setup') {
-        throw new Error('Resolve the interrupted ColdClient operation first')
+      if (paths.kind !== 'setup' && !this.isCleanupOnly(existingJournal)) {
+        throw new Error('Run full ColdClient setup to repair the installation')
       }
-      journal.deferredCleanupRelativePaths = [
-        existingJournal.stagingRelativePath,
-        existingJournal.backupRelativePath,
-        ...existingJournal.deferredCleanupRelativePaths,
-      ]
+      journal.deferredCleanupRelativePaths = cleanupPaths(existingJournal)
+      journal.supersededJournal = existingJournal
     }
     await writeDurableJson(journalPath, journal)
 
@@ -349,7 +357,15 @@ export class ColdClientReplacementService {
       const current = this.database.getColdClientInstallation(journal.appId)
       if (sameInstallation(current, journal.targetInstallation)) {
         await validateLive(join(installRoot, LIVE_NAME))
-        await this.finishForward(journal)
+        try {
+          await this.finishForward(journal)
+        } catch (error) {
+          this.#reportCleanupError(
+            error instanceof Error
+              ? error
+              : new Error('ColdClient cleanup failed after recovery'),
+          )
+        }
         return { status: 'recovered', direction: 'forward' }
       }
       if (sameInstallation(current, journal.previousInstallation)) {
@@ -365,10 +381,25 @@ export class ColdClientReplacementService {
     }
   }
 
-  // Called through the orchestration service's replacement contract.
-  // fallow-ignore-next-line unused-class-member
-  async hasJournal(installRoot: string): Promise<boolean> {
-    return (await lstatOrNull(replacementJournalPath(installRoot))) !== null
+  async hasUnresolvedJournal(
+    installRootInput: string,
+    expectedAppId: number,
+  ): Promise<boolean> {
+    const installRoot = await canonicalDirectory(installRootInput)
+    const journal = await readJournal(installRoot)
+    return (
+      journal !== null &&
+      (journal.appId !== expectedAppId ||
+        journal.installRoot !== installRoot ||
+        !this.isCleanupOnly(journal))
+    )
+  }
+
+  private isCleanupOnly(journal: ColdClientReplacementJournal): boolean {
+    return sameInstallation(
+      this.database.getColdClientInstallation(journal.appId),
+      journal.targetInstallation,
+    )
   }
 
   private async rollback(journal: ColdClientReplacementJournal): Promise<void> {
@@ -398,7 +429,7 @@ export class ColdClientReplacementService {
       await assertSafeDirectory(live, 'live directory')
     }
     await rm(staging, { recursive: true, force: true })
-    await rm(replacementJournalPath(journal.installRoot), { force: true })
+    await this.restoreSupersededJournal(journal)
   }
 
   private async finishForward(
@@ -497,22 +528,45 @@ export class ColdClientReplacementService {
         await rename(backup, destination)
         continue
       }
-      if (!entry.existed && entry.targetPath) {
-        await rm(coreFilePath(journal.installRoot, entry.targetPath), {
-          force: true,
-        })
-      } else if (entry.existed && entry.targetPath) {
-        const staged = join(stagingRoot, ...entry.targetPath.split('/'))
-        if (!(await lstatOrNull(staged))) {
+      if (entry.existed) {
+        const previous = coreFilePath(journal.installRoot, entry.previousPath!)
+        const previousMetadata = await lstatOrNull(previous)
+        if (!previousMetadata?.isFile() || previousMetadata.isSymbolicLink()) {
           throw new Error(
             `ColdClient core rollback is ambiguous: ${entry.path}`,
           )
         }
+        if (
+          entry.targetPath &&
+          entry.targetPath.toLowerCase() !== entry.previousPath!.toLowerCase()
+        ) {
+          await rm(coreFilePath(journal.installRoot, entry.targetPath), {
+            force: true,
+          })
+        }
+      } else if (entry.targetPath) {
+        await rm(coreFilePath(journal.installRoot, entry.targetPath), {
+          force: true,
+        })
       }
     }
     await rm(stagingRoot, { recursive: true, force: true })
     await rm(backupRoot, { recursive: true, force: true })
-    await rm(replacementJournalPath(journal.installRoot), { force: true })
+    await this.restoreSupersededJournal(journal)
+  }
+
+  private async restoreSupersededJournal(
+    journal: ColdClientReplacementJournal,
+  ): Promise<void> {
+    const path = replacementJournalPath(journal.installRoot)
+    if (journal.supersededJournal) {
+      await writeDurableJson(
+        path,
+        journalSchema.parse(journal.supersededJournal),
+      )
+    } else {
+      await rm(path, { force: true })
+    }
   }
 }
 
@@ -560,6 +614,16 @@ function coreEntries(journal: ColdClientReplacementJournal) {
     (entry): entry is z.infer<typeof coreAffectedFileSchema> =>
       'previousPath' in entry,
   )
+}
+
+function cleanupPaths(journal: ColdClientReplacementJournal): string[] {
+  return [
+    ...new Set([
+      journal.stagingRelativePath,
+      journal.backupRelativePath,
+      ...journal.deferredCleanupRelativePaths,
+    ]),
+  ]
 }
 
 function coreFilePath(installRoot: string, path: string): string {
