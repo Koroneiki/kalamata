@@ -1,4 +1,13 @@
-import { lstat, opendir, readFile, realpath, rm } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
+import {
+  lstat,
+  opendir,
+  readFile,
+  realpath,
+  rename,
+  rm,
+  writeFile,
+} from 'node:fs/promises'
 import { isAbsolute, join, relative } from 'node:path'
 import { z } from 'zod'
 import { steamIdSchema } from '../../types/schemas.ts'
@@ -36,9 +45,14 @@ interface GseProcessRunner {
   ): Promise<number>
 }
 
+interface TopOwnersLoader {
+  (signal: AbortSignal): Promise<string>
+}
+
 interface GeneratorOptions {
   platform?: NodeJS.Platform
   runProcess?: GseProcessRunner
+  loadTopOwners?: TopOwnersLoader
 }
 
 interface ChildEnvironment {
@@ -46,6 +60,11 @@ interface ChildEnvironment {
 }
 
 const filesystemErrorSchema = z.object({ code: z.string() }).loose()
+const topOwnersUrl = 'https://steamladder.com/ladder/games/'
+const topOwnersUserAgent =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
+  'AppleWebKit/537.36 (KHTML, like Gecko) ' +
+  'Chrome/123.0.0.0 Safari/537.36'
 
 export interface GeneratedGseConfiguration {
   gseAssetId: number
@@ -65,6 +84,7 @@ export class ColdClientGenerator {
   readonly #dependencies: GseDependencyProvider
   readonly #platform: NodeJS.Platform
   readonly #runProcess: GseProcessRunner
+  readonly #loadTopOwners: TopOwnersLoader
 
   constructor(
     dependencies: GseDependencyProvider,
@@ -73,6 +93,7 @@ export class ColdClientGenerator {
     this.#dependencies = dependencies
     this.#platform = options.platform ?? process.platform
     this.#runProcess = options.runProcess ?? runVisibleWindowsProcess
+    this.#loadTopOwners = options.loadTopOwners ?? loadTopOwners
   }
 
   async generate(
@@ -98,6 +119,7 @@ export class ColdClientGenerator {
     await assertRegularFile(executable, 'GSE Tools executable is missing')
     // Login data is user-owned. Existence and filesystem copy are its only APIs.
     await assertRegularFile(loginPath, 'GSE Tools login file is missing')
+    await refreshTopOwners(this.#loadTopOwners, workingDirectory, signal)
 
     const outputRoot = join(workingDirectory, '_OUTPUT')
     const appDirectory = join(outputRoot, String(appId))
@@ -125,6 +147,67 @@ export class ColdClientGenerator {
       steamSettingsDirectory,
     }
   }
+}
+
+async function refreshTopOwners(
+  load: TopOwnersLoader,
+  workingDirectory: string,
+  signal: AbortSignal,
+): Promise<void> {
+  const destination = join(workingDirectory, 'top_owners_ids.txt')
+  const temporary = `${destination}.${randomUUID()}.tmp`
+  try {
+    const ids = [
+      ...new Set(
+        [...(await load(signal)).matchAll(/\/profile\/(\d{17})\//g)].map(
+          (match) => match[1]!,
+        ),
+      ),
+    ].slice(0, 250)
+    if (ids.length < 10) throw new Error('SteamLadder returned too few IDs')
+    await writeFile(temporary, `${ids.join('\n')}\n`, { flag: 'wx' })
+    await rename(temporary, destination)
+  } catch {
+    signal.throwIfAborted()
+    // GSE ships a fallback list, so refresh failure must not block generation.
+  } finally {
+    await rm(temporary, { force: true })
+  }
+}
+
+async function loadTopOwners(signal: AbortSignal): Promise<string> {
+  const systemRoot = windowsEnvironmentValue('SystemRoot') ?? 'C:\\Windows'
+  const request = Bun.spawn({
+    cmd: [
+      join(systemRoot, 'System32', 'curl.exe'),
+      '--http1.1',
+      '--silent',
+      '--show-error',
+      '--fail',
+      '--location',
+      '--header',
+      'Accept-Encoding: identity',
+      '--header',
+      'Connection: close',
+      '--user-agent',
+      topOwnersUserAgent,
+      topOwnersUrl,
+    ],
+    signal,
+    timeout: 30_000,
+    windowsHide: true,
+    stdin: 'ignore',
+    stdout: 'pipe',
+    stderr: 'ignore',
+  })
+  const [exitCode, html] = await Promise.all([
+    request.exited,
+    request.stdout.text(),
+  ])
+  signal.throwIfAborted()
+  if (exitCode !== 0)
+    throw new Error(`SteamLadder request exited with ${exitCode}`)
+  return html
 }
 
 export async function runVisibleWindowsProcess(
