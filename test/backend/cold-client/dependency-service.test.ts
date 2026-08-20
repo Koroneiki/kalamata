@@ -51,6 +51,25 @@ test('checks exact release assets without downloading them', async () => {
   ])
 })
 
+test('throttles automatic checks across restarts but not manual checks', async () => {
+  const fixture = await createFixture()
+
+  await fixture.service.checkForUpdatesOnStartup()
+  expect(fixture.releaseChecks).toHaveLength(3)
+
+  const restarted = await fixture.restart()
+  expect((await restarted.getStatus()).lastCheckedAt).toBe(1000)
+  await restarted.checkForUpdatesOnStartup()
+  expect(fixture.releaseChecks).toHaveLength(3)
+
+  await restarted.checkForUpdates()
+  expect(fixture.releaseChecks).toHaveLength(6)
+
+  fixture.setNow(1000 + 60 * 60 * 1000)
+  await restarted.checkForUpdatesOnStartup()
+  expect(fixture.releaseChecks).toHaveLength(9)
+})
+
 test('bootstraps 7-Zip and preserves an active cache after digest failure', async () => {
   const fixture = await createFixture()
   await fixture.service.checkForUpdates()
@@ -173,6 +192,9 @@ interface Fixture {
   service: ColdClientDependencyService
   downloads: number[]
   failChecks: Set<ColdClientDependencyId>
+  releaseChecks: ColdClientDependencyId[]
+  restart(): Promise<ColdClientDependencyService>
+  setNow(value: number): void
   setArtifact(
     dependencyId: ColdClientDependencyId,
     assetId: number,
@@ -188,6 +210,8 @@ async function createFixture(
   const artifacts = new Map<ColdClientDependencyId, TestArtifact>()
   const downloads: number[] = []
   const failChecks = new Set<ColdClientDependencyId>()
+  const releaseChecks: ColdClientDependencyId[] = []
+  let now = 1000
   const setArtifact = (
     dependencyId: ColdClientDependencyId,
     assetId: number,
@@ -209,6 +233,7 @@ async function createFixture(
     const url = String(input)
     const checked = dependencyFromUrl(url)
     if (url.includes('/releases/latest')) {
+      releaseChecks.push(checked)
       if (failChecks.has(checked)) return new Response('', { status: 503 })
       return Response.json(releaseFor(artifacts.get(checked)!))
     }
@@ -235,15 +260,29 @@ async function createFixture(
     }
     return { exitCode: 0, stdout: '' }
   })
-  const service = new ColdClientDependencyService(root, {
-    platform: 'win32',
-    fetcher,
-    extractor,
-    mutex,
-    now: () => 1000,
-  })
-  await service.initialize()
-  return { service, downloads, failChecks, setArtifact }
+  const createService = async () => {
+    const service = new ColdClientDependencyService(root!, {
+      platform: 'win32',
+      fetcher,
+      extractor,
+      mutex,
+      now: () => now,
+    })
+    await service.initialize()
+    return service
+  }
+  const service = await createService()
+  return {
+    service,
+    downloads,
+    failChecks,
+    releaseChecks,
+    restart: createService,
+    setNow: (value) => {
+      now = value
+    },
+    setArtifact,
+  }
 }
 
 interface TestArtifact {

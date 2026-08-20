@@ -64,6 +64,13 @@ export const dependencyMetadataSchema = z
       })
       .strict(),
     artifacts: z.array(artifactDescriptorSchema),
+    lastCheckedAt: z
+      .number()
+      .int()
+      .nonnegative()
+      .safe()
+      .nullable()
+      .default(null),
   })
   .strict()
   .superRefine((metadata, ctx) => {
@@ -104,6 +111,7 @@ export const emptyDependencyMetadata = (): DependencyMetadata => ({
   version: 1,
   active: { '7zip': null, gbe: null, gse: null },
   artifacts: [],
+  lastCheckedAt: null,
 })
 
 export interface RemoteArtifact {
