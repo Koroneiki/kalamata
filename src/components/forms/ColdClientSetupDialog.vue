@@ -2,7 +2,11 @@
 import { useMutation } from '@pinia/colada'
 import { computed, ref, watch } from 'vue'
 
-import { configureColdClient, inspectColdClientSetup } from '@/api/cold-client'
+import {
+  configureColdClient,
+  inspectColdClientSetup,
+  regenerateColdClientConfiguration,
+} from '@/api/cold-client'
 import ColdClientArchitectureSelect from '@/components/forms/ColdClientArchitectureSelect.vue'
 import { Button } from '@/components/ui/button'
 import {
@@ -18,6 +22,8 @@ import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import type {
   ColdClientSetupDraft,
+  ColdClientSetupMode,
+  ColdClientSetupRequest,
   ColdClientSetupWarning,
 } from '@/types/cold-client'
 
@@ -26,12 +32,12 @@ const props = defineProps<{
   appId: number
   appName: string
   installPath: string
-  operationPhase?: string
-  operationCancellable?: boolean
+  mode: ColdClientSetupMode
 }>()
 
 const emit = defineEmits<{
   'update:open': [value: boolean]
+  error: [message: string]
 }>()
 
 const draft = ref<ColdClientSetupDraft | null>(null)
@@ -41,11 +47,14 @@ const selectedExecutable = ref('')
 const selectedSteamApi = ref('')
 const selectedLaunchSource = ref('')
 const launchArguments = ref('')
-const setupError = ref('')
 let requestSequence = 0
 const configureMutation = useMutation({
-  mutation: configureColdClient,
+  mutation: (request: ColdClientSetupRequest) =>
+    props.mode === 'regenerate'
+      ? regenerateColdClientConfiguration(request)
+      : configureColdClient(request),
 })
+const regenerating = computed(() => props.mode === 'regenerate')
 
 const targetPath = computed(
   () => `${props.installPath.replace(/[\\/]+$/u, '')}\\_ColdClient`,
@@ -76,7 +85,6 @@ const steamApiOptions = computed(() =>
     architecture: steamApiArchitecture(value),
   })),
 )
-const setupRunning = computed(() => Boolean(props.operationPhase))
 const visibleWarnings = computed(() => {
   if (!draft.value) return []
   const selectedLaunch = draft.value.launchOptions.find(
@@ -121,18 +129,17 @@ const warningText = {
 } satisfies Record<ColdClientSetupWarning, string>
 
 watch(
-  () => props.open,
-  (open) => {
+  () => [props.open, props.mode] as const,
+  ([open]) => {
     const request = ++requestSequence
     if (!open) {
       draft.value = null
       loading.value = false
-      setupError.value = ''
       return
     }
     loading.value = true
     error.value = ''
-    void inspectColdClientSetup(props.appId)
+    void inspectColdClientSetup(props.appId, props.mode)
       .then((result) => {
         if (request !== requestSequence) return
         draft.value = result
@@ -154,24 +161,22 @@ watch(
   { immediate: true },
 )
 
-async function confirmSetup() {
-  if (!draft.value || !canReview.value || setupRunning.value) return
-  setupError.value = ''
-  try {
-    await configureMutation.mutateAsync({
-      appId: props.appId,
-      executableRelativePath: selectedExecutable.value,
-      steamApiRelativePath: selectedSteamApi.value || null,
-      loaderArchitecture: reviewedArchitecture.value,
-      launchArguments: launchArguments.value,
-      launchArgumentSource: selectedLaunchSource.value || null,
-      gbeAssetId: draft.value.gbe.assetId,
-      gseAssetId: draft.value.gse.assetId,
-    })
-    emit('update:open', false)
-  } catch (reason) {
-    setupError.value = reason instanceof Error ? reason.message : String(reason)
-  }
+function confirmSetup() {
+  if (!draft.value || !canReview.value) return
+  const operation = configureMutation.mutateAsync({
+    appId: props.appId,
+    executableRelativePath: selectedExecutable.value,
+    steamApiRelativePath: selectedSteamApi.value || null,
+    loaderArchitecture: reviewedArchitecture.value,
+    launchArguments: launchArguments.value,
+    launchArgumentSource: selectedLaunchSource.value || null,
+    gbeAssetId: draft.value.gbe.assetId,
+    gseAssetId: draft.value.gse.assetId,
+  })
+  emit('update:open', false)
+  void operation.catch((reason) =>
+    emit('error', reason instanceof Error ? reason.message : String(reason)),
+  )
 }
 
 function selectLaunchSource(event: Event) {
@@ -187,10 +192,16 @@ function selectLaunchSource(event: Event) {
   <Dialog :open="open" @update:open="emit('update:open', $event)">
     <DialogContent class="max-h-[90vh] overflow-y-auto sm:max-w-xl">
       <DialogHeader>
-        <DialogTitle class="text-primary">Set up {{ appName }}</DialogTitle>
+        <DialogTitle class="text-primary">
+          {{ regenerating ? 'Regenerate' : 'Set up' }} {{ appName }}
+        </DialogTitle>
         <DialogDescription>
-          Review the detected game files and launch settings. Nothing changes
-          until setup is confirmed.
+          Review the game files and launch settings.
+          {{
+            regenerating
+              ? 'The current configuration is selected where it is still available.'
+              : 'Nothing changes until setup is confirmed.'
+          }}
         </DialogDescription>
       </DialogHeader>
 
@@ -203,33 +214,6 @@ function selectLaunchSource(event: Event) {
       </p>
 
       <div v-else-if="draft" class="space-y-5">
-        <div
-          v-if="setupRunning"
-          class="bg-muted rounded-lg p-3 text-sm"
-          aria-live="polite"
-        >
-          <p class="font-medium">
-            {{
-              operationPhase === 'waiting-for-generator'
-                ? 'Waiting for GSE Tools'
-                : 'Finishing ColdClient setup'
-            }}
-          </p>
-          <p class="text-muted-foreground mt-1">
-            <template v-if="operationPhase === 'waiting-for-generator'">
-              Complete authentication or Steam Guard prompts in the separate
-              console window.
-            </template>
-            <template v-else>
-              The generated files are being validated and installed. Do not
-              close the game directory.
-            </template>
-          </p>
-          <p v-if="!operationCancellable" class="mt-2 text-xs font-medium">
-            Replacement has started and can no longer be cancelled.
-          </p>
-        </div>
-
         <dl class="bg-muted grid gap-2 rounded-lg p-3 text-sm sm:grid-cols-2">
           <div class="min-w-0">
             <dt class="text-muted-foreground text-xs">App ID</dt>
@@ -324,14 +308,15 @@ function selectLaunchSource(event: Event) {
             Official <code>extra_dlls</code> will be injected into the game
             process. The original Steam API DLL is not modified.
           </p>
+          <p v-if="regenerating">
+            Regeneration replaces <code>steam_settings</code> and updates the
+            loader configuration. Other managed core files and custom files are
+            preserved.
+          </p>
           <p class="text-muted-foreground">
-            Review only. No game files have changed.
+            Review only. No files have changed.
           </p>
         </div>
-
-        <p v-if="setupError" class="text-destructive text-sm" role="alert">
-          {{ setupError }}
-        </p>
       </div>
 
       <DialogFooter>
@@ -339,15 +324,17 @@ function selectLaunchSource(event: Event) {
           Close
         </Button>
         <Button
-          :disabled="
-            !canReview || setupRunning || configureMutation.isLoading.value
-          "
+          :disabled="!canReview || configureMutation.isLoading.value"
           @click="confirmSetup"
         >
           {{
             configureMutation.isLoading.value
-              ? 'Starting setup...'
-              : 'Confirm setup'
+              ? regenerating
+                ? 'Starting regeneration...'
+                : 'Starting setup...'
+              : regenerating
+                ? 'Confirm regeneration'
+                : 'Confirm setup'
           }}
         </Button>
       </DialogFooter>

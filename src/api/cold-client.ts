@@ -1,6 +1,7 @@
 import { request } from '@/api/transport'
 import type {
   ColdClientDependencyId,
+  ColdClientSetupMode,
   ColdClientSetupRequest,
 } from '@/types/cold-client'
 
@@ -22,8 +23,11 @@ export function openColdClientLoginDirectory() {
   return request('openColdClientLoginDirectory', {})
 }
 
-export function inspectColdClientSetup(appId: number) {
-  return request('inspectColdClientSetup', { appId })
+export function inspectColdClientSetup(
+  appId: number,
+  mode: ColdClientSetupMode,
+) {
+  return request('inspectColdClientSetup', { appId, mode })
 }
 
 export function getColdClientStatus(appId: number) {
@@ -34,8 +38,10 @@ export function configureColdClient(setup: ColdClientSetupRequest) {
   return request('configureColdClient', setup)
 }
 
-export function regenerateColdClientConfiguration(appId: number) {
-  return request('regenerateColdClientConfiguration', { appId })
+export function regenerateColdClientConfiguration(
+  setup: ColdClientSetupRequest,
+) {
+  return request('regenerateColdClientConfiguration', setup)
 }
 
 export function updateColdClientCore(appId: number) {

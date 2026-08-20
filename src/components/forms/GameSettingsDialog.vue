@@ -144,9 +144,9 @@ const emit = defineEmits<{
             </Button>
           </div>
           <p class="text-sm">
-            Regeneration replaces every file in
-            <code>steam_settings</code>, including user edits. Loader and core
-            files are preserved.
+            Review the executable, Steam API DLL, and launch arguments before
+            regeneration. It replaces every file in
+            <code>steam_settings</code>, including user edits.
           </p>
           <Button
             type="button"

@@ -17,8 +17,11 @@ const JOURNAL_FILENAME = 'coldclient-replacement.json'
 const LIVE_NAME = '_ColdClient'
 const STAGING_PREFIX = '.Kalamata-coldclient-staging-'
 const BACKUP_PREFIX = '.Kalamata-coldclient-backup-'
+// Settings-only prefixes remain valid for recovery of journals written by older versions.
 const SETTINGS_STAGING_PREFIX = '.Kalamata-coldclient-settings-staging-'
 const SETTINGS_BACKUP_PREFIX = '.Kalamata-coldclient-settings-backup-'
+const REGENERATION_STAGING_PREFIX = '.Kalamata-coldclient-regeneration-staging-'
+const REGENERATION_BACKUP_PREFIX = '.Kalamata-coldclient-regeneration-backup-'
 const CORE_STAGING_PREFIX = '.Kalamata-coldclient-core-staging-'
 const CORE_BACKUP_PREFIX = '.Kalamata-coldclient-core-backup-'
 const SETTINGS_LIVE_PATH = '_ColdClient/steam_settings'
@@ -69,9 +72,14 @@ const journalSchema = z
           journal.stagingRelativePath.startsWith(STAGING_PREFIX) &&
           journal.backupRelativePath.startsWith(BACKUP_PREFIX)
         : journal.kind === 'regenerate'
-          ? journal.liveRelativePath === SETTINGS_LIVE_PATH &&
-            journal.stagingRelativePath.startsWith(SETTINGS_STAGING_PREFIX) &&
-            journal.backupRelativePath.startsWith(SETTINGS_BACKUP_PREFIX)
+          ? (journal.liveRelativePath === SETTINGS_LIVE_PATH &&
+              journal.stagingRelativePath.startsWith(SETTINGS_STAGING_PREFIX) &&
+              journal.backupRelativePath.startsWith(SETTINGS_BACKUP_PREFIX)) ||
+            (journal.liveRelativePath === LIVE_NAME &&
+              journal.stagingRelativePath.startsWith(
+                REGENERATION_STAGING_PREFIX,
+              ) &&
+              journal.backupRelativePath.startsWith(REGENERATION_BACKUP_PREFIX))
           : journal.liveRelativePath === LIVE_NAME &&
             journal.stagingRelativePath.startsWith(CORE_STAGING_PREFIX) &&
             journal.backupRelativePath.startsWith(CORE_BACKUP_PREFIX)
@@ -105,6 +113,8 @@ const journalSchema = z
         BACKUP_PREFIX,
         SETTINGS_STAGING_PREFIX,
         SETTINGS_BACKUP_PREFIX,
+        REGENERATION_STAGING_PREFIX,
+        REGENERATION_BACKUP_PREFIX,
         CORE_STAGING_PREFIX,
         CORE_BACKUP_PREFIX,
       ].some((prefix) => path.startsWith(prefix))
@@ -140,8 +150,6 @@ interface ReplaceSetupOptions {
   validateLive(directory: string): Promise<void>
 }
 
-interface ReplaceSettingsOptions extends ReplaceSetupOptions {}
-
 interface ReplaceCoreOptions extends ReplaceSetupOptions {}
 
 interface ReplacementServiceOptions {
@@ -175,12 +183,12 @@ export class ColdClientReplacementService {
     })
   }
 
-  async replaceSettings(options: ReplaceSettingsOptions): Promise<void> {
+  async replaceConfiguration(options: ReplaceSetupOptions): Promise<void> {
     return this.replaceDirectory(options, {
       kind: 'regenerate',
-      liveRelativePath: SETTINGS_LIVE_PATH,
-      stagingPrefix: SETTINGS_STAGING_PREFIX,
-      backupPrefix: SETTINGS_BACKUP_PREFIX,
+      liveRelativePath: LIVE_NAME,
+      stagingPrefix: REGENERATION_STAGING_PREFIX,
+      backupPrefix: REGENERATION_BACKUP_PREFIX,
     })
   }
 

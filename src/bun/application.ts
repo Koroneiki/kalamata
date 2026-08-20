@@ -198,8 +198,8 @@ const rpc = BrowserView.defineRPC<AppRpc>({
           throw new Error('The GSE Tools login folder could not be opened')
         }
       },
-      inspectColdClientSetup({ appId }) {
-        return coldClientInspector.inspect(appId)
+      inspectColdClientSetup({ appId, mode }) {
+        return coldClient.inspectSetup(appId, mode)
       },
       getColdClientStatus({ appId }) {
         return coldClient.getStatus(appId)
@@ -207,8 +207,8 @@ const rpc = BrowserView.defineRPC<AppRpc>({
       configureColdClient(request) {
         return coldClient.configure(request)
       },
-      regenerateColdClientConfiguration({ appId }) {
-        return coldClient.regenerate(appId)
+      regenerateColdClientConfiguration(request) {
+        return coldClient.regenerate(request)
       },
       updateColdClientCore({ appId }) {
         return coldClient.updateCore(appId)

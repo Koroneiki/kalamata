@@ -110,38 +110,30 @@ describe('ColdClient setup replacement', () => {
   })
 })
 
-test('settings replacement rolls back without touching sibling core files', async () => {
+test('configuration replacement records regeneration for the full directory', async () => {
   const fixture = await createFixture()
-  const live = join(fixture.installRoot, '_ColdClient')
-  await mkdir(join(live, 'steam_settings'))
-  await writeFile(join(live, 'steam_settings', 'state.txt'), 'old settings')
-  await writeFile(join(live, 'core.dll'), 'core')
-  const settingsStaging = join(
+  const regenerationStaging = join(
     fixture.installRoot,
-    '.Kalamata-coldclient-settings-staging-test',
+    '.Kalamata-coldclient-regeneration-staging-test',
   )
-  await mkdir(settingsStaging)
-  await writeFile(join(settingsStaging, 'state.txt'), 'new settings')
+  await rename(fixture.staging, regenerationStaging)
   const database = new FakeDatabase(previous)
   const replacement = new ColdClientReplacementService(database)
 
-  await expect(
-    replacement.replaceSettings({
-      installRoot: fixture.installRoot,
-      stagingDirectory: settingsStaging,
-      previousInstallation: previous,
-      targetInstallation: target,
-      validateLive: async () => {
-        throw new Error('invalid settings')
-      },
-    }),
-  ).rejects.toThrow('invalid settings')
+  await replacement.replaceConfiguration({
+    installRoot: fixture.installRoot,
+    stagingDirectory: regenerationStaging,
+    previousInstallation: previous,
+    targetInstallation: target,
+    validateLive: async (live) => {
+      expect(await readFile(join(live, 'state.txt'), 'utf8')).toBe('new')
+    },
+  })
 
-  expect(
-    await readFile(join(live, 'steam_settings', 'state.txt'), 'utf8'),
-  ).toBe('old settings')
-  expect(await readFile(join(live, 'core.dll'), 'utf8')).toBe('core')
-  expect(database.current).toEqual(previous)
+  expect(database.current).toEqual(target)
+  await expect(
+    access(replacementJournalPath(fixture.installRoot)),
+  ).rejects.toThrow()
 })
 
 describe('ColdClient core replacement', () => {

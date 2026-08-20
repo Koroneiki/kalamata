@@ -103,6 +103,9 @@ export type ColdClientSetupRequest = z.infer<
   typeof coldClientSetupRequestSchema
 >
 
+export const coldClientSetupModes = ['setup', 'regenerate'] as const
+export type ColdClientSetupMode = (typeof coldClientSetupModes)[number]
+
 export type ColdClientRecommendationReason = 'depots-changed' | 'gse-updated'
 
 export type ColdClientStatus =
