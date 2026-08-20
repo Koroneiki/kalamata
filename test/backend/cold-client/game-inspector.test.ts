@@ -61,6 +61,8 @@ test('prefers a unique Shipping executable and a Steam API DLL in Binaries', asy
   expect(draft.loaderArchitecture).toBe('x86')
   expect(draft.launchArguments).toBe('-windowed')
   expect(draft.warnings).toContain('launch-executable-mismatch')
+  expect(draft.gbe).toEqual({ assetId: 201, tag: 'gbe-one' })
+  expect(draft.gse).toEqual({ assetId: 301, tag: 'gse-one' })
 })
 
 test('leaves multiple Shipping executables and ambiguous DLLs unresolved', async () => {
@@ -220,8 +222,17 @@ function inspector(fixture: InspectorFixture): ColdClientGameInspector {
     },
     {
       activeArtifact: (dependencyId) => ({
+        dependencyId,
+        repository: 'owner/repository',
         assetId: dependencyId === 'gbe' ? 201 : 301,
+        releaseId: dependencyId === 'gbe' ? 200 : 300,
         tag: dependencyId === 'gbe' ? 'gbe-one' : 'gse-one',
+        publishedAt: '2026-08-20T10:00:00Z',
+        assetName: 'dependency.7z',
+        sourceUrl: 'https://example.com/dependency.7z',
+        sha256: 'a'.repeat(64),
+        verificationMode: 'github-digest',
+        validatedAt: 1,
       }),
     },
     { platform: fixture.platform ?? 'win32' },
