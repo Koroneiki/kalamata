@@ -1,6 +1,9 @@
 import { lstat, readdir } from 'node:fs/promises'
 import { join, relative, sep } from 'node:path'
-import { managedCoreFilesSchema } from '../../types/cold-client.ts'
+import {
+  coldClientRelativePathSchema,
+  managedCoreFilesSchema,
+} from '../../types/cold-client.ts'
 import {
   canonicalManifestPath,
   manifestPathKey,
@@ -78,10 +81,12 @@ export async function assertCoreUpdateOwnership(
   previousManagedFiles: string[],
   targetManagedFiles: string[],
 ): Promise<void> {
+  await assertSafeDirectory(liveRoot, 'ColdClient directory')
   const previous = managedPathMap(previousManagedFiles)
   const target = managedPathMap(targetManagedFiles)
 
   for (const path of previous.values()) {
+    await assertDirectoryAncestors(liveRoot, path)
     const metadata = await lstatOrNull(pathInRoot(liveRoot, path))
     if (metadata && (!metadata.isFile() || metadata.isSymbolicLink())) {
       throw new Error(`ColdClient managed path conflicts with ${path}`)
@@ -94,6 +99,28 @@ export async function assertCoreUpdateOwnership(
     if (await lstatOrNull(pathInRoot(liveRoot, path))) {
       throw new Error(`ColdClient custom path conflicts with ${path}`)
     }
+  }
+}
+
+export async function assertSafeRelativeFile(
+  root: string,
+  path: string,
+): Promise<void> {
+  const validated = coldClientRelativePathSchema.parse(path)
+  await assertDirectoryAncestors(root, validated)
+  const metadata = await lstatOrNull(pathInRoot(root, validated))
+  if (!metadata?.isFile() || metadata.isSymbolicLink()) {
+    throw new Error(`ColdClient file is missing or unsafe: ${validated}`)
+  }
+}
+
+export async function assertSafeDirectory(
+  path: string,
+  label: string,
+): Promise<void> {
+  const metadata = await lstatOrNull(path)
+  if (!metadata?.isDirectory() || metadata.isSymbolicLink()) {
+    throw new Error(`${label} is missing or unsafe`)
   }
 }
 

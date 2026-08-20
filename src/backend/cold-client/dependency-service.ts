@@ -291,11 +291,9 @@ export class ColdClientDependencyService {
       selected.includes('7zip') ||
       (archiveSelected && this.#metadata.active['7zip'] === null)
     if (updateExtractor) await this.installDependency('7zip')
-    await Promise.all(
-      selected
-        .filter((dependencyId) => dependencyId !== '7zip')
-        .map((dependencyId) => this.installDependency(dependencyId)),
-    )
+    for (const dependencyId of selected) {
+      if (dependencyId !== '7zip') await this.installDependency(dependencyId)
+    }
     return this.getStatus()
   }
 

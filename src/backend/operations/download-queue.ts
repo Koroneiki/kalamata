@@ -90,7 +90,6 @@ export class DownloadQueueCoordinator {
   #pausing = false
   #cancelRequested = false
   readonly #repairRequirements = new Map<number, string>()
-  readonly #coldClientBlocks = new Set<number>()
   readonly #queuePreparationFailures = new Set<string>()
   readonly #removingQueueItems = new Set<string>()
 
@@ -118,19 +117,13 @@ export class DownloadQueueCoordinator {
         // The displaced row mirrors current work until pause transfers ownership.
         .filter(({ id }) => id !== this.#displacedQueueItemId)
         .map(queueItemSnapshot),
-      repairRequiredAppIds: [
-        ...new Set([
-          ...this.#repairRequirements.keys(),
-          ...this.#coldClientBlocks,
-        ]),
-      ],
+      repairRequiredAppIds: [...this.#repairRequirements.keys()],
     }
   }
 
   isBusyForApp(appId: number): boolean {
     return (
       this.#repairRequirements.has(appId) ||
-      this.#coldClientBlocks.has(appId) ||
       this.database.hasQueuedApplication(appId) ||
       (this.#state.status !== 'idle' &&
         'appId' in this.#state &&
@@ -422,15 +415,6 @@ export class DownloadQueueCoordinator {
     this.showNextRepairRequired()
   }
 
-  markColdClientBlocked(appId: number): void {
-    this.#coldClientBlocks.add(appId)
-    this.emitState()
-  }
-
-  clearColdClientBlocked(appId: number): void {
-    if (this.#coldClientBlocks.delete(appId)) this.emitState()
-  }
-
   async shutdown(): Promise<void> {
     this.#shuttingDown = true
     if (!this.#commitStarted && this.#controller) {
@@ -497,9 +481,6 @@ export class DownloadQueueCoordinator {
     if (this.#shuttingDown) throw new Error('Application is shutting down')
     if (this.database.hasQueuedApplication(appId))
       throw new Error('This application is already in Downloads')
-    if (this.#coldClientBlocks.has(appId)) {
-      throw new Error('Repair ColdClient before changing installed depots')
-    }
     if (
       this.#state.status !== 'idle' &&
       'appId' in this.#state &&
@@ -940,10 +921,7 @@ export class DownloadQueueCoordinator {
       while (!this.#shuttingDown) {
         // A finishing run may pump while queue acceptance awaits pause or cleanup.
         const item = this.database.claimFirstApplicationQueueItem(
-          new Set([
-            ...this.#repairRequirements.keys(),
-            ...this.#coldClientBlocks,
-          ]),
+          new Set(this.#repairRequirements.keys()),
           new Set([
             ...this.#queuePreparationFailures,
             ...this.#removingQueueItems,

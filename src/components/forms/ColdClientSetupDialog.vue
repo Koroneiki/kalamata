@@ -31,7 +31,6 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update:open': [value: boolean]
-  configured: []
 }>()
 
 const draft = ref<ColdClientSetupDraft | null>(null)
@@ -154,7 +153,6 @@ async function confirmSetup() {
       gbeAssetId: draft.value.gbe.assetId,
       gseAssetId: draft.value.gse.assetId,
     })
-    emit('configured')
     emit('update:open', false)
   } catch (reason) {
     setupError.value = reason instanceof Error ? reason.message : String(reason)

@@ -27,8 +27,12 @@ export const coldClientDependenciesQueryKey = [
   'cold-client-dependencies',
 ] as const
 export const coldClientQueryKeys = {
+  all: ['cold-client-status'] as const,
   status: (appId: number) => ['cold-client-status', appId] as const,
 }
+export const coldClientDependencyUpdateMutationKey = [
+  'cold-client-dependency-update',
+] as const
 
 const appSummaryQuery = defineQueryOptions((appId: number) => ({
   key: appQueryKeys.summary(appId),

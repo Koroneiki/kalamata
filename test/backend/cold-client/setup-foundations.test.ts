@@ -8,6 +8,7 @@ import { ColdClientInterfaceGenerator } from '../../../src/backend/cold-client/i
 import {
   assertCoreUpdateOwnership,
   assertRequiredManagedCoreFiles,
+  assertSafeRelativeFile,
   collectManagedCoreFiles,
 } from '../../../src/backend/cold-client/managed-inventory.ts'
 import { removeTemporaryDirectory } from '../../helpers/filesystem.ts'
@@ -159,6 +160,28 @@ describe('managed core inventory', () => {
     await expect(
       assertCoreUpdateOwnership(root, ['missing.dll'], ['extra_dlls/new.dll']),
     ).rejects.toThrow('unsafe ancestor')
+  })
+
+  test('rejects linked ancestors for existing managed and recorded game files', async () => {
+    root = await mkdtemp(join(tmpdir(), 'kalamata-coldclient-core-'))
+    const external = await mkdtemp(
+      join(tmpdir(), 'kalamata-coldclient-linked-'),
+    )
+    await writeFile(join(external, 'managed.dll'), 'managed')
+    await symlink(external, join(root, 'extra_dlls'))
+
+    await expect(
+      assertCoreUpdateOwnership(
+        root,
+        ['extra_dlls/managed.dll'],
+        ['extra_dlls/managed.dll'],
+      ),
+    ).rejects.toThrow('unsafe ancestor')
+    await expect(
+      assertSafeRelativeFile(root, 'extra_dlls/managed.dll'),
+    ).rejects.toThrow('unsafe ancestor')
+
+    await removeTemporaryDirectory(external)
   })
 })
 

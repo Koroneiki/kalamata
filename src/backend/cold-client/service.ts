@@ -21,6 +21,8 @@ import {
 import {
   assertRequiredManagedCoreFiles,
   assertCoreUpdateOwnership,
+  assertSafeDirectory,
+  assertSafeRelativeFile,
   collectManagedCoreFiles,
 } from './managed-inventory.ts'
 import type { ColdClientOperationContext } from './operation-coordinator.ts'
@@ -97,7 +99,7 @@ interface ReplacementProvider {
     targetInstallation: ColdClientInstallation
     validateLive(directory: string): Promise<void>
   }): Promise<void>
-  hasJournal(installRoot: string): Promise<boolean>
+  hasUnresolvedJournal(installRoot: string, appId: number): Promise<boolean>
   recover(
     installRoot: string,
     expectedAppId: number,
@@ -147,6 +149,7 @@ export class ColdClientService {
   }
 
   configure(requestInput: ColdClientSetupRequest): Promise<ColdClientStatus> {
+    this.assertSupported()
     const request = coldClientSetupRequestSchema.parse(requestInput)
     return this.operations.run('setup', request.appId, async (context) => {
       const initialDraft = await this.inspector.inspect(request.appId)
@@ -178,6 +181,7 @@ export class ColdClientService {
   }
 
   regenerate(appId: number): Promise<ColdClientStatus> {
+    this.assertSupported()
     return this.operations.run('regenerate', appId, async (context) => {
       const previous = this.database.getColdClientInstallation(appId)
       if (!previous) throw new Error('ColdClient is not configured')
@@ -209,6 +213,10 @@ export class ColdClientService {
           'gse',
           generated.gseAssetId,
         )
+        await assertSafeDirectory(
+          join(installRoot, '_ColdClient'),
+          'ColdClient directory',
+        )
         stagingDirectory = join(
           installRoot,
           `.Kalamata-coldclient-settings-staging-${randomUUID()}`,
@@ -223,7 +231,10 @@ export class ColdClientService {
             installRoot,
             ...previous.steamApiRelativePath.split('/'),
           )
-          await assertRegularFile(steamApiPath, previous.steamApiRelativePath)
+          await assertSafeRelativeFile(
+            installRoot,
+            previous.steamApiRelativePath,
+          )
           await this.interfaceGenerator.generate(
             join(
               gbe.directory,
@@ -283,6 +294,7 @@ export class ColdClientService {
   }
 
   updateCore(appId: number): Promise<ColdClientStatus> {
+    this.assertSupported()
     return this.operations.run('update-core', appId, async (context) => {
       const previous = this.database.getColdClientInstallation(appId)
       if (!previous) throw new Error('ColdClient is not configured')
@@ -396,7 +408,9 @@ export class ColdClientService {
     const installation = this.database.getColdClientInstallation(appId)
     if (!installation) return { status: 'not-configured' }
     try {
-      if (await this.replacement.hasJournal(library.installPath)) {
+      if (
+        await this.replacement.hasUnresolvedJournal(library.installPath, appId)
+      ) {
         return {
           status: 'invalid',
           message: 'An interrupted ColdClient replacement requires repair.',
@@ -452,6 +466,12 @@ export class ColdClientService {
       }
       await validateInstalledCore(installRoot, installation)
     })
+  }
+
+  private assertSupported(): void {
+    if (this.#platform !== 'win32') {
+      throw new Error('ColdClient is available only on Windows')
+    }
   }
 
   private async buildAndReplace(

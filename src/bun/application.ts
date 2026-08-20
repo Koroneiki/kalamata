@@ -205,10 +205,7 @@ const rpc = BrowserView.defineRPC<AppRpc>({
         return coldClient.getStatus(appId)
       },
       configureColdClient(request) {
-        return coldClient.configure(request).then((status) => {
-          queue.clearColdClientBlocked(request.appId)
-          return status
-        })
+        return coldClient.configure(request)
       },
       regenerateColdClientConfiguration({ appId }) {
         return coldClient.regenerate(appId)
@@ -385,13 +382,16 @@ startup = (async () => {
   // Recover commits before restoring one staging operation; surface any repair
   // requirements only after resumable work has claimed the singleton queue.
   const recoveryFailures: Array<{ appId: number; installPath: string }> = []
-  const coldClientRecoveryFailures: number[] = []
   for (const entry of database.getLibrary()) {
     if (!entry.installPath) continue
     try {
       const result = await coldClient.recover(entry.appId, entry.installPath)
       if (result.status === 'invalid') {
-        coldClientRecoveryFailures.push(entry.appId)
+        diagnostics.error({
+          event: 'recovery.failed',
+          error: new Error(result.message),
+          appId: entry.appId,
+        })
       }
     } catch (error) {
       diagnostics.error({
@@ -399,7 +399,6 @@ startup = (async () => {
         error: error instanceof Error ? error : new Error(String(error)),
         appId: entry.appId,
       })
-      coldClientRecoveryFailures.push(entry.appId)
     }
   }
   for (const entry of database.getLibrary()) {
@@ -453,9 +452,6 @@ startup = (async () => {
     }
   }
   await queue.restoreInterrupted()
-  for (const appId of coldClientRecoveryFailures) {
-    queue.markColdClientBlocked(appId)
-  }
   for (const recoveryFailure of recoveryFailures)
     queue.markRepairRequired(recoveryFailure.appId, recoveryFailure.installPath)
   await queue.startPending()
