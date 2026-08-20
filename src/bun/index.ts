@@ -457,7 +457,7 @@ startup = (async () => {
   await queue.startPending()
   if (process.platform === 'win32' && coldClientDependenciesReady) {
     // Release discovery updates Settings state but never downloads assets.
-    void coldClientDependencies.checkForUpdates()
+    void coldClientDependencies.checkForUpdatesOnStartup()
   }
 })()
 await startup

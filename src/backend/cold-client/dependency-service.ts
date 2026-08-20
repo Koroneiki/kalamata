@@ -94,6 +94,7 @@ const definitions = {
     ],
   },
 } satisfies Record<ColdClientDependencyId, DependencyDefinition>
+const automaticCheckIntervalMs = 60 * 60 * 1000
 
 export class ColdClientDependencyService {
   readonly root: string
@@ -106,12 +107,12 @@ export class ColdClientDependencyService {
   readonly #fetcher: ColdClientFetcher
   readonly #extractor: ArchiveExtractor
   readonly #mutex: ColdClientMutationMutex
+  readonly #metadataMutex = new ColdClientMutationMutex()
   readonly #now: () => number
   readonly #reportCleanupError: (error: Error) => void
   readonly #remote = new Map<ColdClientDependencyId, RemoteArtifact>()
   readonly #checkErrors = new Map<ColdClientDependencyId, string>()
   #metadata = emptyDependencyMetadata()
-  #lastCheckedAt: number | null = null
   #check: Promise<ColdClientDependencyStatus> | undefined
   #update: Promise<ColdClientDependencyStatus> | undefined
   #shutdown = false
@@ -164,7 +165,7 @@ export class ColdClientDependencyService {
       dependencies: coldClientDependencyIds.map((dependencyId) =>
         this.dependencyStatus(dependencyId),
       ),
-      lastCheckedAt: this.#lastCheckedAt,
+      lastCheckedAt: this.#metadata.lastCheckedAt,
       loginFileExists:
         loginDirectory !== null &&
         (await exists(join(loginDirectory, this.loginFilename))),
@@ -183,6 +184,23 @@ export class ColdClientDependencyService {
     return this.#check
   }
 
+  async checkForUpdatesOnStartup(): Promise<ColdClientDependencyStatus> {
+    this.assertSupported()
+    this.assertAccepting()
+    this.assertInitialized()
+    if (this.#check) return this.#check
+    const lastCheckedAt = this.#metadata.lastCheckedAt
+    const elapsed = lastCheckedAt === null ? null : this.#now() - lastCheckedAt
+    if (
+      elapsed !== null &&
+      elapsed >= 0 &&
+      elapsed < automaticCheckIntervalMs
+    ) {
+      return this.buildStatus()
+    }
+    return this.checkForUpdates()
+  }
+
   private async performCheck(): Promise<ColdClientDependencyStatus> {
     await Promise.allSettled(
       coldClientDependencyIds.map(async (dependencyId) => {
@@ -198,7 +216,14 @@ export class ColdClientDependencyService {
         }
       }),
     )
-    this.#lastCheckedAt = this.#now()
+    await this.#metadataMutex.runExclusive(async () => {
+      const metadata = dependencyMetadataSchema.parse({
+        ...this.#metadata,
+        lastCheckedAt: this.#now(),
+      })
+      await writeDurableJson(this.#metadataPath, metadata)
+      this.#metadata = metadata
+    })
     return this.buildStatus()
   }
 
@@ -400,23 +425,25 @@ export class ColdClientDependencyService {
         }
         await rename(stagingDirectory, destination)
       }
-      const metadata = dependencyMetadataSchema.parse({
-        ...this.#metadata,
-        active: {
-          ...this.#metadata.active,
-          [dependencyId]: descriptor.assetId,
-        },
-        artifacts: [
-          ...this.#metadata.artifacts.filter(
-            (artifact) =>
-              artifact.dependencyId !== dependencyId ||
-              artifact.assetId !== descriptor.assetId,
-          ),
-          descriptor,
-        ],
+      await this.#metadataMutex.runExclusive(async () => {
+        const metadata = dependencyMetadataSchema.parse({
+          ...this.#metadata,
+          active: {
+            ...this.#metadata.active,
+            [dependencyId]: descriptor.assetId,
+          },
+          artifacts: [
+            ...this.#metadata.artifacts.filter(
+              (artifact) =>
+                artifact.dependencyId !== dependencyId ||
+                artifact.assetId !== descriptor.assetId,
+            ),
+            descriptor,
+          ],
+        })
+        await writeDurableJson(this.#metadataPath, metadata)
+        this.#metadata = metadata
       })
-      await writeDurableJson(this.#metadataPath, metadata)
-      this.#metadata = metadata
     })
   }
 
