@@ -30,4 +30,4 @@ This digest fallback is an explicit product decision. HTTPS and structural valid
 
 ## Process injection
 
-GBE's official `extra_dlls` directory is copied in full and configured through `DllsToInjectFolder=extra_dlls`. Those DLLs are injected into the game process and may patch SteamStub behavior. The setup review must disclose this before it changes game files.
+GBE's two official `steamclient_extra` DLLs are copied to `extra_dlls` and configured through `DllsToInjectFolder=extra_dlls`. The loader injects the architecture-matching DLL into the game process, which may patch SteamStub behavior. The setup review must disclose this before it changes game files.

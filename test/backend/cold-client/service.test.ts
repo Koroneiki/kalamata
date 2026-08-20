@@ -42,8 +42,11 @@ test('configures a complete reviewed ColdClient installation', async () => {
   })
   const live = join(fixture.installRoot, '_ColdClient')
   expect(
-    await readFile(join(live, 'extra_dlls', 'nested', 'extra.dll'), 'utf8'),
-  ).toBe('extra')
+    await readFile(
+      join(live, 'extra_dlls', 'steamclient_extra_x64.dll'),
+      'utf8',
+    ),
+  ).toBe('extra x64')
   expect(
     await readFile(join(live, 'steam_settings', 'configs.overlay.ini'), 'utf8'),
   ).toBe('generated-overlay-default')
@@ -59,6 +62,13 @@ test('configures a complete reviewed ColdClient installation', async () => {
   await expect(
     access(join(live, 'steamclient_loader_x64.exe')),
   ).resolves.toBeNull()
+  await expect(access(join(live, 'README.md'))).rejects.toThrow()
+  await expect(
+    access(join(live, 'GameOverlayRenderer.dll')),
+  ).resolves.toBeNull()
+  await expect(
+    access(join(live, 'extra_dlls', 'steamclient_extra_x86.dll')),
+  ).resolves.toBeNull()
   expect(await readFile(join(live, 'ColdClientLoader.ini'), 'utf8')).toContain(
     'Exe=..\\Game\\Binaries\\Game.exe\r\n',
   )
@@ -69,9 +79,52 @@ test('configures a complete reviewed ColdClient installation', async () => {
     gbeAssetId: 101,
     gseAssetId: 201,
   })
-  expect(fixture.database.current?.managedCoreFiles).toContain(
-    'extra_dlls/nested/extra.dll',
+  expect(fixture.database.current?.managedCoreFiles).toEqual([
+    'GameOverlayRenderer.dll',
+    'GameOverlayRenderer64.dll',
+    'extra_dlls/steamclient_extra_x64.dll',
+    'extra_dlls/steamclient_extra_x86.dll',
+    'steamclient.dll',
+    'steamclient64.dll',
+    'steamclient_loader_x64.exe',
+  ])
+})
+
+test('copies both shared runtimes but only the selected x86 loader', async () => {
+  const fixture = await createFixture()
+  const steamApi = 'Game/Binaries/steam_api.dll'
+  await writeFile(
+    join(fixture.installRoot, ...steamApi.split('/')),
+    'steam api',
   )
+  fixture.draft.steamApiCandidates = [steamApi]
+  fixture.draft.selectedSteamApiRelativePath = steamApi
+  fixture.draft.loaderArchitecture = 'x86'
+  fixture.request.steamApiRelativePath = steamApi
+  fixture.request.loaderArchitecture = 'x86'
+  const service = createService(fixture)
+
+  await service.configure(fixture.request)
+
+  const live = join(fixture.installRoot, '_ColdClient')
+  await expect(
+    access(join(live, 'steamclient_loader_x86.exe')),
+  ).resolves.toBeNull()
+  await expect(
+    access(join(live, 'GameOverlayRenderer.dll')),
+  ).resolves.toBeNull()
+  await expect(
+    access(join(live, 'extra_dlls', 'steamclient_extra_x86.dll')),
+  ).resolves.toBeNull()
+  await expect(
+    access(join(live, 'steamclient_loader_x64.exe')),
+  ).rejects.toThrow()
+  await expect(
+    access(join(live, 'GameOverlayRenderer64.dll')),
+  ).resolves.toBeNull()
+  await expect(
+    access(join(live, 'extra_dlls', 'steamclient_extra_x64.dll')),
+  ).resolves.toBeNull()
 })
 
 test('reports configured installations with missing interfaces as invalid', async () => {
@@ -200,8 +253,10 @@ test('updates only managed core files and preserves custom configuration', async
   expect(await readFile(join(live, 'steamclient.dll'), 'utf8')).toBe(
     'client x86 v2',
   )
-  expect(await readFile(join(live, 'new-core.dll'), 'utf8')).toBe('new core')
-  await expect(access(join(live, 'GameOverlayRenderer.dll'))).rejects.toThrow()
+  await expect(access(join(live, 'new-core.dll'))).rejects.toThrow()
+  await expect(
+    access(join(live, 'GameOverlayRenderer.dll')),
+  ).resolves.toBeNull()
   expect(
     await readFile(join(live, 'extra_dlls', 'custom', 'user.dll'), 'utf8'),
   ).toBe('custom')
@@ -273,8 +328,8 @@ async function createFixture() {
   await Promise.all([
     mkdir(join(installRoot, 'Game', 'Binaries'), { recursive: true }),
     mkdir(join(installRoot, '_ColdClient'), { recursive: true }),
-    mkdir(join(core, 'extra_dlls', 'nested'), { recursive: true }),
-    mkdir(join(coreV2, 'extra_dlls', 'nested'), { recursive: true }),
+    mkdir(join(core, 'extra_dlls'), { recursive: true }),
+    mkdir(join(coreV2, 'extra_dlls'), { recursive: true }),
     mkdir(join(gbeRoot, 'release', 'tools', 'generate_interfaces'), {
       recursive: true,
     }),
@@ -294,14 +349,31 @@ async function createFixture() {
     writeFile(join(core, 'steamclient_loader_x64.exe'), 'loader x64'),
     writeFile(join(core, 'GameOverlayRenderer.dll'), 'overlay x86'),
     writeFile(join(core, 'GameOverlayRenderer64.dll'), 'overlay x64'),
-    writeFile(join(core, 'extra_dlls', 'nested', 'extra.dll'), 'extra'),
+    writeFile(
+      join(core, 'extra_dlls', 'steamclient_extra_x86.dll'),
+      'extra x86',
+    ),
+    writeFile(
+      join(core, 'extra_dlls', 'steamclient_extra_x64.dll'),
+      'extra x64',
+    ),
+    writeFile(join(core, 'README.md'), 'not needed'),
     writeFile(join(coreV2, 'ColdClientLoader.ini'), loaderIni()),
     writeFile(join(coreV2, 'steamclient.dll'), 'client x86 v2'),
     writeFile(join(coreV2, 'steamclient64.dll'), 'client x64 v2'),
     writeFile(join(coreV2, 'steamclient_loader_x86.exe'), 'loader x86 v2'),
     writeFile(join(coreV2, 'steamclient_loader_x64.exe'), 'loader x64 v2'),
+    writeFile(join(coreV2, 'GameOverlayRenderer.dll'), 'overlay x86 v2'),
+    writeFile(join(coreV2, 'GameOverlayRenderer64.dll'), 'overlay x64 v2'),
     writeFile(join(coreV2, 'new-core.dll'), 'new core'),
-    writeFile(join(coreV2, 'extra_dlls', 'nested', 'extra.dll'), 'extra v2'),
+    writeFile(
+      join(coreV2, 'extra_dlls', 'steamclient_extra_x86.dll'),
+      'extra x86 v2',
+    ),
+    writeFile(
+      join(coreV2, 'extra_dlls', 'steamclient_extra_x64.dll'),
+      'extra x64 v2',
+    ),
     writeFile(
       join(
         gbeRoot,
