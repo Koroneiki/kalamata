@@ -1,12 +1,9 @@
-import { createHash } from 'node:crypto'
+import { createDecipheriv, createHash } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { lzma } from '@napi-rs/lzma'
 import { MAX_CHUNK_BYTES } from '../manifests/manifest-utils.ts'
 
 const _require = createRequire(import.meta.url)
-const _symmetricDecrypt: (data: Buffer, key: Buffer) => Buffer = _require(
-  '@doctormckay/steam-crypto',
-).symmetricDecrypt
 
 interface ZipEntry {
   header?: { size?: number }
@@ -37,7 +34,7 @@ export async function processChunkData(
   ) {
     throw new Error(`Invalid expected size for chunk ${expectedSha1}`)
   }
-  const decrypted = _symmetricDecrypt(encryptedData, key)
+  const decrypted = decryptSteamChunk(encryptedData, key)
   const decompressed = decompress(decrypted, expectedSize)
   if (expectedSize !== undefined && decompressed.length !== expectedSize) {
     throw new Error(
@@ -49,6 +46,22 @@ export async function processChunkData(
     throw new Error(`SHA1 mismatch for chunk ${expectedSha1}`)
   }
   return decompressed
+}
+
+function decryptSteamChunk(data: Buffer, key: Buffer): Buffer {
+  // Steam prepends an ECB-encrypted IV to its CBC-encrypted payload. Explicit
+  // finalization avoids steam-crypto's end/read race on Bun 1.4.
+  const ivCipher = createDecipheriv('aes-256-ecb', key, null)
+  ivCipher.setAutoPadding(false)
+  const iv = Buffer.concat([
+    ivCipher.update(data.subarray(0, 16)),
+    ivCipher.final(),
+  ])
+  const dataCipher = createDecipheriv('aes-256-cbc', key, iv)
+  return Buffer.concat([
+    dataCipher.update(data.subarray(16)),
+    dataCipher.final(),
+  ])
 }
 
 function decompress(data: Buffer, expectedSize?: number): Buffer {

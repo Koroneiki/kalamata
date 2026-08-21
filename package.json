@@ -2,6 +2,7 @@
   "name": "kalamata",
   "version": "0.2.0",
   "private": true,
+  "packageManager": "bun@1.4.0",
   "type": "module",
   "scripts": {
     "start": "vite build && electrobun dev",
@@ -17,7 +18,6 @@
     "fallow": "fallow"
   },
   "dependencies": {
-    "@doctormckay/steam-crypto": "1.2.0",
     "@lucide/vue": "^1.31.0",
     "@napi-rs/lzma": "1.5.1",
     "@pinia/colada": "^1.4.2",

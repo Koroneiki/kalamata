@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { lzma } from '@napi-rs/lzma'
-import { createHash } from 'node:crypto'
+import { createCipheriv, createHash } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { DecompressPool } from '../src/backend/depot/transfer/decompress-pool.ts'
 
@@ -9,9 +9,6 @@ const AdmZip = require('adm-zip') as new () => {
   addFile(name: string, contents: Buffer): void
   toBuffer(): Buffer
 }
-const symmetricEncrypt = require('@doctormckay/steam-crypto')
-  .symmetricEncrypt as (data: Buffer, key: Buffer, iv: Buffer) => Buffer
-
 const key = Buffer.alloc(32, 0x42)
 const pools: DecompressPool[] = []
 
@@ -160,6 +157,18 @@ function encryptedZip(contents: Buffer): Buffer {
   const zip = new AdmZip()
   zip.addFile('chunk', contents)
   return symmetricEncrypt(zip.toBuffer(), key, Buffer.alloc(16, 0x24))
+}
+
+function symmetricEncrypt(input: Buffer, key: Buffer, iv: Buffer): Buffer {
+  const ivCipher = createCipheriv('aes-256-ecb', key, null)
+  ivCipher.setAutoPadding(false)
+  const encryptedIv = Buffer.concat([ivCipher.update(iv), ivCipher.final()])
+  const dataCipher = createCipheriv('aes-256-cbc', key, iv)
+  return Buffer.concat([
+    encryptedIv,
+    dataCipher.update(input),
+    dataCipher.final(),
+  ])
 }
 
 function encryptedZstd(contents: Buffer): Buffer {

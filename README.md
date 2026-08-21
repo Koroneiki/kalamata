@@ -45,6 +45,8 @@ Kalamata stores its data and diagnostic logs in:
 
 ## Development
 
+Development requires Bun 1.4.0.
+
 ```sh
 bun install --frozen-lockfile
 bun run dev
