@@ -1,8 +1,11 @@
 import { afterEach, expect, test } from 'bun:test'
-import { mkdir, mkdtemp, symlink, unlink } from 'node:fs/promises'
+import { mkdir, mkdtemp, symlink, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { acquireOutputLock } from '../src/backend/depot/install/output-lock.ts'
+import {
+  acquireOutputLock,
+  OutputLockBusyError,
+} from '../src/backend/depot/install/output-lock.ts'
 import { removeTemporaryDirectory } from './helpers/filesystem.ts'
 
 let directory: string | undefined
@@ -16,7 +19,9 @@ test('prevents concurrent access and permits reacquisition after release', async
   directory = await mkdtemp(join(tmpdir(), 'output-lock-'))
   const release = await acquireOutputLock(directory)
   try {
-    await expect(acquireOutputLock(directory)).rejects.toThrow('already using')
+    await expect(acquireOutputLock(directory)).rejects.toBeInstanceOf(
+      OutputLockBusyError,
+    )
   } finally {
     await release()
   }
@@ -43,6 +48,18 @@ test('reuses an unlocked lock database without admitting two owners', async () =
   ).toHaveLength(1)
   const acquired = attempts.find((result) => result.status === 'fulfilled')
   if (acquired?.status === 'fulfilled') await acquired.value()
+})
+
+test('does not report a corrupt lock database as contention', async () => {
+  directory = await mkdtemp(join(tmpdir(), 'output-lock-'))
+  const configDirectory = join(directory, '.Kalamata')
+  await mkdir(configDirectory)
+  await writeFile(join(configDirectory, 'download.lock'), 'not a database')
+
+  const error = await acquireOutputLock(directory).catch((cause) => cause)
+
+  expect(error).toBeInstanceOf(Error)
+  expect(error).not.toBeInstanceOf(OutputLockBusyError)
 })
 
 test('rejects symlinked transaction, repair-fallback, and lock paths', async () => {

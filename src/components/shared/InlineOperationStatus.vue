@@ -34,6 +34,7 @@ const panel = ref<HTMLElement | null>(null)
 const cancelOpen = ref(false)
 const pausedForCancel = ref(false)
 const actionPending = ref(false)
+const pendingAction = ref<'pause' | 'resume' | 'cancel' | null>(null)
 const actionError = ref('')
 let unmounted = false
 
@@ -70,6 +71,7 @@ const isUninstall = computed(
     !progressState.value.desiredDepotIds.length,
 )
 const phaseLabel = computed(() => {
+  if (pendingAction.value === 'pause') return 'PAUSING'
   if (props.state.status === 'failed') return 'DOWNLOAD FAILED'
   if (props.state.status === 'repair-required') return 'INSTALLATION BROKEN'
   if (props.state.status === 'paused') return 'PAUSED'
@@ -139,8 +141,12 @@ function rejectionMessage(reason: string) {
   return 'The operation state changed before the action completed.'
 }
 
-async function runControl(action: () => Promise<ControlResult>) {
+async function runControl(
+  pending: 'pause' | 'resume' | 'cancel',
+  action: () => Promise<ControlResult>,
+) {
   actionPending.value = true
+  pendingAction.value = pending
   actionError.value = ''
   try {
     const result = await action()
@@ -154,13 +160,14 @@ async function runControl(action: () => Promise<ControlResult>) {
     return false
   } finally {
     actionPending.value = false
+    pendingAction.value = null
   }
 }
 
 async function openCancel() {
   const targetAppId = props.state.appId
   if (props.state.status === 'active' && props.state.phase !== 'planning') {
-    if (!(await runControl(() => operation.pause()))) return
+    if (!(await runControl('pause', () => operation.pause()))) return
     pausedForCancel.value = true
     if (unmounted || props.state.appId !== targetAppId) {
       pausedForCancel.value = false
@@ -180,11 +187,11 @@ async function handleCancelOpenChange(open: boolean) {
   cancelOpen.value = false
   if (!pausedForCancel.value) return
   pausedForCancel.value = false
-  await runControl(() => operation.resume())
+  await runControl('resume', () => operation.resume())
 }
 
 async function confirmCancel() {
-  if (!(await runControl(() => operation.cancel()))) return
+  if (!(await runControl('cancel', () => operation.cancel()))) return
   pausedForCancel.value = false
   cancelOpen.value = false
 }
@@ -307,7 +314,7 @@ defineExpose({
         :disabled="actionPending"
         aria-label="Pause operation"
         title="Pause"
-        @click="runControl(() => operation.pause())"
+        @click="runControl('pause', () => operation.pause())"
       >
         <Pause aria-hidden="true" />
       </Button>
@@ -318,7 +325,7 @@ defineExpose({
         :disabled="actionPending"
         aria-label="Resume operation"
         title="Resume"
-        @click="runControl(() => operation.resume())"
+        @click="runControl('resume', () => operation.resume())"
       >
         <Play aria-hidden="true" />
       </Button>

@@ -28,6 +28,7 @@ import {
   collectManagedCoreFiles,
 } from './managed-inventory.ts'
 import type { ColdClientOperationContext } from './operation-coordinator.ts'
+import { hasColdClientRecoveryJournal } from './replacement.ts'
 
 interface ServiceDatabase {
   getLibraryEntry(appId: number): { installPath: string | null } | null
@@ -534,6 +535,10 @@ export class ColdClientService {
       }
       await validateInstalledCore(installRoot, installation)
     })
+  }
+
+  async hasRecoveryJournal(installRoot: string) {
+    return hasColdClientRecoveryJournal(installRoot)
   }
 
   private assertSupported(): void {

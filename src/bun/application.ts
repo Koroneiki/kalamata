@@ -21,6 +21,7 @@ import {
   hasRepairFallback,
   recoverApplicationTransaction,
 } from '../backend/depot/install/transaction/recovery.ts'
+import { isOutputLockBusyError } from '../backend/depot/install/output-lock.ts'
 import { openKalamataDatabase } from '../db/index.ts'
 import { canonicalizeInstallDirectory } from '../db/validation.ts'
 import type { AppRpc, AppSettings, DepotPlatform } from '../types/rpc.ts'
@@ -385,6 +386,7 @@ startup = (async () => {
   for (const entry of database.getLibrary()) {
     if (!entry.installPath) continue
     try {
+      if (!(await coldClient.hasRecoveryJournal(entry.installPath))) continue
       const result = await coldClient.recover(entry.appId, entry.installPath)
       if (result.status === 'invalid') {
         diagnostics.error({
@@ -445,10 +447,13 @@ startup = (async () => {
         error: error instanceof Error ? error : new Error(String(error)),
         appId: entry.appId,
       })
-      recoveryFailures.push({
-        appId: entry.appId,
-        installPath: entry.installPath,
-      })
+      // A concurrently exiting process can still own the path. Contention does
+      // not establish damaged installation state.
+      if (!(error instanceof Error && isOutputLockBusyError(error)))
+        recoveryFailures.push({
+          appId: entry.appId,
+          installPath: entry.installPath,
+        })
     }
   }
   await queue.restoreInterrupted()

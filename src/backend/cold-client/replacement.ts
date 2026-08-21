@@ -593,6 +593,13 @@ export function replacementJournalPath(installRoot: string): string {
   return join(installRoot, CONFIG_DIRECTORY, JOURNAL_FILENAME)
 }
 
+export async function hasColdClientRecoveryJournal(
+  installRootInput: string,
+): Promise<boolean> {
+  const installRoot = await canonicalDirectory(installRootInput)
+  return (await readJournal(installRoot)) !== null
+}
+
 async function readJournal(
   installRoot: string,
 ): Promise<ColdClientReplacementJournal | null> {

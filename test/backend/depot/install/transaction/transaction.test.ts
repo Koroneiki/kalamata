@@ -23,7 +23,11 @@ import {
   hasRepairFallback,
   recoverApplicationTransaction,
 } from '../../../../../src/backend/depot/install/transaction/recovery.ts'
-import { acquireOutputLock } from '../../../../../src/backend/depot/install/output-lock.ts'
+import {
+  acquireOutputLock,
+  isOutputLockBusyError,
+  OutputLockBusyError,
+} from '../../../../../src/backend/depot/install/output-lock.ts'
 import { HttpStatusError } from '../../../../../src/backend/depot/transfer/chunk-http.ts'
 import { depot, enospcClient, fakeClient, run } from './transaction-fixtures.ts'
 
@@ -698,6 +702,23 @@ describe('application filesystem transactions', () => {
       getResumableApplicationTransaction(directory, 100),
     ).rejects.toMatchObject({ kind: 'recovery' })
     expect(await transactionEntries()).toEqual(['other', 'resume-test'])
+  })
+
+  test('preserves output-lock contention through recovery classification', async () => {
+    directory = await tempDirectory()
+    const contention = new OutputLockBusyError(directory)
+
+    const error = await recoverApplicationTransaction(directory, {
+      appId: 100,
+      reconcile: async () => {},
+      acquireLock: async () => {
+        throw contention
+      },
+    }).catch((cause) => cause)
+
+    expect(error).toBeInstanceOf(ApplicationTransactionError)
+    expect(error).not.toBeInstanceOf(OutputLockBusyError)
+    expect(isOutputLockBusyError(error)).toBe(true)
   })
 
   test('detects archived repair evidence', async () => {
