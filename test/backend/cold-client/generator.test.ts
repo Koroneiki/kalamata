@@ -102,6 +102,27 @@ test('requires login existence without passing credential environment variables'
   expect(environment).not.toHaveProperty('GSE_CFG_PASSWORD')
 })
 
+test('starts GSE Tools through a visible PowerShell process', async () => {
+  let command: string[] = []
+  await runVisibleWindowsProcess(
+    'C:\\GSE Tools\\generator.exe',
+    ['-acw', '10'],
+    'C:\\GSE Tools',
+    new AbortController().signal,
+    (spawnedCommand) => {
+      command = spawnedCommand
+      return { pid: 1, exited: Promise.resolve(0) }
+    },
+  )
+
+  expect(command[0]).toContain('powershell.exe')
+  expect(command.slice(1, 3)).toEqual(['-NoProfile', '-Command'])
+  expect(command[3]).toContain(
+    "Start-Process -FilePath 'C:\\GSE Tools\\generator.exe'",
+  )
+  expect(command[3]).toContain("-ArgumentList @('-acw', '10')")
+})
+
 test('validates the active GSE artifact before starting its executable', async () => {
   const fixture = await createFixture()
   let processStarted = false
@@ -177,7 +198,7 @@ test('cancellation terminates and reaps the Windows process tree', async () => {
     controller.signal,
     (command) => {
       commands.push(command)
-      return command[0] === 'generator.exe'
+      return command[0]?.endsWith('powershell.exe')
         ? { pid: 42, exited: childExit.promise }
         : { pid: 43, exited: taskkillExit.promise }
     },

@@ -221,14 +221,28 @@ export async function runVisibleWindowsProcess(
   ) => ProcessHandle = defaultSpawnProcess,
 ): Promise<number> {
   signal.throwIfAborted()
-  const processHandle = spawnProcess([executable, ...arguments_], {
-    cwd,
-    env: minimalWindowsEnvironment(),
-    windowsHide: false,
-    stdin: 'inherit',
-    stdout: 'inherit',
-    stderr: 'inherit',
-  })
+  const systemRoot = windowsEnvironmentValue('SystemRoot') ?? 'C:\\Windows'
+  const powershell = join(
+    systemRoot,
+    'System32',
+    'WindowsPowerShell',
+    'v1.0',
+    'powershell.exe',
+  )
+  const quote = (value: string) => `'${value.replaceAll("'", "''")}'`
+  const argumentList = arguments_.map(quote).join(', ')
+  const script = `$process = Start-Process -FilePath ${quote(executable)} -ArgumentList @(${argumentList}) -WorkingDirectory ${quote(cwd)} -PassThru -Wait; exit $process.ExitCode`
+  const processHandle = spawnProcess(
+    [powershell, '-NoProfile', '-Command', script],
+    {
+      cwd,
+      env: minimalWindowsEnvironment(),
+      windowsHide: false,
+      stdin: 'inherit',
+      stdout: 'inherit',
+      stderr: 'inherit',
+    },
+  )
   let termination: Promise<void> | undefined
   const terminate = () => {
     termination ??= terminateWindowsProcessTree(processHandle.pid, spawnProcess)

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useMutation, useQueryCache } from '@pinia/colada'
-import { Download, FolderOpen, RefreshCw } from '@lucide/vue'
+import { Check, Download, FolderOpen, RefreshCw, X } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
 
 import {
@@ -19,6 +19,11 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import {
   hubcapUsageQueryKey,
   coldClientDependenciesQueryKey,
@@ -118,14 +123,6 @@ const coldClientBusy = computed(
     updateColdClientMutation.isLoading.value ||
     openLoginFolderMutation.isLoading.value,
 )
-const coldClientLastCheckedText = computed(() => {
-  const checkedAt = coldClientDependencies.value?.lastCheckedAt
-  if (checkedAt === null || checkedAt === undefined) return 'Not checked yet'
-  return `Last checked ${new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(checkedAt)}`
-})
 const hubcapUsageText = computed(() => {
   if (!settings.value?.hubcapApiKey) return 'No key configured'
   if (hubcapUsagePending.value || hubcapUsageLoading.value)
@@ -428,12 +425,45 @@ async function openColdClientLoginFolder() {
           <div
             v-for="item in coldClientDependencies.dependencies"
             :key="item.dependencyId"
-            class="flex min-w-0 items-start justify-between gap-3 px-4 py-3 sm:px-5"
+            class="flex min-w-0 flex-wrap items-start justify-between gap-3 px-4 py-3 sm:flex-nowrap sm:px-5"
           >
             <div class="min-w-0">
-              <p class="text-sm font-medium">
-                {{ dependencyLabels[item.dependencyId] }}
-              </p>
+              <div class="flex flex-wrap items-center gap-2">
+                <p class="text-sm font-medium">
+                  {{ dependencyLabels[item.dependencyId] }}
+                </p>
+                <Tooltip v-if="item.dependencyId === 'gse'">
+                  <TooltipTrigger as-child>
+                    <Badge
+                      as="span"
+                      role="img"
+                      tabindex="0"
+                      :variant="
+                        coldClientDependencies.loginFileExists
+                          ? 'secondary'
+                          : 'destructive'
+                      "
+                      class="gap-1"
+                      :aria-label="
+                        coldClientDependencies.loginFileExists
+                          ? 'GSE Tools login file present'
+                          : 'GSE Tools login file missing'
+                      "
+                    >
+                      <Check
+                        v-if="coldClientDependencies.loginFileExists"
+                        class="size-3"
+                        aria-hidden="true"
+                      />
+                      <X v-else class="size-3" aria-hidden="true" />
+                      Login
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    Indicates whether my_login.txt is present.
+                  </TooltipContent>
+                </Tooltip>
+              </div>
               <p
                 class="text-muted-foreground mt-0.5 truncate text-xs tabular-nums"
               >
@@ -443,21 +473,31 @@ async function openColdClientLoginFolder() {
                 {{ item.error }}
               </p>
             </div>
-            <Badge
-              :variant="
-                item.status === 'check-failed' ? 'destructive' : 'secondary'
-              "
-              class="shrink-0"
-            >
-              {{ dependencyStatusLabel(item) }}
-            </Badge>
+            <div class="ml-auto flex shrink-0 items-center gap-2">
+              <Button
+                v-if="item.dependencyId === 'gse'"
+                variant="outline"
+                size="sm"
+                :disabled="
+                  !coldClientDependencies.loginDirectory || coldClientBusy
+                "
+                @click="openColdClientLoginFolder"
+              >
+                <FolderOpen aria-hidden="true" />
+                Open Folder
+              </Button>
+              <Badge
+                :variant="
+                  item.status === 'check-failed' ? 'destructive' : 'secondary'
+                "
+              >
+                {{ dependencyStatusLabel(item) }}
+              </Badge>
+            </div>
           </div>
         </div>
 
         <div class="border-border border-t p-4 sm:p-5">
-          <p class="text-muted-foreground mb-3 text-xs tabular-nums">
-            {{ coldClientLastCheckedText }}
-          </p>
           <div class="flex flex-wrap gap-2">
             <Button
               variant="outline"
@@ -506,40 +546,6 @@ async function openColdClientLoginFolder() {
                 Cancel
               </Button>
             </div>
-          </div>
-        </div>
-
-        <div class="border-border border-t p-4 sm:p-5">
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
-              <p class="text-sm font-medium">GSE Tools login file</p>
-              <p class="text-muted-foreground mt-0.5 text-xs">
-                {{
-                  coldClientDependencies.loginFileExists
-                    ? 'my_login.txt is present.'
-                    : 'Add my_login.txt before setup.'
-                }}
-                Its contents are never read.
-              </p>
-              <p
-                v-if="coldClientDependencies.loginDirectory"
-                class="text-muted-foreground mt-1 font-mono text-xs break-all"
-              >
-                {{ coldClientDependencies.loginDirectory }}
-              </p>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              class="shrink-0"
-              :disabled="
-                !coldClientDependencies.loginDirectory || coldClientBusy
-              "
-              @click="openColdClientLoginFolder"
-            >
-              <FolderOpen aria-hidden="true" />
-              Open folder
-            </Button>
           </div>
         </div>
       </template>
