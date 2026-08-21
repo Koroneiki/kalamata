@@ -131,7 +131,7 @@ export class DepotDownloadService {
       } finally {
         removeDisconnectListener()
         options.signal?.removeEventListener('abort', onAbort)
-        for (const client of clients) client.dispose()
+        await Promise.all(clients.map((client) => client.dispose()))
       }
     }
     return result
@@ -169,8 +169,13 @@ class LazySteamContentClient implements ChunkClient {
     )
   }
 
-  dispose(): void {
-    void this.#client?.then((client) => client.dispose()).catch(() => {})
+  async dispose(): Promise<void> {
+    const client = await this.#client?.catch(() => undefined)
+    try {
+      client?.dispose()
+    } catch {
+      // Cleanup must not replace the operation result exposed to the queue.
+    }
   }
 
   private getClient(): Promise<SteamContentClient> {

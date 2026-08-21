@@ -436,10 +436,42 @@ describe('application filesystem transactions', () => {
     await rm(directory, { recursive: true, force: true })
     directory = await tempDirectory()
     const unavailable = depot(10, '1', { 'game.bin': 'new' }, fakeClient({}))
+    const unavailableServerRequests = mock(unavailable.client.getContentServers)
+    unavailable.client.getContentServers = unavailableServerRequests
     await expect(run(directory, [], [unavailable])).rejects.toMatchObject({
       kind: 'transfer-exhausted',
     })
-    expect(unavailable.client.downloadChunk).toHaveBeenCalledTimes(1)
+    expect(unavailableServerRequests).toHaveBeenCalledTimes(2)
+    expect(unavailable.client.downloadChunk).toHaveBeenCalledTimes(2)
+  })
+
+  test('refreshes the content-server list once after pool exhaustion', async () => {
+    directory = await tempDirectory()
+    const desired = depot(10, '1', { 'game.bin': 'new' })
+    let serverRequestCount = 0
+    const getContentServers = mock(async () => ({
+      servers:
+        ++serverRequestCount === 1
+          ? [{ Host: 'broken' }]
+          : [{ Host: 'working' }],
+    }))
+    desired.client.getContentServers = getContentServers
+    const original = desired.client.downloadChunk
+    const downloadChunk = mock(
+      async (appId, depotId, sha, server, signal, expectedSize) => {
+        if (server.Host === 'broken') throw new Error('bad response')
+        return original(appId, depotId, sha, server, signal, expectedSize)
+      },
+    )
+    desired.client.downloadChunk = downloadChunk
+
+    await run(directory, [], [desired])
+
+    expect(getContentServers).toHaveBeenCalledTimes(2)
+    expect(downloadChunk.mock.calls.map((call) => call[3].Host)).toEqual([
+      'broken',
+      'working',
+    ])
   })
 
   test('prefers the least-loaded content server', async () => {

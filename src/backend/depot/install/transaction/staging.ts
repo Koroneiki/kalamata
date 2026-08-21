@@ -189,7 +189,7 @@ async function downloadChunks(
   journal: JournalContext,
 ): Promise<void> {
   const jobs = [...downloads.values()]
-  const serverPools = new Map<string, Promise<ContentServerSelector | null>>()
+  const serverPools = new Map<string, ContentServerPoolState>()
   let next = 0
   const controller = new AbortController()
   const abort = () =>
@@ -256,7 +256,7 @@ async function downloadChunks(
 async function fetchChunk(
   destinations: ChunkDestination[],
   signal: AbortSignal,
-  serverPools: Map<string, Promise<ContentServerSelector | null>>,
+  serverPools: Map<string, ContentServerPoolState>,
 ): Promise<DownloadedChunk> {
   let lastError: Error | undefined
   let foundServers = false
@@ -285,6 +285,27 @@ async function fetchChunk(
     )
     if ('chunk' in fetched) return fetched
     lastError = fetched.error
+    if (!canRefreshContentServers(lastError)) continue
+    try {
+      const refreshedPool = await contentServerPool(
+        resource,
+        signal,
+        serverPools,
+        true,
+      )
+      if (!refreshedPool) continue
+      const refreshed = await fetchFromResource(
+        destinations,
+        resource,
+        refreshedPool,
+        signal,
+      )
+      if ('chunk' in refreshed) return refreshed
+      lastError = refreshed.error
+    } catch (error) {
+      if (isAbort(error, signal)) throw error
+      lastError = error instanceof Error ? error : new Error(String(error))
+    }
   }
   throwFetchChunkError(destinations, foundServers, lastError)
 }
@@ -299,13 +320,24 @@ interface ChunkResource {
   appId: number
 }
 
+interface ContentServerPoolState {
+  initial?: Promise<ContentServerSelector | null>
+  refreshed?: Promise<ContentServerSelector | null>
+}
+
 async function contentServerPool(
   resource: ChunkResource,
   signal: AbortSignal,
-  serverPools: Map<string, Promise<ContentServerSelector | null>>,
+  serverPools: Map<string, ContentServerPoolState>,
+  refresh = false,
 ): Promise<ContentServerSelector | null> {
   const cacheKey = `${resource.appId}:${resource.depot.depotId}`
-  let request = serverPools.get(cacheKey)
+  let state = serverPools.get(cacheKey)
+  if (!state) {
+    state = {}
+    serverPools.set(cacheKey, state)
+  }
+  let request = refresh ? state.refreshed : state.initial
   if (!request) {
     request = abortable(
       resource.depot.client.getContentServers(resource.appId),
@@ -313,9 +345,19 @@ async function contentServerPool(
     ).then(({ servers }) =>
       servers.length > 0 ? new ContentServerSelector(servers) : null,
     )
-    serverPools.set(cacheKey, request)
+    if (refresh) state.refreshed = request
+    else state.initial = request
   }
   return abortable(request, signal)
+}
+
+function canRefreshContentServers(error: Error | undefined): boolean {
+  return !(
+    (error instanceof HttpStatusError &&
+      [401, 403, 404].includes(error.statusCode)) ||
+    (error instanceof ApplicationTransactionError &&
+      error.kind === 'unavailable-content')
+  )
 }
 
 async function fetchFromResource(

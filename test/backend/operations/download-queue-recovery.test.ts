@@ -63,6 +63,45 @@ test('unavailable resources remain resumable after staging begins', async () => 
   })
 })
 
+test('transfer exhaustion remains resumable and cancellable', async () => {
+  const fixture = await setup()
+  let attempts = 0
+  const queue = new DownloadQueueCoordinator(
+    {
+      getProductInfoWithDlc: async () => products(),
+      reconcileApplication: async (options) => {
+        attempts++
+        await writeQueueStagingJournal(options)
+        throw new ApplicationTransactionError(
+          'transfer-exhausted',
+          'no content servers',
+        )
+      },
+    },
+    fixture.database,
+  )
+
+  await queue.start({
+    appId: APP_ID,
+    installPath: fixture.installPath,
+    depotIds: [DEPOTS[0].depotId],
+  })
+  await waitForTerminal(queue)
+  expect(queue.resume()).toEqual({ accepted: true })
+  await waitForTerminal(queue)
+
+  expect(attempts).toBe(2)
+  expect(queue.getOperationState()).toMatchObject({
+    status: 'resumable',
+    error: { kind: 'transfer-exhausted' },
+  })
+  await expect(queue.cancel()).resolves.toEqual({ accepted: true })
+  expect(queue.getOperationState().status).toBe('cancelled')
+  await expect(
+    getResumableApplicationTransaction(fixture.installPath, APP_ID),
+  ).resolves.toBeNull()
+})
+
 test('startup restores an explicitly paused download with its reserved path', async () => {
   const fixture = await setup()
   const options = restoreOptions(fixture)
