@@ -57,7 +57,7 @@ defineExpose({
 
 <template>
   <div
-    class="border-border flex flex-col gap-3 border-t py-5 sm:flex-row sm:items-center"
+    class="border-border flex flex-col gap-3 border-t py-5 sm:flex-row sm:flex-wrap sm:items-center"
   >
     <Button
       v-if="app.inLibrary"
@@ -83,7 +83,7 @@ defineExpose({
     <InlineOperationStatus
       v-if="operationForApp"
       ref="operationPanel"
-      class="min-w-0 flex-1 sm:max-w-100"
+      class="min-w-64 flex-1 sm:max-w-100"
       :state="operationForApp"
       :finished="operationFinished"
     />

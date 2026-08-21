@@ -13,9 +13,6 @@ const props = defineProps<{
   error: string
 }>()
 
-const depotLabel = computed(() =>
-  props.candidate.outdatedDepots.length === 1 ? 'depot' : 'depots',
-)
 const actionLabel = computed(() => {
   if (props.reviewing) return 'Preparing...'
   return props.error ? 'Retry' : 'Download'
@@ -36,15 +33,16 @@ defineEmits<{ review: [] }>()
         :app="candidate.app"
         artwork="wide"
       />
-      <div class="min-w-0 text-xs">
-        <p class="text-muted-foreground">Update contents</p>
-        <p class="mt-1 tabular-nums">
-          {{ candidate.outdatedDepots.length }} outdated {{ depotLabel }}
-          <template v-if="candidate.totalDownloadBytes !== null">
-            <span aria-hidden="true"> · </span>
-            <span class="sr-only">, download size </span>
-            {{ formatBytes(candidate.totalDownloadBytes) }}
-          </template>
+      <div class="min-w-0">
+        <p class="text-muted-foreground text-xs tabular-nums">
+          {{ candidate.outdatedDepots.length }} depots
+        </p>
+        <p
+          v-if="candidate.totalDownloadBytes !== null"
+          class="mt-1 text-base font-medium tabular-nums"
+        >
+          <span class="sr-only">Estimated download size </span>
+          {{ formatBytes(candidate.totalDownloadBytes) }}
         </p>
         <p v-if="error" class="text-destructive mt-2 text-sm" role="alert">
           {{ error }}

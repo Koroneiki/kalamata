@@ -193,10 +193,14 @@ function selectLaunchSource(event: Event) {
     <DialogContent class="max-h-[90vh] overflow-y-auto sm:max-w-xl">
       <DialogHeader>
         <DialogTitle class="text-primary">
-          {{ regenerating ? 'Regenerate' : 'Set up' }} {{ appName }}
+          {{ regenerating ? appName : `Set up ${appName}` }}
         </DialogTitle>
         <DialogDescription>
-          Review detected files and launch settings.
+          {{
+            regenerating
+              ? 'Regenerate ColdClient Configuration.'
+              : 'Review detected files and launch settings.'
+          }}
         </DialogDescription>
       </DialogHeader>
 
@@ -296,10 +300,6 @@ function selectLaunchSource(event: Event) {
 
         <div class="border-border space-y-2 border-t pt-4 text-sm">
           <p>GBE {{ draft.gbe.tag }} · GSE Tools {{ draft.gse.tag }}</p>
-          <p>
-            Uses official <code>extra_dlls</code>. The original Steam API DLL is
-            not modified.
-          </p>
           <p v-if="regenerating">
             Replaces <code>steam_settings</code>, including user edits. Other
             files are preserved.
