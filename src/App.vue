@@ -15,12 +15,14 @@ import { useManifestQueueToasts } from '@/composables/use-manifest-queue-toasts'
 import { useOperationToasts } from '@/composables/use-operation-toasts'
 import { useOperationStore } from '@/stores/operation'
 import { useAvailableUpdates } from '@/composables/use-available-updates'
+import { useSidebarResize } from '@/composables/use-sidebar-resize'
 
 const operation = useOperationStore()
 const availableUpdates = useAvailableUpdates()
 useOperationToasts()
 const { active: manifestQueueActive } = useManifestQueueToasts()
 const notificationOffset = computed(() => (manifestQueueActive.value ? 94 : 20))
+const { sidebarWidth } = useSidebarResize()
 
 watch(
   () => operation.initialized,
@@ -73,9 +75,15 @@ watch(
         </Button>
       </div>
     </main>
-    <SidebarProvider v-else>
+    <SidebarProvider
+      v-else
+      class="h-svh min-h-0 overflow-hidden"
+      :style="{
+        '--sidebar-width': `min(${sidebarWidth}px, calc(100vw - 3rem))`,
+      }"
+    >
       <AppSidebar />
-      <SidebarInset class="min-w-0">
+      <SidebarInset class="min-w-0 overflow-y-auto">
         <AppHeader />
         <ColdClientOperationStatus />
         <RouterView />

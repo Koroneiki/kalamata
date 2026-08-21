@@ -7,6 +7,7 @@ import {
   RefreshCw,
   Settings,
 } from '@lucide/vue'
+import { useMediaQuery } from '@vueuse/core'
 import { watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
@@ -25,14 +26,17 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSkeleton,
-  SidebarRail,
   SidebarSeparator,
   useSidebar,
 } from '@/components/ui/sidebar'
 import LibrarySidebarItem from './LibrarySidebarItem.vue'
+import AppSidebarRail from './AppSidebarRail.vue'
 
 const route = useRoute()
-const { setOpenMobile } = useSidebar()
+const { open, setOpenMobile } = useSidebar()
+const compactWindow = useMediaQuery('(max-width: 976px)')
+let restoreExpandedAfterCompact = false
+let applyingResponsiveState = false
 const {
   data: library,
   error: libraryError,
@@ -44,6 +48,35 @@ watch(
   () => route.fullPath,
   () => setOpenMobile(false),
 )
+
+watch(
+  open,
+  () => {
+    if (compactWindow.value && !applyingResponsiveState) {
+      restoreExpandedAfterCompact = false
+    }
+  },
+  { flush: 'sync' },
+)
+
+watch(
+  compactWindow,
+  (compact) => {
+    if (compact) {
+      restoreExpandedAfterCompact = open.value
+      if (!open.value) return
+      applyingResponsiveState = true
+      open.value = false
+      applyingResponsiveState = false
+    } else if (restoreExpandedAfterCompact) {
+      restoreExpandedAfterCompact = false
+      applyingResponsiveState = true
+      open.value = true
+      applyingResponsiveState = false
+    }
+  },
+  { flush: 'sync', immediate: true },
+)
 </script>
 
 <template>
@@ -54,7 +87,7 @@ watch(
       >
         Kalamata
       </SidebarGroupLabel>
-      <SidebarSeparator />
+      <SidebarSeparator class="-translate-y-px" />
       <SidebarMenu>
         <SidebarMenuItem>
           <SidebarMenuButton
@@ -163,6 +196,6 @@ watch(
         </SidebarMenuItem>
       </SidebarMenu>
     </SidebarFooter>
-    <SidebarRail />
+    <AppSidebarRail />
   </Sidebar>
 </template>
