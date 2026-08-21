@@ -285,7 +285,7 @@ async function createFixture(
       return {
         exitCode: 0,
         stdout:
-          'archive metadata\n----------\nPath = payload/file\nAttributes = A\n',
+          'archive metadata\n----------\nPath = payload/file\nSize = 1\nAttributes = A\n',
       }
     }
     const destination = command.find((argument) => argument.startsWith('-o'))!

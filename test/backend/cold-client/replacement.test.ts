@@ -263,6 +263,41 @@ describe('ColdClient replacement recovery', () => {
     ).resolves.toBeNull()
   })
 
+  test('does not delete a live directory before filesystem mutation was recorded', async () => {
+    const fixture = await createFixture()
+    await rm(join(fixture.installRoot, '_ColdClient'), {
+      recursive: true,
+      force: true,
+    })
+    await writeJournal(
+      fixture.installRoot,
+      '.Kalamata-coldclient-backup-test',
+      { previousInstallation: null, filesystemChanged: false },
+    )
+    await mkdir(join(fixture.installRoot, '_ColdClient'))
+    await writeFile(
+      join(fixture.installRoot, '_ColdClient', 'independent.txt'),
+      'keep',
+    )
+    const replacement = new ColdClientReplacementService(
+      new FakeDatabase(null),
+      { acquireLock: async () => async () => {} },
+    )
+
+    await expect(
+      replacement.recover(fixture.installRoot, 10, async () => {}),
+    ).resolves.toEqual({
+      status: 'invalid',
+      message: 'ColdClient replacement state is ambiguous',
+    })
+    expect(
+      await readFile(
+        join(fixture.installRoot, '_ColdClient', 'independent.txt'),
+        'utf8',
+      ),
+    ).toBe('keep')
+  })
+
   test('distinguishes cleanup-only and unresolved journals', async () => {
     const fixture = await createFixture()
     await writeJournal(fixture.installRoot, '.Kalamata-coldclient-backup-test')
@@ -501,20 +536,28 @@ async function createCoreFixture() {
 async function writeJournal(
   installRoot: string,
   backup: string,
+  overrides: {
+    previousInstallation?: ColdClientInstallation | null
+    filesystemChanged?: boolean
+  } = {},
 ): Promise<void> {
   await mkdir(join(installRoot, '.Kalamata'), { recursive: true })
   await writeFile(
     replacementJournalPath(installRoot),
     JSON.stringify({
-      version: 1,
+      version: 2,
       kind: 'setup',
       appId: 10,
       installRoot,
-      previousInstallation: previous,
+      previousInstallation:
+        overrides.previousInstallation === undefined
+          ? previous
+          : overrides.previousInstallation,
       targetInstallation: target,
       liveRelativePath: '_ColdClient',
       stagingRelativePath: '.Kalamata-coldclient-staging-test',
       backupRelativePath: backup,
+      filesystemChanged: overrides.filesystemChanged ?? true,
       affectedFiles: [{ path: '_ColdClient', existed: true }],
     }),
   )
@@ -528,7 +571,7 @@ async function writeSettingsJournal(
   await writeFile(
     replacementJournalPath(installRoot),
     JSON.stringify({
-      version: 1,
+      version: 2,
       kind: 'regenerate',
       appId: 10,
       installRoot,
@@ -537,6 +580,7 @@ async function writeSettingsJournal(
       liveRelativePath: '_ColdClient/steam_settings',
       stagingRelativePath: '.Kalamata-coldclient-settings-staging-test',
       backupRelativePath: backup,
+      filesystemChanged: true,
       affectedFiles: [{ path: '_ColdClient/steam_settings', existed: true }],
     }),
   )
@@ -550,7 +594,7 @@ async function writeCoreJournal(
   await writeFile(
     replacementJournalPath(installRoot),
     JSON.stringify({
-      version: 1,
+      version: 2,
       kind: 'update-core',
       appId: 10,
       installRoot,
@@ -559,6 +603,7 @@ async function writeCoreJournal(
       liveRelativePath: '_ColdClient',
       stagingRelativePath: '.Kalamata-coldclient-core-staging-test',
       backupRelativePath: backup,
+      filesystemChanged: true,
       affectedFiles: [
         {
           path: 'old.dll',

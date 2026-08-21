@@ -142,3 +142,23 @@ test('reports operation failures with app context', async () => {
     { error: { message: 'core failed' }, appId: 10, kind: 'update-core' },
   ])
 })
+
+test('does not retain an operation when its initial snapshot cannot be sent', async () => {
+  let fail = true
+  const coordinator = new ColdClientOperationCoordinator(
+    new ColdClientMutationMutex(),
+    () => {
+      if (fail) throw new Error('transport closed')
+    },
+  )
+
+  expect(() => coordinator.run('setup', 10, async () => {})).toThrow(
+    'transport closed',
+  )
+  expect(coordinator.getSnapshot()).toEqual({ status: 'idle' })
+
+  fail = false
+  await expect(
+    coordinator.run('setup', 10, async () => 'completed'),
+  ).resolves.toBe('completed')
+})

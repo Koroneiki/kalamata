@@ -1,4 +1,4 @@
-import { lstat, readdir, realpath } from 'node:fs/promises'
+import { lstat, readdir, realpath, statfs } from 'node:fs/promises'
 import { relative, resolve, sep } from 'node:path'
 
 interface ProcessResult {
@@ -8,6 +8,11 @@ interface ProcessResult {
 
 interface ArchiveProcessRunner {
   (command: string[], signal: AbortSignal): Promise<ProcessResult>
+}
+
+interface ArchiveListing {
+  paths: string[]
+  unpackedSize: bigint
 }
 
 export class ArchiveExtractor {
@@ -26,7 +31,11 @@ export class ArchiveExtractor {
       signal,
     )
     if (listing.exitCode !== 0) throw new Error('Could not inspect archive')
-    validateArchiveListing(listing.stdout)
+    const archive = inspectArchiveListing(listing.stdout)
+    const filesystem = await statfs(destination, { bigint: true })
+    if (archive.unpackedSize > filesystem.bavail * filesystem.bsize) {
+      throw new Error('Archive does not fit in the available disk space')
+    }
 
     const extraction = await this.runProcess(
       [
@@ -47,6 +56,10 @@ export class ArchiveExtractor {
 }
 
 export function validateArchiveListing(source: string): string[] {
+  return inspectArchiveListing(source).paths
+}
+
+function inspectArchiveListing(source: string): ArchiveListing {
   const separatorIndex = source.indexOf('----------')
   if (separatorIndex < 0) throw new Error('Archive listing is malformed')
   const blocks = source
@@ -57,6 +70,7 @@ export function validateArchiveListing(source: string): string[] {
   if (blocks.length === 0) throw new Error('Archive is empty')
 
   const paths: string[] = []
+  let unpackedSize = 0n
   const seen = new Set<string>()
   for (const properties of blocks) {
     const path = normalizeArchivePath(properties.get('Path')!)
@@ -73,8 +87,15 @@ export function validateArchiveListing(source: string): string[] {
       throw new Error(`Archive contains duplicate path: ${path}`)
     seen.add(key)
     paths.push(path)
+    if (properties.get('Folder') !== '+') {
+      const size = properties.get('Size')
+      if (!size || !/^\d+$/u.test(size)) {
+        throw new Error(`Archive entry size is invalid: ${path}`)
+      }
+      unpackedSize += BigInt(size)
+    }
   }
-  return paths
+  return { paths, unpackedSize }
 }
 
 export async function validateExtractedTree(root: string): Promise<void> {

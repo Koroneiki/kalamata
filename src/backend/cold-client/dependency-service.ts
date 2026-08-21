@@ -488,9 +488,20 @@ export class ColdClientDependencyService {
         const result = await reader.read()
         if (result.done) break
         this.#abortController.signal.throwIfAborted()
-        hash.update(result.value)
-        size += result.value.byteLength
-        await handle.write(result.value)
+        let offset = 0
+        while (offset < result.value.byteLength) {
+          const { bytesWritten } = await handle.write(
+            result.value,
+            offset,
+            result.value.byteLength - offset,
+          )
+          if (bytesWritten === 0) {
+            throw new Error('Dependency download could not be written')
+          }
+          hash.update(result.value.subarray(offset, offset + bytesWritten))
+          size += bytesWritten
+          offset += bytesWritten
+        }
       }
       await handle.sync()
     } finally {

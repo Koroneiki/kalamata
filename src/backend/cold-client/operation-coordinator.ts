@@ -76,7 +76,12 @@ export class ColdClientOperationCoordinator {
       promise: Promise.resolve(),
     }
     this.#active = active
-    this.#emit(this.getSnapshot())
+    try {
+      this.#emit(this.getSnapshot())
+    } catch (error) {
+      this.#active = undefined
+      throw error
+    }
 
     const setPhase = (
       phase: Exclude<ColdClientOperationPhase, 'replacing'>,

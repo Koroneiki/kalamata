@@ -614,10 +614,6 @@ export class ColdClientService {
           join(settings, 'steam_interfaces.txt'),
           context.signal,
         )
-        await rm(join(installRoot, CONFIG_TEMPORARY_DIRECTORY), {
-          recursive: true,
-          force: true,
-        })
       }
       await updateColdClientLoaderIni(
         join(stagingDirectory, 'ColdClientLoader.ini'),

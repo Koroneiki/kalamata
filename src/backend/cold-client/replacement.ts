@@ -12,7 +12,7 @@ import { CONFIG_DIRECTORY } from '../depot/install/internal-paths.ts'
 import { filesystemErrorCode } from '../depot/install/transaction/types.ts'
 import { writeDurableJson } from '../filesystem/durable-json.ts'
 
-const JOURNAL_VERSION = 1
+const JOURNAL_VERSION = 2
 const JOURNAL_FILENAME = 'coldclient-replacement.json'
 const LIVE_NAME = '_ColdClient'
 const STAGING_PREFIX = '.Kalamata-coldclient-staging-'
@@ -49,6 +49,7 @@ const journalSchema = z
     liveRelativePath: z.enum([LIVE_NAME, SETTINGS_LIVE_PATH]),
     stagingRelativePath: z.string().min(1),
     backupRelativePath: z.string().min(1),
+    filesystemChanged: z.boolean(),
     affectedFiles: z.array(
       z.union([directoryAffectedFileSchema, coreAffectedFileSchema]),
     ),
@@ -150,8 +151,6 @@ interface ReplaceSetupOptions {
   validateLive(directory: string): Promise<void>
 }
 
-interface ReplaceCoreOptions extends ReplaceSetupOptions {}
-
 interface ReplacementServiceOptions {
   acquireLock?: typeof acquireOutputLock
   reportCleanupError?: (error: Error) => void
@@ -192,7 +191,7 @@ export class ColdClientReplacementService {
     })
   }
 
-  async replaceCore(options: ReplaceCoreOptions): Promise<void> {
+  async replaceCore(options: ReplaceSetupOptions): Promise<void> {
     const installRoot = await canonicalDirectory(options.installRoot)
     const stagingDirectory = await canonicalDirectory(options.stagingDirectory)
     const stagingRelativePath = directChildName(
@@ -231,6 +230,7 @@ export class ColdClientReplacementService {
       liveRelativePath: LIVE_NAME,
       stagingRelativePath,
       backupRelativePath: `${CORE_BACKUP_PREFIX}${randomUUID()}`,
+      filesystemChanged: false,
       affectedFiles,
       deferredCleanupRelativePaths: [],
       supersededJournal: null,
@@ -250,6 +250,8 @@ export class ColdClientReplacementService {
     try {
       await this.prepareCoreBackup(journal)
       await this.installCore(journal)
+      journal.filesystemChanged = true
+      await writeDurableJson(replacementJournalPath(installRoot), journal)
       await options.validateLive(join(installRoot, LIVE_NAME))
       this.database.replaceColdClientInstallationIfCurrent(
         options.previousInstallation,
@@ -299,6 +301,7 @@ export class ColdClientReplacementService {
       liveRelativePath: paths.liveRelativePath,
       stagingRelativePath,
       backupRelativePath: `${paths.backupPrefix}${randomUUID()}`,
+      filesystemChanged: false,
       affectedFiles: [
         { path: paths.liveRelativePath, existed: oldLiveExisted },
       ],
@@ -322,6 +325,8 @@ export class ColdClientReplacementService {
       const backup = journalPathInRoot(installRoot, journal.backupRelativePath)
       if (oldLiveExisted) await rename(live, backup)
       await rename(stagingDirectory, live)
+      journal.filesystemChanged = true
+      await writeDurableJson(journalPath, journal)
       await options.validateLive(live)
       this.database.replaceColdClientInstallationIfCurrent(
         options.previousInstallation,
@@ -377,6 +382,12 @@ export class ColdClientReplacementService {
         return { status: 'recovered', direction: 'forward' }
       }
       if (sameInstallation(current, journal.previousInstallation)) {
+        if (!journal.filesystemChanged) {
+          return {
+            status: 'invalid',
+            message: 'ColdClient replacement state is ambiguous',
+          }
+        }
         await this.rollback(journal)
         return { status: 'recovered', direction: 'rollback' }
       }

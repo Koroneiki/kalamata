@@ -129,7 +129,7 @@ const warningText = {
 } satisfies Record<ColdClientSetupWarning, string>
 
 watch(
-  () => [props.open, props.mode] as const,
+  () => [props.open, props.mode, props.appId] as const,
   ([open]) => {
     const request = ++requestSequence
     if (!open) {

@@ -199,6 +199,7 @@ watch(
       loadedAppId.value = app.appId
       if (appChanged) {
         gameSettingsOpen.value = false
+        coldClientSetupOpen.value = false
         selectedPath.value = app.installPath ?? ''
         manifestError.value = ''
         resetCustomManifests()
@@ -772,7 +773,9 @@ async function browseLocalFiles() {
           :open="gameSettingsOpen"
           :app-name="data.name"
           :verify-disabled="globalOperationBusy"
-          :remove-disabled="globalOperationBusy"
+          :remove-disabled="
+            globalOperationBusy || Boolean(coldClientOperationForApp)
+          "
           :cold-client-status="coldClientStatus"
           :cold-client-ready="coldClientReady"
           :cold-client-disabled="globalOperationBusy || coldClientMutationBusy"

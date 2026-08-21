@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { LoaderCircle, X } from '@lucide/vue'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import { Button } from '@/components/ui/button'
 import { useColdClientOperationStore } from '@/stores/cold-client-operation'
@@ -32,6 +32,15 @@ const label = computed(() => {
     ? `${kindLabels[state.kind]}: ${phaseLabels[state.phase]}`
     : ''
 })
+
+watch(
+  () => operation.state.status,
+  () => {
+    cancelling.value = false
+    cancelError.value = ''
+  },
+  { immediate: true },
+)
 
 async function cancel() {
   const state = operation.state
