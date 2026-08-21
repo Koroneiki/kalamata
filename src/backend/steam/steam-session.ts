@@ -101,11 +101,11 @@ async function createSteamUser(): Promise<SteamContentUser> {
   const { default: SteamUser } = await import('steam-user').finally(() => {
     globalThis.onmessage = previousOnMessage
   })
-  // Force TCP because Bun integration runs have repeatedly observed WebSocket timeouts.
+  // Bun 1.4 can stall steam-user's TCP transport during anonymous login.
   const client = new SteamUser({
     dataDirectory: null,
     autoRelogin: false,
-    protocol: SteamUser.EConnectionProtocol.TCP,
+    protocol: SteamUser.EConnectionProtocol.WebSocket,
   })
   if (!isSteamContentUser(client))
     throw new Error('steam-user does not provide content server methods')
