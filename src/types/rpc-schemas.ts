@@ -451,6 +451,7 @@ const rpcRequestSchemas = {
   configureColdClient: coldClientSetupRequestSchema,
   regenerateColdClientConfiguration: coldClientSetupRequestSchema,
   updateColdClientCore: idRequestSchema,
+  removeColdClient: idRequestSchema,
   getColdClientOperation: emptySchema,
   cancelColdClientOperation: idRequestSchema,
   addLibraryEntry: idRequestSchema,
@@ -513,6 +514,7 @@ export const rpcResponseSchemas = {
   configureColdClient: coldClientStatusSchema,
   regenerateColdClientConfiguration: coldClientStatusSchema,
   updateColdClientCore: coldClientStatusSchema,
+  removeColdClient: coldClientStatusSchema,
   getColdClientOperation: coldClientOperationSnapshotSchema,
   cancelColdClientOperation: z.discriminatedUnion('accepted', [
     acceptedResultSchema,

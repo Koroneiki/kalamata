@@ -70,7 +70,12 @@ export class ColdClientOperationCoordinator {
     const active: ActiveOperation = {
       appId,
       kind,
-      phase: kind === 'update-core' ? 'building' : 'waiting-for-generator',
+      phase:
+        kind === 'update-core'
+          ? 'building'
+          : kind === 'remove'
+            ? 'removing'
+            : 'waiting-for-generator',
       cancellable: true,
       abortController,
       promise: Promise.resolve(),

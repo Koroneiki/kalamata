@@ -18,5 +18,6 @@ const pageLabel = computed(() => {
   >
     <SidebarTrigger class="-ml-1" />
     <span class="text-sm font-medium">{{ pageLabel }}</span>
+    <div id="app-header-actions" class="ml-auto flex items-center" />
   </header>
 </template>

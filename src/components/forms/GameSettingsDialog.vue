@@ -14,8 +14,8 @@ import type { ColdClientStatus } from '@/types/cold-client'
 defineProps<{
   open: boolean
   appName: string
+  verifyAvailable: boolean
   verifyDisabled: boolean
-  removeDisabled: boolean
   coldClientStatus?: ColdClientStatus
   coldClientReady: boolean
   coldClientDisabled: boolean
@@ -24,7 +24,7 @@ defineProps<{
 const emit = defineEmits<{
   'update:open': [value: boolean]
   verify: []
-  remove: []
+  removeColdClient: []
   setupColdClient: []
   regenerateColdClient: []
   updateColdClientCore: []
@@ -149,12 +149,30 @@ const emit = defineEmits<{
             @click="emit('regenerateColdClient')"
           >
             <RefreshCw aria-hidden="true" />
-            Regenerate configuration
+            Regenerate
           </Button>
         </div>
+        <Button
+          v-if="
+            coldClientStatus?.status === 'configured' ||
+            coldClientStatus?.status === 'invalid'
+          "
+          type="button"
+          size="sm"
+          variant="destructive"
+          class="mt-3"
+          :disabled="coldClientDisabled"
+          @click="emit('removeColdClient')"
+        >
+          <Trash2 aria-hidden="true" />
+          Remove ColdClient
+        </Button>
       </section>
 
-      <div class="border-border flex items-center gap-2 border-t pt-4">
+      <div
+        v-if="verifyAvailable"
+        class="border-border flex items-center gap-2 border-t pt-4"
+      >
         <Button
           type="button"
           size="sm"
@@ -163,16 +181,6 @@ const emit = defineEmits<{
           @click="emit('verify')"
         >
           Verify game files
-        </Button>
-        <Button
-          type="button"
-          size="icon-sm"
-          variant="outline"
-          :disabled="removeDisabled"
-          aria-label="Remove from library"
-          @click="emit('remove')"
-        >
-          <Trash2 aria-hidden="true" />
         </Button>
       </div>
     </DialogContent>

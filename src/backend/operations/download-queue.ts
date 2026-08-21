@@ -134,6 +134,17 @@ export class DownloadQueueCoordinator {
     )
   }
 
+  runWhileAppIdle<Result>(
+    appId: number,
+    action: () => Promise<Result> | Result,
+  ): Promise<Result> {
+    validateId(appId, 'appId')
+    return this.serializeAcceptance(async () => {
+      this.assertAppAvailable(appId)
+      return action()
+    })
+  }
+
   async start(request: StartDownloadRequest): Promise<DownloadQueueSnapshot> {
     validateId(request.appId, 'appId')
     validateDepotIds(request.depotIds, false)

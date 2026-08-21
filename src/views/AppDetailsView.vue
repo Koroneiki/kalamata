@@ -6,17 +6,20 @@ import {
   useQueryCache,
 } from '@pinia/colada'
 import { computed, nextTick, reactive, ref, watch } from 'vue'
+import { Trash2 } from '@lucide/vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import CustomManifestDialog from '@/components/forms/CustomManifestDialog.vue'
 import DownloadDepotsDialog from '@/components/forms/DownloadDepotsDialog.vue'
 import GameSettingsDialog from '@/components/forms/GameSettingsDialog.vue'
 import ColdClientSetupDialog from '@/components/forms/ColdClientSetupDialog.vue'
+import RemoveColdClientDialog from '@/components/forms/RemoveColdClientDialog.vue'
 import RemoveLibraryEntryDialog from '@/components/forms/RemoveLibraryEntryDialog.vue'
 import AppDetailsActionBar from '@/components/shared/AppDetailsActionBar.vue'
 import AppDetailsHeader from '@/components/shared/AppDetailsHeader.vue'
 import AppDetailsQueryState from '@/components/shared/AppDetailsQueryState.vue'
 import DepotAccordion from '@/components/shared/DepotAccordion.vue'
+import { Button } from '@/components/ui/button'
 import {
   appQueryKeys,
   appDetailsQuery,
@@ -25,6 +28,7 @@ import {
   useColdClientDependenciesQuery,
   useColdClientStatusQuery,
   coldClientDependencyUpdateMutationKey,
+  coldClientQueryKeys,
 } from '@/composables/queries'
 import { useFallbackImage } from '@/composables/use-fallback-image'
 import { useAppOperationDisplay } from '@/composables/use-app-operation-display'
@@ -32,7 +36,10 @@ import { useCustomManifest } from '@/composables/use-custom-manifest'
 import { useAvailableUpdates } from '@/composables/use-available-updates'
 import { useDepotResourceAcquisition } from '@/composables/use-depot-resource-acquisition'
 import { openInstallDirectory } from '@/api/apps'
-import { updateColdClientCore } from '@/api/cold-client'
+import {
+  removeColdClient as requestRemoveColdClient,
+  updateColdClientCore,
+} from '@/api/cold-client'
 import {
   addLibraryEntry,
   removeLibraryEntry,
@@ -76,7 +83,11 @@ const parsedAppId = computed(() =>
 const appId = computed(() =>
   parsedAppId.value.success ? parsedAppId.value.data : 0,
 )
-const { data: coldClientStatus } = useColdClientStatusQuery(appId)
+const {
+  data: coldClientStatus,
+  error: coldClientStatusError,
+  isPending: coldClientStatusPending,
+} = useColdClientStatusQuery(appId)
 const validAppId = computed(() => parsedAppId.value.success)
 
 const { data, error, isPending, refetch } = useQuery(() => ({
@@ -89,6 +100,7 @@ const artworkFailed = ref(false)
 const dialogOpen = ref(false)
 const gameSettingsOpen = ref(false)
 const removeDialogOpen = ref(false)
+const removeColdClientDialogOpen = ref(false)
 const coldClientSetupOpen = ref(false)
 const coldClientSetupMode = ref<ColdClientSetupMode>('setup')
 const mutationError = ref('')
@@ -97,6 +109,7 @@ const acquiringManifests = reactive(new Set<string>())
 const attemptedManifests = new Set<string>()
 const attemptedDepotKeys = new Set<number>()
 const removeError = ref('')
+const removeColdClientError = ref('')
 const operationPanel = ref<{ focusHeading: () => void } | null>(null)
 const loadedAppId = ref<number | null>(null)
 
@@ -122,6 +135,9 @@ const openInstallDirectoryMutation = useMutation({
 })
 const updateColdClientCoreMutation = useMutation({
   mutation: (id: number) => updateColdClientCore(id),
+})
+const removeColdClientMutation = useMutation({
+  mutation: (id: number) => requestRemoveColdClient(id),
 })
 const acceptedDepotIds = computed(() =>
   operation.acceptedDesiredDepotIds(appId.value),
@@ -191,6 +207,7 @@ watch(
       loadedAppId.value = app.appId
       if (appChanged) {
         gameSettingsOpen.value = false
+        removeColdClientDialogOpen.value = false
         coldClientSetupOpen.value = false
         selectedPath.value = app.installPath ?? ''
         manifestError.value = ''
@@ -312,10 +329,6 @@ const repairRequiredForApp = computed(() =>
 const globalOperationBusy = computed(
   () => operationBusy.value && !repairRequiredForApp.value,
 )
-const coldClientOperationForApp = computed(() => {
-  const state = coldClientOperation.state
-  return state.status === 'active' && state.appId === appId.value ? state : null
-})
 const coldClientMutationBusy = computed(
   () =>
     coldClientOperation.state.status === 'active' ||
@@ -325,6 +338,20 @@ const coldClientMutationBusy = computed(
 )
 const hasLocalInstallationActions = computed(
   () => hasInstalledDepots.value || repairRequiredForApp.value,
+)
+const hasColdClient = computed(
+  () =>
+    coldClientStatus.value?.status === 'configured' ||
+    coldClientStatus.value?.status === 'invalid',
+)
+const coldClientRemovalMayApply = computed(
+  () =>
+    coldClientStatusPending.value ||
+    Boolean(coldClientStatusError.value) ||
+    hasColdClient.value,
+)
+const hasGameSettings = computed(
+  () => hasLocalInstallationActions.value || hasColdClient.value,
 )
 const canOpenDownload = computed(() => {
   if (!data.value?.inLibrary || operationBusy.value) return false
@@ -418,6 +445,32 @@ async function updateColdClient() {
   } catch (error) {
     if (appId.value === targetAppId) {
       mutationError.value =
+        error instanceof Error ? error.message : String(error)
+    }
+  }
+}
+
+function openRemoveColdClientDialog() {
+  gameSettingsOpen.value = false
+  removeColdClientError.value = ''
+  removeColdClientDialogOpen.value = true
+}
+
+async function removeColdClient() {
+  const targetAppId = appId.value
+  removeColdClientError.value = ''
+  try {
+    await removeColdClientMutation.mutateAsync(targetAppId)
+    await queryCache.invalidateQueries({
+      key: coldClientQueryKeys.status(targetAppId),
+      exact: true,
+    })
+    if (appId.value === targetAppId) {
+      removeColdClientDialogOpen.value = false
+    }
+  } catch (error) {
+    if (appId.value === targetAppId) {
+      removeColdClientError.value =
         error instanceof Error ? error.message : String(error)
     }
   }
@@ -666,6 +719,21 @@ async function browseLocalFiles() {
           @artwork-error="artworkFailed = true"
         />
 
+        <Teleport to="#app-header-actions">
+          <Button
+            v-if="data.inLibrary"
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            :disabled="globalOperationBusy || coldClientMutationBusy"
+            aria-label="Remove from library"
+            title="Remove from library"
+            @click="openRemoveDialog"
+          >
+            <Trash2 aria-hidden="true" />
+          </Button>
+        </Teleport>
+
         <section class="mt-8" aria-label="Install game content">
           <AppDetailsActionBar
             ref="operationPanel"
@@ -676,7 +744,7 @@ async function browseLocalFiles() {
               pending: addMutation.isLoading.value,
             }"
             :local-actions="{
-              hasInstalledDepots: hasLocalInstallationActions,
+              hasInstalledDepots: hasGameSettings,
               browsePending: openInstallDirectoryMutation.isLoading.value,
               globalOperationBusy,
             }"
@@ -734,8 +802,18 @@ async function browseLocalFiles() {
             :app-name="data.name"
             :removing="removeMutation.isLoading.value"
             :error="removeError"
+            :removes-cold-client="coldClientRemovalMayApply"
             @update:open="removeDialogOpen = $event"
             @confirm="removeFromLibrary"
+          />
+
+          <RemoveColdClientDialog
+            :open="removeColdClientDialogOpen"
+            :app-name="data.name"
+            :removing="removeColdClientMutation.isLoading.value"
+            :error="removeColdClientError"
+            @update:open="removeColdClientDialogOpen = $event"
+            @confirm="removeColdClient"
           />
 
           <ColdClientSetupDialog
@@ -761,19 +839,17 @@ async function browseLocalFiles() {
         />
 
         <GameSettingsDialog
-          v-if="data.inLibrary && hasLocalInstallationActions"
+          v-if="data.inLibrary && hasGameSettings"
           :open="gameSettingsOpen"
           :app-name="data.name"
+          :verify-available="hasLocalInstallationActions"
           :verify-disabled="globalOperationBusy"
-          :remove-disabled="
-            globalOperationBusy || Boolean(coldClientOperationForApp)
-          "
           :cold-client-status="coldClientStatus"
           :cold-client-ready="coldClientReady"
           :cold-client-disabled="globalOperationBusy || coldClientMutationBusy"
           @update:open="gameSettingsOpen = $event"
           @verify="verifyGameFiles"
-          @remove="openRemoveDialog"
+          @remove-cold-client="openRemoveColdClientDialog"
           @setup-cold-client="openColdClientSetup"
           @regenerate-cold-client="regenerateColdClient"
           @update-cold-client-core="updateColdClient"

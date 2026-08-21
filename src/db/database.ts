@@ -402,7 +402,7 @@ export class KalamataDatabase {
     validateId(appId, 'appId')
     this.sqlite
       .query(
-        'UPDATE library SET install_path = NULL WHERE app_id = ? AND NOT EXISTS (SELECT 1 FROM library_depot_installs WHERE app_id = ?)',
+        'UPDATE library SET install_path = NULL WHERE app_id = ? AND NOT EXISTS (SELECT 1 FROM library_depot_installs WHERE app_id = ?) AND NOT EXISTS (SELECT 1 FROM cold_client_installations WHERE cold_client_installations.app_id = library.app_id)',
       )
       .run(appId, appId)
   }
@@ -504,7 +504,7 @@ export class KalamataDatabase {
       if (releaseInstallPath && item.kind === 'download') {
         this.sqlite
           .query(
-            'UPDATE library SET install_path = NULL WHERE app_id = ? AND install_path = ? AND NOT EXISTS (SELECT 1 FROM library_depot_installs WHERE app_id = ?)',
+            'UPDATE library SET install_path = NULL WHERE app_id = ? AND install_path = ? AND NOT EXISTS (SELECT 1 FROM library_depot_installs WHERE app_id = ?) AND NOT EXISTS (SELECT 1 FROM cold_client_installations WHERE cold_client_installations.app_id = library.app_id)',
           )
           .run(item.appId, item.installPath, item.appId)
       }

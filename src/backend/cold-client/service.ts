@@ -37,6 +37,8 @@ interface ServiceDatabase {
     installedManifestId: string
   }>
   getColdClientInstallation(appId: number): ColdClientInstallation | null
+  deleteColdClientInstallation(appId: number): void
+  clearUnusedInstallPath(appId: number): void
 }
 
 interface ServiceDependencies {
@@ -83,7 +85,7 @@ const gbeSharedCoreFiles = [
 
 interface OperationProvider {
   run<Result>(
-    kind: 'setup' | 'regenerate' | 'update-core',
+    kind: 'setup' | 'regenerate' | 'update-core' | 'remove',
     appId: number,
     operation: (context: ColdClientOperationContext) => Promise<Result>,
   ): Promise<Result>
@@ -373,6 +375,62 @@ export class ColdClientService {
     })
   }
 
+  remove(appId: number): Promise<ColdClientStatus> {
+    this.assertSupported()
+    return this.operations.run('remove', appId, async (context) => {
+      const previous = this.database.getColdClientInstallation(appId)
+      if (!previous) return { status: 'not-configured' }
+      const library = requireLibraryPath(this.database, appId)
+      let installRoot: string
+      try {
+        installRoot = await realpath(library.installPath)
+      } catch (error) {
+        if (filesystemErrorCode(error) !== 'ENOENT') throw error
+        if (
+          !sameInstallation(
+            this.database.getColdClientInstallation(appId),
+            previous,
+          )
+        ) {
+          throw new Error('ColdClient installation changed during removal')
+        }
+        context.beginReplacement()
+        this.database.deleteColdClientInstallation(appId)
+        this.database.clearUnusedInstallPath(appId)
+        return { status: 'not-configured' }
+      }
+      const release = await this.#acquireLock(installRoot)
+      try {
+        if (
+          !sameInstallation(
+            this.database.getColdClientInstallation(appId),
+            previous,
+          )
+        ) {
+          throw new Error('ColdClient installation changed during removal')
+        }
+        const live = join(installRoot, '_ColdClient')
+        let liveExists = true
+        try {
+          const metadata = await lstat(live)
+          if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
+            throw new Error('ColdClient directory is unsafe')
+          }
+        } catch (error) {
+          if (filesystemErrorCode(error) !== 'ENOENT') throw error
+          liveExists = false
+        }
+        context.beginReplacement()
+        if (liveExists) await rm(live, { recursive: true })
+        this.database.deleteColdClientInstallation(appId)
+        this.database.clearUnusedInstallPath(appId)
+        return { status: 'not-configured' }
+      } finally {
+        await release()
+      }
+    })
+  }
+
   updateCore(appId: number): Promise<ColdClientStatus> {
     this.assertSupported()
     return this.operations.run('update-core', appId, async (context) => {
@@ -468,13 +526,13 @@ export class ColdClientService {
       return { status: 'unsupported', reason: 'host-platform' }
     }
     const library = this.database.getLibraryEntry(appId)
-    if (
-      !library?.installPath ||
-      this.database.getInstalls(appId).length === 0
-    ) {
+    if (!library?.installPath) {
       return { status: 'unsupported', reason: 'not-installed' }
     }
     const installation = this.database.getColdClientInstallation(appId)
+    if (!installation && this.database.getInstalls(appId).length === 0) {
+      return { status: 'unsupported', reason: 'not-installed' }
+    }
     if (!installation) return { status: 'not-configured' }
     try {
       if (
@@ -702,6 +760,14 @@ function requireInstalledLibrary(database: ServiceDatabase, appId: number) {
   const library = database.getLibraryEntry(appId)
   if (!library?.installPath || database.getInstalls(appId).length === 0) {
     throw new Error('ColdClient setup requires an installed game')
+  }
+  return { installPath: library.installPath }
+}
+
+function requireLibraryPath(database: ServiceDatabase, appId: number) {
+  const library = database.getLibraryEntry(appId)
+  if (!library?.installPath) {
+    throw new Error('ColdClient removal requires the original install path')
   }
   return { installPath: library.installPath }
 }

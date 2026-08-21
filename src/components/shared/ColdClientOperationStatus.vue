@@ -17,6 +17,7 @@ const kindLabels = {
   setup: 'ColdClient setup',
   regenerate: 'ColdClient regeneration',
   'update-core': 'ColdClient update',
+  remove: 'ColdClient removal',
 } satisfies Record<ColdClientOperationKind, string>
 
 const phaseLabels = {
@@ -24,6 +25,7 @@ const phaseLabels = {
   building: 'Preparing files',
   replacing: 'Installing files',
   validating: 'Validating installation',
+  removing: 'Removing files',
 } satisfies Record<ColdClientOperationPhase, string>
 
 const label = computed(() => {

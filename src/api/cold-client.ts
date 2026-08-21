@@ -48,6 +48,10 @@ export function updateColdClientCore(appId: number) {
   return request('updateColdClientCore', { appId })
 }
 
+export function removeColdClient(appId: number) {
+  return request('removeColdClient', { appId })
+}
+
 export function getColdClientOperation() {
   return request('getColdClientOperation', {})
 }

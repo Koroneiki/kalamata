@@ -90,6 +90,53 @@ test('configures a complete reviewed ColdClient installation', async () => {
   ])
 })
 
+test('removes a configured ColdClient without deleting game files', async () => {
+  const fixture = await createFixture()
+  const service = createService(fixture)
+  await service.configure(fixture.request)
+
+  await expect(service.remove(10)).resolves.toEqual({
+    status: 'not-configured',
+  })
+
+  expect(fixture.database.current).toBeNull()
+  await expect(
+    access(join(fixture.installRoot, '_ColdClient')),
+  ).rejects.toThrow()
+  await expect(
+    access(join(fixture.installRoot, 'Game', 'Binaries', 'Game.exe')),
+  ).resolves.toBeNull()
+})
+
+test('removes ColdClient after all game depots are uninstalled', async () => {
+  const fixture = await createFixture()
+  const service = createService(fixture)
+  await service.configure(fixture.request)
+  fixture.database.installs = []
+
+  await expect(service.remove(10)).resolves.toEqual({
+    status: 'not-configured',
+  })
+
+  expect(fixture.database.current).toBeNull()
+  await expect(
+    access(join(fixture.installRoot, '_ColdClient')),
+  ).rejects.toThrow()
+})
+
+test('forgets ColdClient when the original install directory is gone', async () => {
+  const fixture = await createFixture()
+  const service = createService(fixture)
+  await service.configure(fixture.request)
+  await rm(fixture.installRoot, { recursive: true })
+
+  await expect(service.remove(10)).resolves.toEqual({
+    status: 'not-configured',
+  })
+
+  expect(fixture.database.current).toBeNull()
+})
+
 test('copies both shared runtimes but only the selected x86 loader', async () => {
   const fixture = await createFixture()
   const steamApi = 'Game/Binaries/steam_api.dll'
@@ -540,6 +587,12 @@ class FakeDatabase {
     }
     this.current = target
   }
+
+  deleteColdClientInstallation() {
+    this.current = null
+  }
+
+  clearUnusedInstallPath() {}
 }
 
 function artifact(

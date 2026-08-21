@@ -214,6 +214,9 @@ const rpc = BrowserView.defineRPC<AppRpc>({
       updateColdClientCore({ appId }) {
         return coldClient.updateCore(appId)
       },
+      removeColdClient({ appId }) {
+        return coldClient.remove(appId)
+      },
       getColdClientOperation() {
         return coldClientOperations.getSnapshot()
       },
@@ -226,15 +229,19 @@ const rpc = BrowserView.defineRPC<AppRpc>({
       removeLibraryEntry({ appId }) {
         const coldClientOperation = coldClientOperations.getSnapshot()
         if (
-          queue.isBusyForApp(appId) ||
-          (coldClientOperation.status === 'active' &&
-            coldClientOperation.appId === appId)
+          coldClientOperation.status === 'active' &&
+          coldClientOperation.appId === appId
         ) {
           throw new Error(
             'Wait for the download to finish before removing this game',
           )
         }
-        database.removeLibraryEntry(appId)
+        return queue.runWhileAppIdle(appId, async () => {
+          if (database.getColdClientInstallation(appId)) {
+            await coldClient.remove(appId)
+          }
+          database.removeLibraryEntry(appId)
+        })
       },
       setDepotPinned({ appId, depotId, pinned }) {
         if (queue.isBusyForApp(appId))

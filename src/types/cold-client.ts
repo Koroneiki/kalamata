@@ -220,6 +220,7 @@ export const coldClientOperationKinds = [
   'setup',
   'regenerate',
   'update-core',
+  'remove',
 ] as const
 export type ColdClientOperationKind = (typeof coldClientOperationKinds)[number]
 
@@ -228,6 +229,7 @@ export const coldClientOperationPhases = [
   'building',
   'replacing',
   'validating',
+  'removing',
 ] as const
 export type ColdClientOperationPhase =
   (typeof coldClientOperationPhases)[number]

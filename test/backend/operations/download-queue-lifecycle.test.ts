@@ -41,6 +41,42 @@ async function waitForCompletedApp(
   }
 }
 
+test('blocks new queue acceptance while an app is being removed', async () => {
+  const fixture = await setup()
+  const releaseRemoval = deferred<void>()
+  const removalStarted = deferred<void>()
+  const queue = new DownloadQueueCoordinator(
+    {
+      getProductInfoWithDlc: async () => products(),
+      reconcileApplication: successfulReconciliation,
+    },
+    fixture.database,
+  )
+  const removal = queue.runWhileAppIdle(APP_ID, async () => {
+    removalStarted.resolve()
+    await releaseRemoval.promise
+    fixture.database.removeLibraryEntry(APP_ID)
+  })
+  await removalStarted.promise
+
+  let startSettled = false
+  const start = queue
+    .start({
+      appId: APP_ID,
+      installPath: fixture.installPath,
+      depotIds: [DEPOTS[0].depotId],
+    })
+    .finally(() => {
+      startSettled = true
+    })
+  await Bun.sleep(5)
+  expect(startSettled).toBeFalse()
+
+  releaseRemoval.resolve()
+  await removal
+  await expect(start).rejects.toThrow('App is not in library')
+})
+
 test('start returns active operation state before product planning completes', async () => {
   const fixture = await setup()
   const planningStarted = deferred<void>()

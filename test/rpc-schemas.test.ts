@@ -114,6 +114,9 @@ test('validates reviewed ColdClient setup and app status', () => {
   expect(parseRpcRequest('updateColdClientCore', { appId: 10 })).toEqual({
     appId: 10,
   })
+  expect(parseRpcRequest('removeColdClient', { appId: 10 })).toEqual({
+    appId: 10,
+  })
   expect(() => parseRpcRequest('updateColdClientCore', { appId: 0 })).toThrow()
   expect(() =>
     parseRpcRequest('configureColdClient', {
@@ -143,6 +146,9 @@ test('validates reviewed ColdClient setup and app status', () => {
     rpcResponseSchemas.updateColdClientCore.parse({
       status: 'not-configured',
     }),
+  ).toEqual({ status: 'not-configured' })
+  expect(
+    rpcResponseSchemas.removeColdClient.parse({ status: 'not-configured' }),
   ).toEqual({ status: 'not-configured' })
 })
 

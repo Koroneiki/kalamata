@@ -101,6 +101,23 @@ describe('ColdClient installation storage', () => {
     expect(db.sqlite.query('PRAGMA foreign_key_check').all()).toEqual([])
   })
 
+  test('retains the install path until ColdClient is removed', async () => {
+    const db = await openDatabase()
+    const installPath = join(root!, 'game')
+    db.addLibraryEntry(installation.appId)
+    db.reserveInstallPath(installation.appId, installPath)
+    db.replaceColdClientInstallation(installation)
+
+    db.clearUnusedInstallPath(installation.appId)
+    expect(db.getLibraryEntry(installation.appId)?.installPath).toBe(
+      installPath,
+    )
+
+    db.deleteColdClientInstallation(installation.appId)
+    db.clearUnusedInstallPath(installation.appId)
+    expect(db.getLibraryEntry(installation.appId)?.installPath).toBeNull()
+  })
+
   test('rejects unsafe or ambiguous managed paths', () => {
     for (const path of [
       '',

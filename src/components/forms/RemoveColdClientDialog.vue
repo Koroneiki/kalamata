@@ -14,7 +14,6 @@ defineProps<{
   appName: string
   removing: boolean
   error: string
-  removesColdClient: boolean
 }>()
 
 const emit = defineEmits<{
@@ -27,14 +26,11 @@ const emit = defineEmits<{
   <Dialog :open="open" @update:open="emit('update:open', $event)">
     <DialogContent>
       <DialogHeader>
-        <DialogTitle>Remove {{ appName }} from the library?</DialogTitle>
+        <DialogTitle>Remove ColdClient from {{ appName }}?</DialogTitle>
         <DialogDescription>
-          Kalamata's selections and installation records will be removed.
-          Downloaded game files will remain on disk.
-          <template v-if="removesColdClient">
-            The entire <code>_ColdClient</code> folder will be deleted,
-            including custom files inside it.
-          </template>
+          The entire <code>_ColdClient</code> folder will be deleted, including
+          generated settings and any custom files inside it. Game files outside
+          that folder will remain on disk.
         </DialogDescription>
       </DialogHeader>
 
@@ -57,7 +53,7 @@ const emit = defineEmits<{
           :disabled="removing"
           @click="emit('confirm')"
         >
-          {{ removing ? 'Removing…' : 'Remove' }}
+          {{ removing ? 'Removing…' : 'Remove ColdClient' }}
         </Button>
       </DialogFooter>
     </DialogContent>
