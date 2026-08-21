@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { RefreshCw } from '@lucide/vue'
-import { computed, onMounted } from 'vue'
+import { computed } from 'vue'
 
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -21,8 +21,6 @@ function retry() {
     ? availableUpdates.refreshAll()
     : availableUpdates.retryFailed()
 }
-
-onMounted(() => void availableUpdates.refreshAll())
 </script>
 
 <template>

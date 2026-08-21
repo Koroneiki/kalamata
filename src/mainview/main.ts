@@ -13,7 +13,12 @@ const app = createApp(App)
 const pinia = createPinia()
 
 app.use(pinia)
-app.use(PiniaColada)
+app.use(PiniaColada, {
+  queryOptions: {
+    staleTime: Infinity,
+    gcTime: false,
+  },
+})
 app.use(router)
 
 app.mount('#app')
