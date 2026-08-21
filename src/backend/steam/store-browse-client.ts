@@ -21,8 +21,12 @@ export class StoreBrowseClient {
       }),
     )
     const response = await this.fetcher(url)
-    if (!response.ok)
-      throw new Error(`Steam StoreBrowse returned HTTP ${response.status}`)
+    if (!response.ok) {
+      const status = Number.isFinite(response.status)
+        ? `HTTP ${response.status}`
+        : 'a failure without an HTTP status'
+      throw new Error(`Steam StoreBrowse returned ${status}`)
+    }
 
     const parsed = responseSchema.safeParse(await response.json())
     if (!parsed.success)
