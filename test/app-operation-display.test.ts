@@ -312,7 +312,12 @@ function depot(overrides: Partial<EligibleAppDepot> = {}): EligibleAppDepot {
   }
 }
 
-function customManifestHarness() {
+function customManifestHarness(
+  options: {
+    acquireManifest?: (manifestId: string) => Promise<void>
+    onAcquireError?: (message: string) => void
+  } = {},
+) {
   const selectedDepotIds = ref<number[]>([])
   const customManifestTargets = reactive(new Map<number, string>())
   const acquisitions: string[] = []
@@ -332,6 +337,7 @@ function customManifestHarness() {
     acquireDepotKeys: async () => [],
     acquireManifest: async (_appId, _depotId, manifestId) => {
       acquisitions.push(manifestId)
+      await options.acquireManifest?.(manifestId)
     },
     setDepotPinned: async (_appId, _depotId, pinned) => {
       pins.push(pinned)
@@ -339,6 +345,7 @@ function customManifestHarness() {
     invalidateDetails: async () => {
       invalidations += 1
     },
+    onAcquireError: options.onAcquireError,
   })
   return {
     manifest,
@@ -361,6 +368,39 @@ test('custom manifest workflow acquires and selects a download target', async ()
   expect(harness.manifest.customManifestDialogOpen.value).toBe(false)
 })
 
+test('custom manifest workflow closes before background acquisition settles', async () => {
+  let finish!: () => void
+  const pending = new Promise<void>((resolve) => {
+    finish = resolve
+  })
+  const harness = customManifestHarness({ acquireManifest: () => pending })
+  harness.manifest.editCustomManifest(depot())
+
+  const acquisition = harness.manifest.setCustomManifest('200')
+
+  expect(harness.manifest.customManifestDialogOpen.value).toBe(false)
+  expect(harness.manifest.customManifestAcquiring.value).toBe(true)
+  finish()
+  await acquisition
+  expect(harness.manifest.customManifestTargets.value.get(441)).toBe('200')
+})
+
+test('custom manifest workflow reports background acquisition failures', async () => {
+  const failures: string[] = []
+  const harness = customManifestHarness({
+    acquireManifest: async () => {
+      throw new Error('manifest unavailable')
+    },
+    onAcquireError: (message) => failures.push(message),
+  })
+  harness.manifest.editCustomManifest(depot())
+
+  await harness.manifest.setCustomManifest('200')
+
+  expect(failures).toEqual(['manifest unavailable'])
+  expect(harness.manifest.customManifestTargets.value.has(441)).toBe(false)
+})
+
 test('custom manifest workflow pins and unpins the installed manifest', async () => {
   const harness = customManifestHarness()
   harness.manifest.editCustomManifest(
@@ -378,6 +418,7 @@ test('custom manifest workflow pins and unpins the installed manifest', async ()
   await harness.manifest.removeCustomManifest()
 
   expect(harness.pins).toEqual([true, false])
+  expect(harness.acquisitions).toEqual([])
   expect(harness.invalidations()).toBe(2)
   expect(harness.manifest.customManifestDialogOpen.value).toBe(false)
 })

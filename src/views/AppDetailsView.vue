@@ -31,7 +31,7 @@ import { useAppOperationDisplay } from '@/composables/use-app-operation-display'
 import { useCustomManifest } from '@/composables/use-custom-manifest'
 import { useAvailableUpdates } from '@/composables/use-available-updates'
 import { useDepotResourceAcquisition } from '@/composables/use-depot-resource-acquisition'
-import { acquireManifest, openInstallDirectory } from '@/api/apps'
+import { openInstallDirectory } from '@/api/apps'
 import { updateColdClientCore } from '@/api/cold-client'
 import {
   addLibraryEntry,
@@ -106,17 +106,6 @@ const addMutation = useMutation({
 const removeMutation = useMutation({
   mutation: (id: number) => removeLibraryEntry(id),
 })
-const manifestMutation = useMutation({
-  mutation: ({
-    appId,
-    depotId,
-    manifestId,
-  }: {
-    appId: number
-    depotId: number
-    manifestId: string
-  }) => acquireManifest(appId, depotId, manifestId),
-})
 const pinMutation = useMutation({
   mutation: ({
     appId,
@@ -177,7 +166,7 @@ const {
   acquireDepotKeys: async (id, depotIds) =>
     (await resourceAcquisition.acquireKeys(id, depotIds)).missingDepotIds,
   acquireManifest: async (id, depotId, manifestId) => {
-    await manifestMutation.mutateAsync({ appId: id, depotId, manifestId })
+    await resourceAcquisition.acquireManifestResource(id, depotId, manifestId)
   },
   setDepotPinned: async (id, depotId, pinned) => {
     await pinMutation.mutateAsync({ appId: id, depotId, pinned })
@@ -189,6 +178,9 @@ const {
     })
   },
   onPinChanged: (id) => availableUpdates.refreshApp(id),
+  onAcquireError: (message) => {
+    manifestError.value = message
+  },
 })
 
 watch(

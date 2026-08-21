@@ -21,6 +21,7 @@ export function useCustomManifest(options: {
   ) => Promise<void>
   invalidateDetails: (appId: number) => Promise<void>
   onPinChanged?: (appId: number) => Promise<void>
+  onAcquireError?: (message: string) => void
 }) {
   const customManifestTargets = computed(() =>
     toValue(options.customManifestTargets),
@@ -113,14 +114,18 @@ export function useCustomManifest(options: {
     const key = `${targetAppId}:${depot.depotId}:${manifestId}`
     customManifestError.value = ''
     customManifestAcquiring.value = true
+    customManifestDialogOpen.value = false
     options.acquiringManifests.add(key)
     try {
-      await acquireResources(targetAppId, depot, manifestId)
+      if (manifestId !== depot.installedManifestId)
+        await acquireResources(targetAppId, depot, manifestId)
       await applyManifestTarget(targetAppId, depot, manifestId)
     } catch (error) {
-      if (isCurrentApp(targetAppId))
-        customManifestError.value =
-          error instanceof Error ? error.message : String(error)
+      const message = error instanceof Error ? error.message : String(error)
+      if (isCurrentApp(targetAppId)) {
+        customManifestError.value = message
+        options.onAcquireError?.(message)
+      }
     } finally {
       options.acquiringManifests.delete(key)
       if (isCurrentApp(targetAppId)) customManifestAcquiring.value = false
