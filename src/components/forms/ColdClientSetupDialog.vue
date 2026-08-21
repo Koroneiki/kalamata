@@ -196,12 +196,7 @@ function selectLaunchSource(event: Event) {
           {{ regenerating ? 'Regenerate' : 'Set up' }} {{ appName }}
         </DialogTitle>
         <DialogDescription>
-          Review the game files and launch settings.
-          {{
-            regenerating
-              ? 'The current configuration is selected where it is still available.'
-              : 'Nothing changes until setup is confirmed.'
-          }}
+          Review detected files and launch settings.
         </DialogDescription>
       </DialogHeader>
 
@@ -235,9 +230,6 @@ function selectLaunchSource(event: Event) {
             placeholder="Choose an executable"
             :options="executableOptions"
           />
-          <p class="text-muted-foreground text-xs">
-            Detection: {{ draft.executableDetectionSource }}
-          </p>
         </div>
 
         <div class="space-y-2">
@@ -303,18 +295,14 @@ function selectLaunchSource(event: Event) {
         </div>
 
         <div class="border-border space-y-2 border-t pt-4 text-sm">
-          <p>Uses GBE {{ draft.gbe.tag }} and GSE Tools {{ draft.gse.tag }}.</p>
+          <p>GBE {{ draft.gbe.tag }} · GSE Tools {{ draft.gse.tag }}</p>
           <p>
-            Official <code>extra_dlls</code> will be injected into the game
-            process. The original Steam API DLL is not modified.
+            Uses official <code>extra_dlls</code>. The original Steam API DLL is
+            not modified.
           </p>
           <p v-if="regenerating">
-            Regeneration replaces <code>steam_settings</code> and updates the
-            loader configuration. Other managed core files and custom files are
-            preserved.
-          </p>
-          <p class="text-muted-foreground">
-            Review only. No files have changed.
+            Replaces <code>steam_settings</code>, including user edits. Other
+            files are preserved.
           </p>
         </div>
       </div>
@@ -330,11 +318,11 @@ function selectLaunchSource(event: Event) {
           {{
             configureMutation.isLoading.value
               ? regenerating
-                ? 'Starting regeneration...'
-                : 'Starting setup...'
+                ? 'Regenerating...'
+                : 'Setting up...'
               : regenerating
-                ? 'Confirm regeneration'
-                : 'Confirm setup'
+                ? 'Regenerate'
+                : 'Set up'
           }}
         </Button>
       </DialogFooter>

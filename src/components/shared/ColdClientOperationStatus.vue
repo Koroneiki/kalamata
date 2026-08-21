@@ -89,7 +89,7 @@ async function cancel() {
       {{ cancelling ? 'Cancelling' : 'Cancel' }}
     </Button>
     <span v-else class="text-muted-foreground shrink-0 text-xs">
-      Finishing safely
+      Finishing
     </span>
   </div>
 </template>

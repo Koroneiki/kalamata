@@ -36,9 +36,7 @@ const emit = defineEmits<{
     <DialogContent class="sm:max-w-sm">
       <DialogHeader>
         <DialogTitle class="text-primary">{{ appName }}</DialogTitle>
-        <DialogDescription>
-          Manage installed game files and optional ColdClient setup.
-        </DialogDescription>
+        <DialogDescription> Manage installed game files. </DialogDescription>
       </DialogHeader>
 
       <section
@@ -94,14 +92,11 @@ const emit = defineEmits<{
         >
           {{ coldClientStatus.message }} Run setup again to replace it safely.
         </p>
-        <p class="text-muted-foreground mt-1 text-sm">
-          {{
-            coldClientStatus?.status === 'configured'
-              ? 'The installed loader and generated settings are ready.'
-              : coldClientReady
-                ? 'Review the detected executable, Steam API DLL, and launch arguments before setup.'
-                : 'Install dependencies and add the GSE Tools login file in Settings before setup.'
-          }}
+        <p
+          v-if="coldClientStatus?.status !== 'configured' && !coldClientReady"
+          class="text-muted-foreground mt-1 text-sm"
+        >
+          Install dependencies and add the GSE Tools login file in Settings.
         </p>
         <Button
           v-if="coldClientStatus?.status !== 'configured'"
@@ -129,8 +124,8 @@ const emit = defineEmits<{
               GBE {{ coldClientStatus.availableGbeTag }} is ready to install.
             </p>
             <p class="text-muted-foreground mt-1 text-sm">
-              Updating replaces managed core files. Loader configuration,
-              generated settings, and custom files are preserved.
+              Updates managed core files. Configuration, generated settings, and
+              custom files are preserved.
             </p>
             <Button
               type="button"
@@ -144,9 +139,7 @@ const emit = defineEmits<{
             </Button>
           </div>
           <p class="text-sm">
-            Review the executable, Steam API DLL, and launch arguments before
-            regeneration. It replaces every file in
-            <code>steam_settings</code>, including user edits.
+            Replaces <code>steam_settings</code>, including user edits.
           </p>
           <Button
             type="button"

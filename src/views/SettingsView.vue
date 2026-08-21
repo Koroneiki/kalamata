@@ -408,10 +408,6 @@ async function openColdClientLoginFolder() {
     >
       <div class="p-4 sm:p-5">
         <h2 class="text-sm font-medium">ColdClient dependencies</h2>
-        <p class="text-muted-foreground mt-1 text-sm">
-          Downloaded tools are kept in user data and never change a game until
-          you start setup from Game Settings.
-        </p>
       </div>
 
       <div v-if="coldClientPending" class="border-border border-t p-4 sm:p-5">
@@ -488,12 +484,12 @@ async function openColdClientLoginFolder() {
             aria-label="Confirm dependency update"
           >
             <p class="text-sm">
-              Download and activate {{ dependencyUpdateIds.length }}
+              Download {{ dependencyUpdateIds.length }}
               {{
                 dependencyUpdateIds.length === 1
                   ? 'dependency'
                   : 'dependencies'
-              }}. No game files will change.
+              }}? Game files will not change.
             </p>
             <div class="mt-3 flex flex-wrap gap-2">
               <Button
@@ -523,7 +519,7 @@ async function openColdClientLoginFolder() {
                     ? 'my_login.txt is present.'
                     : 'Add my_login.txt before setup.'
                 }}
-                Kalamata checks only whether the file exists and never reads it.
+                Its contents are never read.
               </p>
               <p
                 v-if="coldClientDependencies.loginDirectory"
