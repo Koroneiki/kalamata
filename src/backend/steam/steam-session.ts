@@ -101,11 +101,14 @@ async function createSteamUser(): Promise<SteamContentUser> {
   const { default: SteamUser } = await import('steam-user').finally(() => {
     globalThis.onmessage = previousOnMessage
   })
-  // Bun 1.4 can stall steam-user's TCP transport during anonymous login.
+  // Bun 1.4 stalls TCP, while Electrobun's bundled Bun 1.3 stalls WebSocket.
+  const protocol = Bun.version.startsWith('1.4.')
+    ? SteamUser.EConnectionProtocol.WebSocket
+    : SteamUser.EConnectionProtocol.TCP
   const client = new SteamUser({
     dataDirectory: null,
     autoRelogin: false,
-    protocol: SteamUser.EConnectionProtocol.WebSocket,
+    protocol,
   })
   if (!isSteamContentUser(client))
     throw new Error('steam-user does not provide content server methods')
