@@ -1,5 +1,53 @@
 # Changelog
 
+## v1.0.0
+
+Release date: 22.08.2026
+
+[compare changes](https://github.com/Koroneiki/kalamata/compare/v0.2.0...v1.0.0)
+
+### 🚀 New
+
+- **coldclient:** Set up, inspect, configure, regenerate, update, and remove managed ColdClient installations.
+- **coldclient:** Review dependency sources, binary architectures, configuration changes, and GSE Tools owner data before applying them.
+- **coldclient:** Diagnose setup failures and recover interrupted dependency replacement safely.
+
+### ✨ Enhancements
+
+- **coldclient:** Show installation and GSE Tools operation status in application details and the terminal.
+- **downloads:** Acquire custom manifests in the background and retain query data while navigating.
+- **desktop:** Restore responsive sidebar resizing and refine application details and settings.
+
+### 🩹 Fixes
+
+- **downloads:** Recover interrupted downloads without incorrectly entering repair mode and refresh exhausted Steam content servers.
+- **steam:** Select a compatible Steam transport for Bun 1.4 and isolate package-discovery failures to their requests.
+- **coldclient:** Serialize setup dependencies, throttle startup checks, detect removed dependencies, and block conflicting depot work during recovery.
+- **library:** Remove library entries and managed ColdClient files without leaving unsafe partial state.
+
+### 💅 Refactors
+
+- **backend:** Split main-process orchestration from the Bun entrypoint and share durable filesystem operations.
+- **coldclient:** Simplify setup validation and recovery policy.
+
+### 🏡 Chore
+
+- **runtime:** Migrate development, CI, and release builds to Bun 1.4.
+
+### ✅ Tests
+
+- **coldclient:** Cover dependency management, configuration generation, replacement recovery, operation coordination, and database persistence.
+- **downloads:** Extend transaction, queue recovery, output-lock, and decompression coverage.
+- **rpc:** Cover ColdClient schemas, diagnostics, and product information boundaries.
+
+### 📖 Documentation
+
+- **coldclient:** Document dependency policy, folder setup, and the managed setup process.
+
+### ❤️ Contributors
+
+- Koroneiki <101889814+Koroneiki@users.noreply.github.com>
+
 ## v0.2.0
 
 Release date: 19.08.2026
