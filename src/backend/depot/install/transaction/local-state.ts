@@ -5,6 +5,7 @@ import {
   isDirectory,
   isUserConfig,
   safeLstat,
+  sameFileContentAndMode,
   sameManifestOwner,
 } from './projection.ts'
 import {
@@ -42,6 +43,7 @@ export async function projectionEntryNeedsStaging(
   if (kind !== 'repair' && sameManifestOwner(previous, entry)) return false
   if (wantsDirectory) return !info?.isDirectory()
   if (!info?.isFile()) return true
+  if (kind !== 'repair' && sameFileContentAndMode(previous, entry)) return false
   try {
     await verifyFileSha1(path, entry.file.sha_content, signal)
     return !executableModeMatches(info.mode, entry.file)

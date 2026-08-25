@@ -6,6 +6,7 @@ import {
   isConfigFile,
   isDirectory,
   isUserConfig,
+  sameFileContentAndMode,
   sumProjectionFiles,
   sumUniqueCompressedChunks,
   uniqueCompressedChunkSizes,
@@ -33,7 +34,6 @@ export async function previewApplicationOperation(
 }
 
 type Projection = Map<string, ProjectionEntry>
-const EXECUTABLE = 32
 
 function projectedFileChange(
   previous: ProjectionEntry | undefined,
@@ -90,14 +90,8 @@ function estimatedStagedFiles(
   return changedFiles.filter((entry) => {
     const previous = source.get(entry.key)
     const reusableInPlace =
-      previous !== undefined &&
-      !isDirectory(previous.file) &&
-      (isUserConfig(entry.file) ||
-        (previous.file.sha_content.toLowerCase() ===
-          entry.file.sha_content.toLowerCase() &&
-          (platform === 'win32' ||
-            Boolean(previous.file.flags & EXECUTABLE) ===
-              Boolean(entry.file.flags & EXECUTABLE))))
+      isUserConfig(entry.file) ||
+      sameFileContentAndMode(previous, entry, platform)
     return !reusableInPlace
   })
 }

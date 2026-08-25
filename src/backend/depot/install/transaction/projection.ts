@@ -196,6 +196,24 @@ export function sameManifestOwner(
   )
 }
 
+export function sameFileContentAndMode(
+  previous: ProjectionEntry | undefined,
+  target: ProjectionEntry,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  return (
+    previous !== undefined &&
+    !isDirectory(previous.file) &&
+    !isDirectory(target.file) &&
+    previous.file.size === target.file.size &&
+    previous.file.sha_content.toLowerCase() ===
+      target.file.sha_content.toLowerCase() &&
+    (platform === 'win32' ||
+      Boolean(previous.file.flags & EXECUTABLE) ===
+        Boolean(target.file.flags & EXECUTABLE))
+  )
+}
+
 export function executableModeMatches(
   mode: number,
   file: ManifestFile,

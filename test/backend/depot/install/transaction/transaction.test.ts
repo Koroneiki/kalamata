@@ -179,6 +179,19 @@ describe('application filesystem transactions', () => {
     expect(installed.client.downloadChunk).not.toHaveBeenCalled()
   })
 
+  test('normal updates trust unchanged files across manifest versions', async () => {
+    directory = await tempDirectory()
+    await writeFile(join(directory, 'game.bin'), 'BAD!')
+    const installed = depot(10, '1', { 'game.bin': 'good' })
+    const updated = depot(10, '2', { 'game.bin': 'good' })
+
+    const result = await run(directory, [installed], [updated])
+
+    expect(result.transactionId).toBeNull()
+    expect(await text('game.bin')).toBe('BAD!')
+    expect(updated.client.downloadChunk).not.toHaveBeenCalled()
+  })
+
   test('preserves UserConfig through update, repair, and removal', async () => {
     directory = await tempDirectory()
     const installed = depot(10, '1', { 'settings.cfg': 'default' })
