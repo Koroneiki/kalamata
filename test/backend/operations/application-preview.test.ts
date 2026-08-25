@@ -171,6 +171,8 @@ test('reports case-only path changes as removal and addition', () => {
   )
 
   expect(preview.fileCounts).toEqual({ added: 1, removed: 1, changed: 0 })
+  expect(preview.estimatedDownloadBytes).toBe('0')
+  expect(preview.networkPayloadUpperBoundBytes).toBe('4')
 })
 
 test('includes directory paths in added and removed counts', () => {
@@ -221,7 +223,7 @@ test('reports files shadowed by a winning ancestor file', () => {
   ])
 })
 
-test('uses manifests alone for the download estimate', async () => {
+test('estimates downloads after reusing current manifest chunks', async () => {
   const installed = [depot(1, 'old', { 'old.bin': 'shared' })]
   const desired = [
     depot(1, 'new', { 'renamed.bin': 'shared', 'added.bin': 'new' }),
@@ -238,7 +240,7 @@ test('uses manifests alone for the download estimate', async () => {
   )
 
   expect(preview.networkPayloadUpperBoundBytes).toBe('9')
-  expect(preview.estimatedDownloadBytes).toBe('9')
+  expect(preview.estimatedDownloadBytes).toBe('3')
 })
 
 queueTest(

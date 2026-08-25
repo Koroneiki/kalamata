@@ -2,9 +2,11 @@ import type { DepotDownloadService } from '../depot/depot-download-service.ts'
 import {
   buildProjection,
   changedProjectionFiles,
+  chunkKey,
   isDirectory,
   sumProjectionFiles,
   sumUniqueCompressedChunks,
+  uniqueCompressedChunkSizes,
 } from '../depot/install/transaction/projection.ts'
 import type {
   InstalledApplicationDepot,
@@ -60,6 +62,21 @@ function projectionFileCounts(
       counts.removed += 1
   }
   return counts
+}
+
+function estimatedDownloadSize(
+  source: Projection,
+  changedFiles: ProjectionEntry[],
+): bigint {
+  const reusableChunks = new Set<string>()
+  for (const { file } of source.values())
+    if (!isDirectory(file))
+      for (const chunk of file.chunks) reusableChunks.add(chunkKey(chunk))
+
+  let total = 0n
+  for (const [key, size] of uniqueCompressedChunkSizes(changedFiles))
+    if (!reusableChunks.has(key)) total += BigInt(size)
+  return total
 }
 
 function projectionWinner(
@@ -160,6 +177,10 @@ export function compareApplicationManifests(
   const source = buildProjection(installed, appId)
   const target = buildProjection(desired, appId)
   const changedFiles = changedProjectionFiles(source, target)
+  const networkPayloadUpperBound = sumUniqueCompressedChunks(changedFiles)
+  // Preview assumes the current manifest is installed correctly; execution
+  // verifies every reusable chunk before trusting the lower estimate.
+  const estimatedDownload = estimatedDownloadSize(source, changedFiles)
   // Counts describe manifest path changes and must not collapse case-only moves
   // just because the preview runs on a case-insensitive host filesystem.
   const fileCounts = projectionFileCounts(
@@ -179,9 +200,8 @@ export function compareApplicationManifests(
     logicalSizeDeltaBytes: (
       sumProjectionFiles(target) - sumProjectionFiles(source)
     ).toString(),
-    networkPayloadUpperBoundBytes:
-      sumUniqueCompressedChunks(changedFiles).toString(),
-    estimatedDownloadBytes: sumUniqueCompressedChunks(changedFiles).toString(),
+    networkPayloadUpperBoundBytes: networkPayloadUpperBound.toString(),
+    estimatedDownloadBytes: estimatedDownload.toString(),
     stagingLogicalUpperBoundBytes: changedFiles
       .reduce((total, { file }) => total + BigInt(file.size), 0n)
       .toString(),
