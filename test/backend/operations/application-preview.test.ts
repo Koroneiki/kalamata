@@ -174,6 +174,7 @@ test('reports case-only path changes as removal and addition', () => {
     100,
     [depot(1, 'old', { 'file.bin': 'same' })],
     [depot(1, 'new', { 'File.bin': 'same' })],
+    'darwin',
   )
 
   expect(preview.fileCounts).toEqual({ added: 1, removed: 1, changed: 0 })
