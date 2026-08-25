@@ -274,6 +274,50 @@ test('estimates downloads after reusing current manifest chunks', async () => {
   expect(preview.estimatedStagingBytes).toBe('9')
 })
 
+test('does not assume mutable configuration chunks are reusable', () => {
+  const installed = depot(1, 'old', { 'settings.cfg': 'shared' })
+  installed.manifest.files[0]!.flags = 1
+  const desired = depot(1, 'new', {
+    'settings.cfg': 'shared',
+    'added.bin': 'shared',
+  })
+  desired.manifest.files[0]!.flags = 1
+
+  const preview = compareApplicationManifests(100, [installed], [desired])
+
+  expect(preview.estimatedDownloadBytes).toBe('6')
+  expect(preview.estimatedStagingBytes).toBe('6')
+})
+
+test('does not estimate downloads for files preserved in place', () => {
+  const installed = depot(1, 'old', { 'settings.cfg': 'default' })
+  installed.manifest.files[0]!.flags = 1
+  const desired = depot(1, 'new', { 'settings.cfg': 'new-default' })
+  desired.manifest.files[0]!.flags = 1
+
+  const preview = compareApplicationManifests(100, [installed], [desired])
+
+  expect(preview.estimatedDownloadBytes).toBe('0')
+  expect(preview.estimatedStagingBytes).toBe('0')
+})
+
+test('does not estimate downloads when matching content has new chunks', () => {
+  const installed = depot(1, 'old', { file: 'same' })
+  const desired = depot(1, 'new', { file: 'same' })
+  const first = depot(2, 'parts', { first: 'sa' }).manifest.files[0]!.chunks[0]!
+  const second = depot(2, 'parts', { second: 'me' }).manifest.files[0]!
+    .chunks[0]!
+  desired.manifest.files[0]!.chunks = [
+    { ...first, offset: '0' },
+    { ...second, offset: '2' },
+  ]
+
+  const preview = compareApplicationManifests(100, [installed], [desired])
+
+  expect(preview.estimatedDownloadBytes).toBe('0')
+  expect(preview.estimatedStagingBytes).toBe('0')
+})
+
 queueTest(
   'coordinator preview does not reserve a path or persist selection',
   async () => {

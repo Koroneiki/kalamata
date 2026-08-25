@@ -3,6 +3,7 @@ import {
   buildProjection,
   changedProjectionFiles,
   chunkKey,
+  isConfigFile,
   isDirectory,
   isUserConfig,
   sumProjectionFiles,
@@ -72,7 +73,7 @@ function estimatedDownloadSize(
 ): bigint {
   const reusableChunks = new Set<string>()
   for (const { file } of source.values())
-    if (!isDirectory(file))
+    if (!isDirectory(file) && !isConfigFile(file))
       for (const chunk of file.chunks) reusableChunks.add(chunkKey(chunk))
 
   let total = 0n
@@ -81,13 +82,12 @@ function estimatedDownloadSize(
   return total
 }
 
-function estimatedStagingSize(
+function estimatedStagedFiles(
   source: Projection,
   changedFiles: ProjectionEntry[],
   platform: NodeJS.Platform,
-): bigint {
-  let total = 0n
-  for (const entry of changedFiles) {
+): ProjectionEntry[] {
+  return changedFiles.filter((entry) => {
     const previous = source.get(entry.key)
     const reusableInPlace =
       previous !== undefined &&
@@ -98,9 +98,8 @@ function estimatedStagingSize(
           (platform === 'win32' ||
             Boolean(previous.file.flags & EXECUTABLE) ===
               Boolean(entry.file.flags & EXECUTABLE))))
-    if (!reusableInPlace) total += BigInt(entry.file.size)
-  }
-  return total
+    return !reusableInPlace
+  })
 }
 
 function projectionWinner(
@@ -207,11 +206,15 @@ export function compareApplicationManifests(
   const source = buildProjection(installed, appId, platform)
   const target = buildProjection(desired, appId, platform)
   const changedFiles = changedProjectionFiles(source, target)
+  const stagedFiles = estimatedStagedFiles(source, changedFiles, platform)
   const networkPayloadUpperBound = sumUniqueCompressedChunks(changedFiles)
   // Preview assumes the current manifest is installed correctly; execution
   // verifies every reusable chunk before trusting the lower estimate.
-  const estimatedDownload = estimatedDownloadSize(source, changedFiles)
-  const estimatedStaging = estimatedStagingSize(source, changedFiles, platform)
+  const estimatedDownload = estimatedDownloadSize(source, stagedFiles)
+  const estimatedStaging = stagedFiles.reduce(
+    (total, { file }) => total + BigInt(file.size),
+    0n,
+  )
   // Counts describe manifest path changes and must not collapse case-only moves
   // just because the preview runs on a case-insensitive host filesystem.
   const fileCounts = projectionFileCounts(
