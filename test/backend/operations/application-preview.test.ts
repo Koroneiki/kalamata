@@ -68,6 +68,7 @@ test('classifies install, remove, and update depots with a signed delta', () => 
   expect(preview.logicalSizeDeltaBytes).toBe('2')
   expect(preview.estimatedDownloadBytes).toBe('7')
   expect(preview.networkPayloadUpperBoundBytes).toBe('7')
+  expect(preview.estimatedStagingBytes).toBe('7')
 })
 
 test('uses final projection precedence for logical and staging sizes', () => {
@@ -78,6 +79,7 @@ test('uses final projection precedence for logical and staging sizes', () => {
   )
 
   expect(preview.logicalSizeDeltaBytes).toBe('-4')
+  expect(preview.estimatedStagingBytes).toBe('2')
   expect(preview.stagingLogicalUpperBoundBytes).toBe('2')
   expect(preview.networkPayloadUpperBoundBytes).toBe('2')
   expect(preview.overlaps).toEqual([
@@ -128,6 +130,7 @@ test('deduplicates identical chunks in network upper bounds', () => {
   )
 
   expect(preview.stagingLogicalUpperBoundBytes).toBe('12')
+  expect(preview.estimatedStagingBytes).toBe('12')
   expect(preview.networkPayloadUpperBoundBytes).toBe('6')
 })
 
@@ -149,6 +152,7 @@ test('does not stage files whose winning manifest is unchanged', () => {
   expect(preview.depots).toEqual([])
   expect(preview.logicalSizeDeltaBytes).toBe('0')
   expect(preview.stagingLogicalUpperBoundBytes).toBe('0')
+  expect(preview.estimatedStagingBytes).toBe('0')
   expect(preview.networkPayloadUpperBoundBytes).toBe('0')
   expect(preview.fileCounts).toEqual({ added: 0, removed: 0, changed: 0 })
 })
@@ -161,6 +165,8 @@ test('does not count unchanged file content in a new manifest as changed', () =>
   )
 
   expect(preview.fileCounts).toEqual({ added: 0, removed: 0, changed: 0 })
+  expect(preview.estimatedStagingBytes).toBe('0')
+  expect(preview.stagingLogicalUpperBoundBytes).toBe('4')
 })
 
 test('reports case-only path changes as removal and addition', () => {
@@ -173,6 +179,30 @@ test('reports case-only path changes as removal and addition', () => {
   expect(preview.fileCounts).toEqual({ added: 1, removed: 1, changed: 0 })
   expect(preview.estimatedDownloadBytes).toBe('0')
   expect(preview.networkPayloadUpperBoundBytes).toBe('4')
+  expect(preview.estimatedStagingBytes).toBe('0')
+  expect(
+    compareApplicationManifests(
+      100,
+      [depot(1, 'old', { 'file.bin': 'same' })],
+      [depot(1, 'new', { 'File.bin': 'same' })],
+      'linux',
+    ).estimatedStagingBytes,
+  ).toBe('4')
+})
+
+test('ignores executable mode changes in the Windows staging estimate', () => {
+  const installed = depot(1, 'old', { file: 'same' })
+  const desired = depot(1, 'new', { file: 'same' })
+  desired.manifest.files[0]!.flags = 32
+
+  expect(
+    compareApplicationManifests(100, [installed], [desired], 'win32')
+      .estimatedStagingBytes,
+  ).toBe('0')
+  expect(
+    compareApplicationManifests(100, [installed], [desired], 'linux')
+      .estimatedStagingBytes,
+  ).toBe('4')
 })
 
 test('includes directory paths in added and removed counts', () => {
@@ -241,6 +271,7 @@ test('estimates downloads after reusing current manifest chunks', async () => {
 
   expect(preview.networkPayloadUpperBoundBytes).toBe('9')
   expect(preview.estimatedDownloadBytes).toBe('3')
+  expect(preview.estimatedStagingBytes).toBe('9')
 })
 
 queueTest(
@@ -275,6 +306,7 @@ queueTest(
               logicalSizeDeltaBytes: '0',
               estimatedDownloadBytes: '0',
               networkPayloadUpperBoundBytes: '0',
+              estimatedStagingBytes: '0',
               stagingLogicalUpperBoundBytes: '0',
             }
           },

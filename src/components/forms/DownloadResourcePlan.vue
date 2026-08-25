@@ -73,7 +73,11 @@ function formattedBytes(value: string | null) {
           <Layers3 class="size-4" aria-hidden="true" /> Temporary space
         </p>
         <p class="mt-1 text-xl font-semibold tabular-nums">
-          Up to {{ formatBytes(preview.stagingLogicalUpperBoundBytes) }}
+          {{ formatBytes(preview.estimatedStagingBytes) }}
+        </p>
+        <p class="text-muted-foreground mt-1 text-xs">
+          Up to {{ formatBytes(preview.stagingLogicalUpperBoundBytes) }} if
+          installed files cannot be reused
         </p>
         <p class="text-muted-foreground mt-1 text-xs">
           Final installation

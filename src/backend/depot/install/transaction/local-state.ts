@@ -14,7 +14,8 @@ import {
   type ProjectionEntry,
 } from './types.ts'
 
-// Preview and execution share this predicate so estimates match staged files.
+// Execution checks live state here; preview mirrors these rules while assuming
+// the files described by the current manifest are intact.
 export async function projectionEntryNeedsStaging(
   entry: ProjectionEntry,
   previous: ProjectionEntry | undefined,

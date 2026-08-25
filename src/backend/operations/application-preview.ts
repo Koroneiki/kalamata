@@ -4,6 +4,7 @@ import {
   changedProjectionFiles,
   chunkKey,
   isDirectory,
+  isUserConfig,
   sumProjectionFiles,
   sumUniqueCompressedChunks,
   uniqueCompressedChunkSizes,
@@ -31,6 +32,7 @@ export async function previewApplicationOperation(
 }
 
 type Projection = Map<string, ProjectionEntry>
+const EXECUTABLE = 32
 
 function projectedFileChange(
   previous: ProjectionEntry | undefined,
@@ -79,6 +81,28 @@ function estimatedDownloadSize(
   return total
 }
 
+function estimatedStagingSize(
+  source: Projection,
+  changedFiles: ProjectionEntry[],
+  platform: NodeJS.Platform,
+): bigint {
+  let total = 0n
+  for (const entry of changedFiles) {
+    const previous = source.get(entry.key)
+    const reusableInPlace =
+      previous !== undefined &&
+      !isDirectory(previous.file) &&
+      (isUserConfig(entry.file) ||
+        (previous.file.sha_content.toLowerCase() ===
+          entry.file.sha_content.toLowerCase() &&
+          (platform === 'win32' ||
+            Boolean(previous.file.flags & EXECUTABLE) ===
+              Boolean(entry.file.flags & EXECUTABLE))))
+    if (!reusableInPlace) total += BigInt(entry.file.size)
+  }
+  return total
+}
+
 function projectionWinner(
   target: Projection,
   key: string,
@@ -97,11 +121,15 @@ function projectionWinner(
 function overridingDepotIds(
   depot: InstalledApplicationDepot,
   target: Projection,
+  platform: NodeJS.Platform,
 ): number[] {
   const depotIds = new Set<number>()
   for (const file of depot.manifest.files) {
     if (isDirectory(file)) continue
-    const winner = projectionWinner(target, manifestPathKey(file.filename))
+    const winner = projectionWinner(
+      target,
+      manifestPathKey(file.filename, platform),
+    )
     if (winner && winner.depot.depotId !== depot.depotId)
       depotIds.add(winner.depot.depotId)
   }
@@ -111,13 +139,14 @@ function overridingDepotIds(
 function applicationOverlaps(
   desired: InstalledApplicationDepot[],
   target: Projection,
+  platform: NodeJS.Platform,
 ): ApplicationOperationPreview['overlaps'] {
   const projectedDepotIds = new Set(
     [...target.values()].map(({ depot }) => depot.depotId),
   )
   const overlaps: ApplicationOperationPreview['overlaps'] = []
   for (const depot of desired) {
-    const overriddenByDepotIds = overridingDepotIds(depot, target)
+    const overriddenByDepotIds = overridingDepotIds(depot, target, platform)
     if (overriddenByDepotIds.length)
       overlaps.push({
         depotId: depot.depotId,
@@ -132,6 +161,7 @@ export function compareApplicationManifests(
   appId: number,
   installed: InstalledApplicationDepot[],
   desired: InstalledApplicationDepot[],
+  platform: NodeJS.Platform = process.platform,
 ): ApplicationOperationPreview {
   const installedById = new Map(
     installed.map((depot) => [depot.depotId, depot]),
@@ -174,13 +204,14 @@ export function compareApplicationManifests(
         targetDownloadBytes: '0',
       })
 
-  const source = buildProjection(installed, appId)
-  const target = buildProjection(desired, appId)
+  const source = buildProjection(installed, appId, platform)
+  const target = buildProjection(desired, appId, platform)
   const changedFiles = changedProjectionFiles(source, target)
   const networkPayloadUpperBound = sumUniqueCompressedChunks(changedFiles)
   // Preview assumes the current manifest is installed correctly; execution
   // verifies every reusable chunk before trusting the lower estimate.
   const estimatedDownload = estimatedDownloadSize(source, changedFiles)
+  const estimatedStaging = estimatedStagingSize(source, changedFiles, platform)
   // Counts describe manifest path changes and must not collapse case-only moves
   // just because the preview runs on a case-insensitive host filesystem.
   const fileCounts = projectionFileCounts(
@@ -188,7 +219,7 @@ export function compareApplicationManifests(
     buildProjection(desired, appId, 'linux'),
   )
   // A depot is fully overridden only when it owns no final file or directory.
-  const overlaps = applicationOverlaps(desired, target)
+  const overlaps = applicationOverlaps(desired, target, platform)
   const counts = { install: 0, remove: 0, update: 0 }
   for (const depot of depots) counts[depot.action] += 1
 
@@ -202,6 +233,7 @@ export function compareApplicationManifests(
     ).toString(),
     networkPayloadUpperBoundBytes: networkPayloadUpperBound.toString(),
     estimatedDownloadBytes: estimatedDownload.toString(),
+    estimatedStagingBytes: estimatedStaging.toString(),
     stagingLogicalUpperBoundBytes: changedFiles
       .reduce((total, { file }) => total + BigInt(file.size), 0n)
       .toString(),

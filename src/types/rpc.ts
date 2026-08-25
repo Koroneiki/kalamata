@@ -168,6 +168,7 @@ export interface ApplicationOperationPreview {
   logicalSizeDeltaBytes: string
   estimatedDownloadBytes: string
   networkPayloadUpperBoundBytes: string | null
+  estimatedStagingBytes: string
   stagingLogicalUpperBoundBytes: string
 }
 

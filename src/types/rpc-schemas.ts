@@ -561,6 +561,7 @@ export const rpcResponseSchemas = {
     logicalSizeDeltaBytes: z.string().regex(/^-?\d+$/u),
     estimatedDownloadBytes: manifestIdSchema,
     networkPayloadUpperBoundBytes: manifestIdSchema.nullable(),
+    estimatedStagingBytes: manifestIdSchema,
     stagingLogicalUpperBoundBytes: manifestIdSchema,
   }),
   repairApplication: downloadQueueSnapshotSchema,
