@@ -1,7 +1,9 @@
 import { expect, test } from 'bun:test'
+import { createCipheriv } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
+  decryptManifestFilenames,
   parseManifest,
   parseManifestEnvelope,
   validateManifest,
@@ -12,6 +14,11 @@ import {
   manifestPathKey,
 } from '../src/backend/depot/manifests/manifest-utils.ts'
 
+const depotKey = Buffer.from(
+  '16261e41d3e864018778d4a1d81658521a67d9ffb8543ea7e3e21f0685721af1',
+  'hex',
+)
+
 const fixturePath = join(
   import.meta.dir,
   'fixtures',
@@ -21,12 +28,8 @@ const fixturePath = join(
 test.skipIf(!(await Bun.file(fixturePath).exists()))(
   'parses and validates the local Balatro manifest without network access',
   async () => {
-    const key = Buffer.from(
-      '16261e41d3e864018778d4a1d81658521a67d9ffb8543ea7e3e21f0685721af1',
-      'hex',
-    )
     const contents = await readFile(fixturePath)
-    const manifest = parseManifest(contents, key)
+    const manifest = parseManifest(contents, depotKey)
 
     expect(() => validateManifest(manifest, 2379781)).not.toThrow()
     expect(manifest.files).toHaveLength(14)
@@ -36,6 +39,25 @@ test.skipIf(!(await Bun.file(fixturePath).exists()))(
     expect(manifest.cb_disk_original).toBe('66662933')
   },
 )
+
+test('decrypts complete and NUL-terminated manifest filenames', () => {
+  const manifest = basicManifest()
+  manifest.filenames_encrypted = true
+  manifest.files = ['complete.bank', 'terminated.bank\0padding'].map(
+    (filename) => ({
+      ...manifest.files[0]!,
+      filename: encryptManifestFilename(filename, depotKey),
+    }),
+  )
+
+  decryptManifestFilenames(manifest, depotKey)
+
+  expect(manifest.filenames_encrypted).toBe(false)
+  expect(manifest.files.map(({ filename }) => filename)).toEqual([
+    'complete.bank',
+    'terminated.bank',
+  ])
+})
 
 test('rejects chunk gaps and manifest symlinks', () => {
   const manifest = basicManifest()
@@ -169,4 +191,17 @@ function basicManifest(): DepotManifest {
       },
     ],
   }
+}
+
+function encryptManifestFilename(filename: string, key: Buffer): string {
+  const iv = Buffer.alloc(16, 7)
+  const ivCipher = createCipheriv('aes-256-ecb', key, null)
+  ivCipher.setAutoPadding(false)
+  const encryptedIv = Buffer.concat([ivCipher.update(iv), ivCipher.final()])
+  const dataCipher = createCipheriv('aes-256-cbc', key, iv)
+  const encryptedFilename = Buffer.concat([
+    dataCipher.update(filename),
+    dataCipher.final(),
+  ])
+  return Buffer.concat([encryptedIv, encryptedFilename]).toString('base64')
 }

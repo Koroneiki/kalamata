@@ -23,6 +23,7 @@ const VERSIONED_USER_CONFIG = 2
 export function buildProjection(
   depots: InstalledApplicationDepot[],
   defaultAppId: number,
+  platform: NodeJS.Platform = process.platform,
 ): Map<string, ProjectionEntry> {
   const projection = new Map<string, ProjectionEntry>()
   const depotIds = new Set<number>()
@@ -31,8 +32,8 @@ export function buildProjection(
     if (depotIds.has(depot.depotId))
       throw new Error(`Duplicate depot ${depot.depotId}`)
     depotIds.add(depot.depotId)
-    for (const file of withImpliedDirectories(depot.manifest.files)) {
-      const key = manifestPathKey(file.filename)
+    for (const file of withImpliedDirectories(depot.manifest.files, platform)) {
+      const key = manifestPathKey(file.filename, platform)
       projection.set(key, { depot, file, key })
     }
   }

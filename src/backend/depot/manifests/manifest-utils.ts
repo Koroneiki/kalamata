@@ -62,13 +62,16 @@ function validateWindowsPath(canonical: string, original: string): void {
   }
 }
 
-export function withImpliedDirectories(files: ManifestFile[]): ManifestFile[] {
+export function withImpliedDirectories(
+  files: ManifestFile[],
+  platform: NodeJS.Platform = process.platform,
+): ManifestFile[] {
   const expanded = new Map<string, ManifestFile>()
   for (const file of files) {
     const segments = normalizeManifestSeparators(file.filename).split('/')
     for (let length = 1; length < segments.length; length++) {
       const filename = segments.slice(0, length).join('/')
-      const key = manifestPathKey(filename)
+      const key = manifestPathKey(filename, platform)
       if (!expanded.has(key)) {
         expanded.set(key, {
           filename,
@@ -79,7 +82,7 @@ export function withImpliedDirectories(files: ManifestFile[]): ManifestFile[] {
         })
       }
     }
-    expanded.set(manifestPathKey(file.filename), file)
+    expanded.set(manifestPathKey(file.filename, platform), file)
   }
   return [...expanded.values()]
 }

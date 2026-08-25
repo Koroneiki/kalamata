@@ -160,7 +160,12 @@ export function compareApplicationManifests(
   const source = buildProjection(installed, appId)
   const target = buildProjection(desired, appId)
   const changedFiles = changedProjectionFiles(source, target)
-  const fileCounts = projectionFileCounts(source, target)
+  // Counts describe manifest path changes and must not collapse case-only moves
+  // just because the preview runs on a case-insensitive host filesystem.
+  const fileCounts = projectionFileCounts(
+    buildProjection(installed, appId, 'linux'),
+    buildProjection(desired, appId, 'linux'),
+  )
   // A depot is fully overridden only when it owns no final file or directory.
   const overlaps = applicationOverlaps(desired, target)
   const counts = { install: 0, remove: 0, update: 0 }

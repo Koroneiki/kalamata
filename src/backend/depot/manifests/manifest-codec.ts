@@ -1,3 +1,4 @@
+import { createDecipheriv } from 'node:crypto'
 import ContentManifest from 'steam-user/components/content_manifest.js'
 import {
   DIRECTORY,
@@ -22,9 +23,35 @@ export function parseManifest(contents: Buffer, key: Buffer): DepotManifest {
   assertCompleteManifest(contents)
   const manifest = depotManifestSchema.parse(ContentManifest.parse(contents))
   if (manifest.filenames_encrypted) {
-    ContentManifest.decryptFilenames(manifest, key)
+    decryptManifestFilenames(manifest, key)
   }
   return manifest
+}
+
+export function decryptManifestFilenames(
+  manifest: DepotManifest,
+  key: Buffer,
+): void {
+  if (!manifest.filenames_encrypted) return
+  for (const file of manifest.files) {
+    const encrypted = Buffer.from(file.filename, 'base64')
+    const ivCipher = createDecipheriv('aes-256-ecb', key, null)
+    ivCipher.setAutoPadding(false)
+    const iv = Buffer.concat([
+      ivCipher.update(encrypted.subarray(0, 16)),
+      ivCipher.final(),
+    ])
+    const dataCipher = createDecipheriv('aes-256-cbc', key, iv)
+    const decrypted = Buffer.concat([
+      dataCipher.update(encrypted.subarray(16)),
+      dataCipher.final(),
+    ])
+    const terminator = decrypted.indexOf(0)
+    file.filename = decrypted
+      .subarray(0, terminator === -1 ? decrypted.length : terminator)
+      .toString('utf8')
+  }
+  manifest.filenames_encrypted = false
 }
 
 export function parseManifestEnvelope(contents: Buffer): DepotManifest {
