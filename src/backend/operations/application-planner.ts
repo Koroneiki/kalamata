@@ -30,6 +30,7 @@ interface DesiredDepotContext {
 }
 
 export interface ApplicationPlanRequest {
+  operationId?: string
   kind: OperationKind
   appId: number
   installPath: string

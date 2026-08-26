@@ -3,7 +3,10 @@ import { realpath, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { ApplicationTransactionError } from '../../../src/backend/depot/install/transaction/types.ts'
 import type { ReconcileApplicationOptions } from '../../../src/backend/depot/depot-download-service.ts'
-import { DownloadQueueCoordinator } from '../../../src/backend/operations/download-queue.ts'
+import {
+  DownloadQueueCoordinator,
+  type OperationFailureContext,
+} from '../../../src/backend/operations/download-queue.ts'
 import { planApplication } from '../../../src/backend/operations/application-planner.ts'
 import {
   APP_ID,
@@ -34,13 +37,7 @@ test('planning failure is a terminal typed state and does not reject start', asy
   const fixture = await setup()
   const secret = `${DEPOTS[0].key}: steam raw failure`
   const reportError = mock(
-    (
-      _error: Error,
-      _context: {
-        appId: number
-        kind: 'download' | 'reconcile' | 'repair'
-      },
-    ) => {},
+    (_error: Error, _context: OperationFailureContext) => {},
   )
   const queue = new DownloadQueueCoordinator(
     {
@@ -81,12 +78,69 @@ test('planning failure is a terminal typed state and does not reject start', asy
   expect(serialized).not.toContain(DEPOTS[0].key)
   expect(reportError).toHaveBeenCalledTimes(1)
   const reportedError = reportError.mock.calls[0]![0]
+  expect(reportError.mock.calls[0]![1]).toMatchObject({
+    operationId: expect.any(String),
+    appId: APP_ID,
+    kind: 'download',
+    phase: 'planning',
+    networkBytes: '0',
+    reusedLocalBytes: '0',
+  })
   expect(reportedError).toMatchObject({
     name: 'OperationError:steam',
     message: 'Could not reach Steam, or Steam denied the request.',
   })
   expect(reportedError.stack).not.toContain(secret)
   expect(reportedError.stack).not.toContain(DEPOTS[0].key)
+})
+
+test('reports transaction identity and partial counters on execution failure', async () => {
+  const fixture = await setup()
+  const reportError = mock(
+    (_error: Error, _context: OperationFailureContext) => {},
+  )
+  const queue = new DownloadQueueCoordinator(
+    {
+      getProductInfoWithDlc: async () => products(),
+      reconcileApplication: async (options) => {
+        options.onEvent?.({
+          type: 'transaction',
+          transactionId: 'failed-transaction',
+        })
+        options.onEvent?.({ type: 'phase', phase: 'downloading' })
+        options.onEvent?.({
+          type: 'progress',
+          logicalInstalledCompleted: '30',
+          logicalInstalledTotal: '100',
+          reusedLocal: '20',
+          actualNetwork: '10',
+          estimatedDownloadBytes: '80',
+        })
+        throw new ApplicationTransactionError('steam', 'transfer failed')
+      },
+    },
+    fixture.database,
+    () => {},
+    reportError,
+  )
+
+  await queue.start({
+    appId: APP_ID,
+    installPath: fixture.installPath,
+    depotIds: [DEPOTS[0].depotId],
+  })
+  await waitForTerminal(queue)
+
+  expect(reportError).toHaveBeenCalledTimes(1)
+  expect(reportError.mock.calls[0]![1]).toMatchObject({
+    operationId: expect.any(String),
+    transactionId: 'failed-transaction',
+    appId: APP_ID,
+    kind: 'download',
+    phase: 'downloading',
+    networkBytes: '10',
+    reusedLocalBytes: '20',
+  })
 })
 
 test('planning reuses manifest resources without reusing occurrence ownership', async () => {

@@ -23,6 +23,7 @@ import {
   desiredRecords,
   filesystemChangesNeeded,
   isDirectory,
+  isUserConfig,
   sameManifestOwner,
   stagedFileLayout,
   sumProjectionFiles,
@@ -149,6 +150,9 @@ async function runUnlocked(
       reusedLocalBytes: progress.reusedLocal.toString(),
       networkBytes: '0',
       estimatedDownloadBytes: '0',
+      filesAdded: 0,
+      filesModified: 0,
+      filesDeleted: 0,
     }
   }
 
@@ -161,6 +165,7 @@ async function runUnlocked(
     progress,
     resumed,
   )
+  options.onEvent?.({ type: 'transaction', transactionId: transaction.id })
   return executeTransaction(
     options,
     source,
@@ -405,6 +410,7 @@ async function executeTransaction(
       staged,
       backupRoot,
     )
+    const fileCounts = committedFileCounts(source, target, actions)
     throwIfAborted(options.signal)
     options.onEvent?.({ type: 'phase', phase: 'committing' })
     const journal: TransactionJournal = {
@@ -425,6 +431,7 @@ async function executeTransaction(
       reusedLocalBytes: progress.reusedLocal.toString(),
       networkBytes: progress.actualNetwork.toString(),
       estimatedDownloadBytes: progress.estimatedDownload?.toString() ?? '0',
+      ...fileCounts,
     }
   } catch (error) {
     const failure: TransactionFailure = { cause: error }
@@ -436,6 +443,31 @@ async function executeTransaction(
     )
     throwTransactionFailure(options, failure)
   }
+}
+
+function committedFileCounts(
+  source: Map<string, ProjectionEntry>,
+  target: Map<string, ProjectionEntry>,
+  actions: Pick<TransactionJournal, 'oldMoves' | 'installs'>,
+): Pick<
+  ApplicationTransactionResult,
+  'filesAdded' | 'filesModified' | 'filesDeleted'
+> {
+  const fileInstalls = actions.installs.filter((action) => !action.directory)
+  const filesModified = fileInstalls.filter((action) => {
+    const previous = source.get(manifestPathKey(action.path))
+    return previous !== undefined && !isDirectory(previous.file)
+  }).length
+  const filesAdded = fileInstalls.length - filesModified
+  const movedRoots = actions.oldMoves.map(({ path }) => manifestPathKey(path))
+  const filesDeleted = [...source].filter(([key, entry]) => {
+    if (isDirectory(entry.file) || isUserConfig(entry.file)) return false
+    const replacement = target.get(key)
+    if (replacement && !isDirectory(replacement.file)) return false
+    return movedRoots.some((root) => key === root || key.startsWith(`${root}/`))
+  }).length
+
+  return { filesAdded, filesModified, filesDeleted }
 }
 
 async function cleanupInterruptedStaging(

@@ -27,8 +27,12 @@ test('appends structured diagnostic events and errors', async () => {
   diagnostics.error({
     event: 'operation.failed',
     error: new Error('network unavailable'),
+    operationId: 'operation-1',
     appId: 440,
     kind: 'download',
+    phase: 'downloading',
+    networkBytes: '12',
+    reusedLocalBytes: '34',
   })
   diagnostics.error({
     event: 'product-info.package-discovery-failed',
@@ -43,7 +47,11 @@ test('appends structured diagnostic events and errors', async () => {
     {
       level: 'error',
       event: 'operation.failed',
+      operationId: 'operation-1',
       appId: 440,
+      phase: 'downloading',
+      networkBytes: '12',
+      reusedLocalBytes: '34',
       error: { name: 'Error', message: 'network unavailable' },
     },
     {

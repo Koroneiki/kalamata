@@ -182,6 +182,9 @@ export async function successfulReconciliation(
     reusedLocalBytes: '20',
     networkBytes: '10',
     estimatedDownloadBytes: '10',
+    filesAdded: 1,
+    filesModified: 2,
+    filesDeleted: 3,
   }
 }
 

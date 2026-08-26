@@ -110,11 +110,20 @@ describe('application filesystem transactions', () => {
     const updated = depot(10, '2', { 'update.bin': 'new' })
     const installed = depot(30, '1', { 'install.bin': 'added' })
 
-    await run(directory, [outdated, removed], [updated, installed])
+    const result = await run(
+      directory,
+      [outdated, removed],
+      [updated, installed],
+    )
 
     expect(await text('update.bin')).toBe('new')
     expect(await text('install.bin')).toBe('added')
     expect(await exists('remove.bin')).toBe(false)
+    expect(result).toMatchObject({
+      filesAdded: 1,
+      filesModified: 1,
+      filesDeleted: 1,
+    })
   })
 
   test('later mounted depot wins and removing it reveals the earlier owner', async () => {
@@ -151,10 +160,17 @@ describe('application filesystem transactions', () => {
     })
     const client = desired.client
 
-    await run(directory, [desired], [desired], { kind: 'repair' })
+    const repaired = await run(directory, [desired], [desired], {
+      kind: 'repair',
+    })
     expect(await text('corrupt.bin')).toBe('good')
     expect(await text('missing.bin')).toBe('new')
     expect(await text('wrong.bin')).toBe('file')
+    expect(repaired).toMatchObject({
+      filesAdded: 0,
+      filesModified: 3,
+      filesDeleted: 0,
+    })
     const calls = (client.downloadChunk as ReturnType<typeof mock>).mock.calls
       .length
 
@@ -162,6 +178,11 @@ describe('application filesystem transactions', () => {
       kind: 'repair',
     })
     expect(result.transactionId).toBeNull()
+    expect(result).toMatchObject({
+      filesAdded: 0,
+      filesModified: 0,
+      filesDeleted: 0,
+    })
     expect(
       (client.downloadChunk as ReturnType<typeof mock>).mock.calls.length,
     ).toBe(calls)
@@ -392,16 +413,20 @@ describe('application filesystem transactions', () => {
       actualNetwork: string
       logicalInstalledCompleted: string
     }> = []
+    const transactionIds: string[] = []
 
     const result = await run(directory, [], [desired], {
       onEvent: (event) => {
         if (event.type === 'progress') progress.push(event)
+        if (event.type === 'transaction')
+          transactionIds.push(event.transactionId)
       },
     })
 
     expect(result.networkBytes).toBe('2')
     expect(result.estimatedDownloadBytes).toBe('4')
     expect(result.logicalInstalledBytes).toBe('8')
+    expect(transactionIds).toEqual([result.transactionId!])
     expect(desired.client.downloadChunk).toHaveBeenCalledTimes(1)
     expect(progress.at(-1)).toMatchObject({
       actualNetwork: '2',

@@ -295,30 +295,15 @@ const rpc = BrowserView.defineRPC<AppRpc>({
   },
 })
 
-let lastOperationEvent = 'idle'
 queue = new DownloadQueueCoordinator(
   steam,
   database,
   (snapshot) => {
     if (rpcReady) rpc.send.downloadQueueChanged(snapshot)
-    const state = snapshot.operation
-    const operationEvent =
-      state.status === 'active'
-        ? `${state.status}:${state.phase}`
-        : state.status
-    if (operationEvent === lastOperationEvent) return
-    lastOperationEvent = operationEvent
-    diagnostics.info({
-      event: 'operation.state-changed',
-      status: state.status,
-      phase: 'phase' in state ? state.phase : undefined,
-      kind: 'kind' in state ? state.kind : undefined,
-      appId: 'appId' in state ? state.appId : undefined,
-      operationError: 'error' in state ? state.error : undefined,
-    })
   },
   (error, context) =>
     diagnostics.error({ event: 'operation.failed', error, ...context }),
+  (event) => diagnostics.info(event),
 )
 
 let shutdownStarted = false

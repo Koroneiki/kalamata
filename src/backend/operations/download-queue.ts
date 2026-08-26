@@ -6,6 +6,7 @@ import type {
 import type {
   ApplicationDepotRecord,
   ApplicationTransactionEvent,
+  ApplicationTransactionProgress,
   ApplicationTransactionResult,
 } from '../depot/install/transaction/types.ts'
 import {
@@ -74,6 +75,65 @@ interface QueuePreparationFailure {
   error: Error
 }
 
+export interface OperationFailureContext {
+  operationId: string
+  transactionId?: string
+  appId: number
+  kind: ApplicationPlanRequest['kind']
+  phase: ActiveOperationState['phase']
+  networkBytes: string
+  reusedLocalBytes: string
+}
+
+export type OperationLifecycleEvent =
+  | {
+      event: 'operation.started'
+      operationId: string
+      appId: number
+      kind: ApplicationPlanRequest['kind']
+    }
+  | {
+      event: 'operation.phase-changed'
+      operationId: string
+      transactionId?: string
+      appId: number
+      kind: ApplicationPlanRequest['kind']
+      phase: ActiveOperationState['phase']
+    }
+  | {
+      event: 'operation.completed'
+      operationId: string
+      transactionId: string | null
+      appId: number
+      kind: ApplicationPlanRequest['kind']
+      filesAdded: number
+      filesModified: number
+      filesDeleted: number
+      networkBytes: string
+      reusedLocalBytes: string
+    }
+  | {
+      event: 'operation.cancelled'
+      operationId: string
+      transactionId?: string
+      appId: number
+      kind: ApplicationPlanRequest['kind']
+      phase: ActiveOperationState['phase']
+      networkBytes: string
+      reusedLocalBytes: string
+    }
+  | {
+      event: 'operation.suspended'
+      operationId: string
+      transactionId?: string
+      appId: number
+      kind: ApplicationPlanRequest['kind']
+      phase: ActiveOperationState['phase']
+      networkBytes: string
+      reusedLocalBytes: string
+      status: 'paused' | 'resumable'
+    }
+
 export class DownloadQueueCoordinator {
   #state: OperationState = { status: 'idle' }
   #controller: AbortController | undefined
@@ -83,7 +143,9 @@ export class DownloadQueueCoordinator {
   #acceptanceQueue: Promise<void> = Promise.resolve()
   #pumpPromise: Promise<QueuePreparationFailure | undefined> | undefined
   #controlPromise: Promise<unknown> | undefined
-  #operationId = 0
+  #runGeneration = 0
+  #transactionId: string | undefined
+  #lifecycleOperationId: string | undefined
   #progressQueued = false
   #currentRequest: ApplicationPlanRequest | undefined
   #displacedQueueItemId: string | undefined
@@ -101,7 +163,10 @@ export class DownloadQueueCoordinator {
     ) => void = () => {},
     private readonly reportError: (
       error: Error,
-      context: { appId: number; kind: ApplicationPlanRequest['kind'] },
+      context: OperationFailureContext,
+    ) => void = () => {},
+    private readonly reportLifecycle: (
+      event: OperationLifecycleEvent,
     ) => void = () => {},
   ) {}
 
@@ -328,6 +393,17 @@ export class DownloadQueueCoordinator {
           },
         }
         this.database.clearUnusedInstallPath(state.appId)
+        this.reportLifecycle({
+          event: 'operation.cancelled',
+          operationId: request.operationId!,
+          transactionId: this.#transactionId,
+          appId: request.appId,
+          kind: request.kind,
+          phase: state.phase,
+          networkBytes: state.networkBytes,
+          reusedLocalBytes: state.reusedLocalBytes,
+        })
+        this.#lifecycleOperationId = undefined
         this.emitState()
         await this.pump()
         return { accepted: true }
@@ -448,6 +524,7 @@ export class DownloadQueueCoordinator {
     const desiredDepotIds = [
       ...(request.desiredDepotIds ?? request.requestedDepotIds ?? []),
     ]
+    request.operationId ??= randomUUID()
     const active: ActiveOperationState = {
       status: 'active',
       kind: request.kind,
@@ -467,12 +544,14 @@ export class DownloadQueueCoordinator {
     this.#pausing = false
     this.#cancelRequested = false
     this.#currentRequest = request
-    const operationId = ++this.#operationId
+    this.#transactionId = undefined
+    const runGeneration = ++this.#runGeneration
     this.#progressQueued = false
+    this.reportOperationStarted(request)
     this.emitState()
     this.#runPromise = this.runSafely(request, this.#controller.signal).finally(
       () => {
-        if (this.#operationId !== operationId) return
+        if (this.#runGeneration !== runGeneration) return
         this.#controller = undefined
         this.#runPromise = undefined
         this.#commitStarted = false
@@ -625,7 +704,7 @@ export class DownloadQueueCoordinator {
     const request = this.#currentRequest
     if (!request) throw new Error('Current operation request is unavailable')
     return {
-      id: randomUUID(),
+      id: request.operationId ?? randomUUID(),
       kind: request.kind,
       appId: request.appId,
       installPath: request.installPath,
@@ -702,6 +781,19 @@ export class DownloadQueueCoordinator {
     this.#repairRequirements.delete(request.appId)
     this.#currentRequest = undefined
     this.#state = completedState
+    this.reportLifecycle({
+      event: 'operation.completed',
+      operationId: request.operationId!,
+      transactionId: result.transactionId,
+      appId: request.appId,
+      kind: request.kind,
+      filesAdded: result.filesAdded,
+      filesModified: result.filesModified,
+      filesDeleted: result.filesDeleted,
+      networkBytes: result.networkBytes,
+      reusedLocalBytes: result.reusedLocalBytes,
+    })
+    this.#lifecycleOperationId = undefined
   }
 
   private async handleOperationFailure(
@@ -721,10 +813,10 @@ export class DownloadQueueCoordinator {
         disposition.shuttingDown,
       ].includes(true)
     )
-      this.reportError(diagnosticOperationError(failure), {
-        appId: request.appId,
-        kind: request.kind,
-      })
+      this.reportError(
+        diagnosticOperationError(failure),
+        this.failureContext(request),
+      )
     if (disposition.cancelled && !disposition.commitReady) {
       await discardPrecommitApplicationTransaction(request.installPath)
       this.#currentRequest = undefined
@@ -756,6 +848,19 @@ export class DownloadQueueCoordinator {
       if (!pending) this.database.clearUnusedInstallPath(request.appId)
     }
     this.#state = nextState
+    if (nextState.status === 'cancelled')
+      this.reportLifecycle({
+        event: 'operation.cancelled',
+        ...this.lifecycleContext(request, activeState),
+      })
+    else if (nextState.status === 'paused' || nextState.status === 'resumable')
+      this.reportLifecycle({
+        event: 'operation.suspended',
+        ...this.lifecycleContext(request, activeState),
+        status: nextState.status,
+      })
+    if (!['paused', 'resumable'].includes(nextState.status))
+      this.#lifecycleOperationId = undefined
   }
 
   private async classifyOperationFailure(
@@ -835,10 +940,11 @@ export class DownloadQueueCoordinator {
     try {
       await this.run(request, signal)
     } catch (error) {
-      this.reportError(diagnosticOperationError(operationError(error)), {
-        appId: request.appId,
-        kind: request.kind,
-      })
+      this.reportError(
+        diagnosticOperationError(operationError(error)),
+        this.failureContext(request),
+      )
+      this.#lifecycleOperationId = undefined
       this.#currentRequest = undefined
       this.#repairRequirements.set(request.appId, request.installPath)
       this.#state = repairRequiredState(request.appId, request.installPath)
@@ -883,35 +989,56 @@ export class DownloadQueueCoordinator {
 
   private handleEvent(event: ApplicationTransactionEvent): void {
     if (this.#state.status !== 'active') return
-    if (event.type === 'progress') {
-      this.#state = {
-        ...this.#state,
-        installedBytesCompleted: event.logicalInstalledCompleted,
-        installedBytesTotal: event.logicalInstalledTotal,
-        reusedLocalBytes: event.reusedLocal,
-        networkBytes: event.actualNetwork,
-        estimatedDownloadBytes: event.estimatedDownloadBytes,
-      }
-      if (!this.#progressQueued) {
-        this.#progressQueued = true
-        queueMicrotask(() => {
-          if (!this.#progressQueued) return
-          this.#progressQueued = false
-          this.emitState()
-        })
-      }
+    if (event.type === 'transaction') {
+      this.#transactionId = event.transactionId
       return
-    } else {
-      const phase =
-        event.phase === 'persisting-local' || event.phase === 'reconciling'
-          ? 'reconciling'
-          : event.phase === 'completed'
-            ? this.#state.phase
-            : event.phase
-      if (phase === 'committing' || phase === 'reconciling')
-        this.#commitStarted = true
-      this.#state = { ...this.#state, phase }
     }
+    if (event.type === 'progress') return this.handleProgressEvent(event)
+    this.handlePhaseEvent(event)
+  }
+
+  private handleProgressEvent(event: ApplicationTransactionProgress): void {
+    if (this.#state.status !== 'active') return
+    this.#state = {
+      ...this.#state,
+      installedBytesCompleted: event.logicalInstalledCompleted,
+      installedBytesTotal: event.logicalInstalledTotal,
+      reusedLocalBytes: event.reusedLocal,
+      networkBytes: event.actualNetwork,
+      estimatedDownloadBytes: event.estimatedDownloadBytes,
+    }
+    if (this.#progressQueued) return
+    this.#progressQueued = true
+    queueMicrotask(() => {
+      if (!this.#progressQueued) return
+      this.#progressQueued = false
+      this.emitState()
+    })
+  }
+
+  private handlePhaseEvent(
+    event: Extract<ApplicationTransactionEvent, { type: 'phase' }>,
+  ): void {
+    if (this.#state.status !== 'active') return
+    const previousPhase = this.#state.phase
+    const phase =
+      event.phase === 'persisting-local' || event.phase === 'reconciling'
+        ? 'reconciling'
+        : event.phase === 'completed'
+          ? this.#state.phase
+          : event.phase
+    if (phase === 'committing' || phase === 'reconciling')
+      this.#commitStarted = true
+    this.#state = { ...this.#state, phase }
+    if (phase !== previousPhase && this.#currentRequest)
+      this.reportLifecycle({
+        event: 'operation.phase-changed',
+        operationId: this.#currentRequest.operationId!,
+        transactionId: this.#transactionId,
+        appId: this.#currentRequest.appId,
+        kind: this.#currentRequest.kind,
+        phase,
+      })
     this.#progressQueued = false
     this.emitState()
   }
@@ -940,6 +1067,12 @@ export class DownloadQueueCoordinator {
           ]),
         )
         if (!item) return firstFailure
+        this.reportOperationStarted({
+          operationId: item.id,
+          appId: item.appId,
+          kind: item.kind,
+          installPath: item.installPath,
+        })
         try {
           const request = await this.requestForQueueItem(item)
           this.begin(request, true)
@@ -951,9 +1084,14 @@ export class DownloadQueueCoordinator {
           firstFailure ??= { itemId: item.id, error: operationFailure }
           this.emitState()
           this.reportError(diagnosticOperationError(operationFailure), {
+            operationId: item.id,
             appId: item.appId,
             kind: item.kind,
+            phase: 'planning',
+            networkBytes: '0',
+            reusedLocalBytes: '0',
           })
+          this.#lifecycleOperationId = undefined
         }
       }
       return firstFailure
@@ -972,6 +1110,7 @@ export class DownloadQueueCoordinator {
     const resumed = await this.resumableRequestForQueueItem(item)
     if (resumed) return resumed
     const request: ApplicationPlanRequest = {
+      operationId: item.id,
       kind: item.kind,
       appId: item.appId,
       installPath: item.installPath,
@@ -1008,6 +1147,7 @@ export class DownloadQueueCoordinator {
     if (resumable.kind !== item.kind)
       throw new Error('Queued operation does not match its saved progress')
     const request: ApplicationPlanRequest = {
+      operationId: item.id,
       kind: resumable.kind,
       appId: resumable.appId,
       installPath: resumable.installPath,
@@ -1017,6 +1157,49 @@ export class DownloadQueueCoordinator {
     if (resumable.kind === 'download')
       request.requestedDepotIds = resumable.desiredDepotIds
     return request
+  }
+
+  private lifecycleContext(
+    request: ApplicationPlanRequest,
+    state: ActiveOperationState,
+  ) {
+    return {
+      operationId: request.operationId!,
+      transactionId: this.#transactionId,
+      appId: request.appId,
+      kind: request.kind,
+      phase: state.phase,
+      networkBytes: state.networkBytes,
+      reusedLocalBytes: state.reusedLocalBytes,
+    }
+  }
+
+  private reportOperationStarted(request: ApplicationPlanRequest): void {
+    if (this.#lifecycleOperationId === request.operationId) return
+    this.#lifecycleOperationId = request.operationId
+    this.reportLifecycle({
+      event: 'operation.started',
+      operationId: request.operationId!,
+      appId: request.appId,
+      kind: request.kind,
+    })
+  }
+
+  private failureContext(
+    request: ApplicationPlanRequest,
+  ): OperationFailureContext {
+    const state = this.#state
+    if (state.status !== 'active')
+      return {
+        operationId: request.operationId!,
+        transactionId: this.#transactionId,
+        appId: request.appId,
+        kind: request.kind,
+        phase: 'planning',
+        networkBytes: '0',
+        reusedLocalBytes: '0',
+      }
+    return this.lifecycleContext(request, state)
   }
 }
 

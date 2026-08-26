@@ -1,5 +1,9 @@
 import { appendFileSync, mkdirSync, renameSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import type {
+  OperationFailureContext,
+  OperationLifecycleEvent,
+} from '../backend/operations/download-queue.ts'
 
 const MAX_LOG_SIZE_BYTES = 1024 * 1024
 
@@ -22,14 +26,7 @@ type InfoDiagnostic =
   | {
       event: 'app.ready' | 'app.shutdown-started' | 'app.shutdown-completed'
     }
-  | {
-      event: 'operation.state-changed'
-      status: string
-      phase?: string
-      kind?: string
-      appId?: number
-      operationError?: { kind: string; message: string }
-    }
+  | OperationLifecycleEvent
 
 type ErrorDiagnostic =
   | { event: 'depot-key-cache.initialization-failed'; error: Error }
@@ -43,7 +40,7 @@ type ErrorDiagnostic =
       appId: number
       kind: string
     }
-  | { event: 'operation.failed'; error: Error; appId: number; kind: string }
+  | ({ event: 'operation.failed'; error: Error } & OperationFailureContext)
   | { event: 'app.shutdown-failed'; error: Error }
   | { event: 'recovery.failed'; error: Error; appId: number }
   | {

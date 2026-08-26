@@ -3,7 +3,10 @@ import { mkdir, realpath, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ProductInfoResult } from '../../../src/backend/steam/types.ts'
 import { getResumableApplicationTransaction } from '../../../src/backend/depot/install/transaction/recovery.ts'
-import { DownloadQueueCoordinator } from '../../../src/backend/operations/download-queue.ts'
+import {
+  DownloadQueueCoordinator,
+  type OperationLifecycleEvent,
+} from '../../../src/backend/operations/download-queue.ts'
 import {
   APP_ID,
   DEPOTS,
@@ -29,6 +32,57 @@ async function setup(): Promise<DownloadQueueFixture> {
   currentFixture = await setupDownloadQueue()
   return currentFixture
 }
+
+test('reports correlated operation lifecycle totals', async () => {
+  const fixture = await setup()
+  const events: OperationLifecycleEvent[] = []
+  const queue = new DownloadQueueCoordinator(
+    {
+      getProductInfoWithDlc: async () => products(),
+      reconcileApplication: async (options) => {
+        options.onEvent?.({
+          type: 'transaction',
+          transactionId: 'transaction-id',
+        })
+        options.onEvent?.({ type: 'phase', phase: 'downloading' })
+        return successfulReconciliation(options)
+      },
+    },
+    fixture.database,
+    () => {},
+    () => {},
+    (event) => events.push(event),
+  )
+
+  await queue.start({
+    appId: APP_ID,
+    installPath: fixture.installPath,
+    depotIds: [DEPOTS[0].depotId],
+  })
+  await waitForTerminal(queue)
+
+  const started = events.find((event) => event.event === 'operation.started')!
+  expect(events).toContainEqual({
+    event: 'operation.phase-changed',
+    operationId: started.operationId,
+    transactionId: 'transaction-id',
+    appId: APP_ID,
+    kind: 'download',
+    phase: 'downloading',
+  })
+  expect(events).toContainEqual({
+    event: 'operation.completed',
+    operationId: started.operationId,
+    transactionId: 'transaction-id',
+    appId: APP_ID,
+    kind: 'download',
+    filesAdded: 1,
+    filesModified: 2,
+    filesDeleted: 3,
+    networkBytes: '10',
+    reusedLocalBytes: '20',
+  })
+})
 
 async function waitForCompletedApp(
   queue: DownloadQueueCoordinator,

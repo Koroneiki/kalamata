@@ -7,7 +7,10 @@ import {
   getResumableApplicationTransaction,
   recoverApplicationTransaction,
 } from '../../../src/backend/depot/install/transaction/recovery.ts'
-import { DownloadQueueCoordinator } from '../../../src/backend/operations/download-queue.ts'
+import {
+  DownloadQueueCoordinator,
+  type OperationLifecycleEvent,
+} from '../../../src/backend/operations/download-queue.ts'
 import {
   APP_ID,
   DEPOTS,
@@ -66,6 +69,7 @@ test('unavailable resources remain resumable after staging begins', async () => 
 test('transfer exhaustion remains resumable and cancellable', async () => {
   const fixture = await setup()
   let attempts = 0
+  const events: OperationLifecycleEvent[] = []
   const queue = new DownloadQueueCoordinator(
     {
       getProductInfoWithDlc: async () => products(),
@@ -79,6 +83,9 @@ test('transfer exhaustion remains resumable and cancellable', async () => {
       },
     },
     fixture.database,
+    () => {},
+    () => {},
+    (event) => events.push(event),
   )
 
   await queue.start({
@@ -97,6 +104,15 @@ test('transfer exhaustion remains resumable and cancellable', async () => {
   })
   await expect(queue.cancel()).resolves.toEqual({ accepted: true })
   expect(queue.getOperationState().status).toBe('cancelled')
+  const started = events.find((event) => event.event === 'operation.started')!
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      event: 'operation.cancelled',
+      operationId: started.operationId,
+      appId: APP_ID,
+      kind: 'download',
+    }),
+  )
   await expect(
     getResumableApplicationTransaction(fixture.installPath, APP_ID),
   ).resolves.toBeNull()

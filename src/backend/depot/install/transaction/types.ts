@@ -66,6 +66,7 @@ export interface ApplicationTransactionProgress {
 
 export type ApplicationTransactionEvent =
   | ApplicationTransactionProgress
+  | { type: 'transaction'; transactionId: string }
   | {
       type: 'phase'
       phase:
@@ -113,6 +114,9 @@ export interface ApplicationTransactionResult {
   reusedLocalBytes: string
   networkBytes: string
   estimatedDownloadBytes: string
+  filesAdded: number
+  filesModified: number
+  filesDeleted: number
 }
 
 export interface ResumableApplicationTransaction {
