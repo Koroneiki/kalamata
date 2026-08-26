@@ -1,5 +1,31 @@
 # Changelog
 
+## v1.0.1
+
+Release date: 26.08.2026
+
+[compare changes](https://github.com/Koroneiki/kalamata/compare/v1.0.0...v1.0.1)
+
+### 🚀 New
+
+- **diagnostics:** Correlate operation planning, download, transaction, recovery, and failure events.
+
+### ✨ Enhancements
+
+- **updates:** Skip validation for unchanged files when planning and applying updates.
+
+### 🩹 Fixes
+
+- **preview:** Account for encrypted manifests, reusable chunks, reused files, and overlapping depot paths in download and temporary-space estimates.
+
+### ✅ Tests
+
+- **preview:** Pin case-only path coverage to the Windows target platform.
+
+### ❤️ Contributors
+
+- Koroneiki <101889814+Koroneiki@users.noreply.github.com>
+
 ## v1.0.0
 
 Release date: 22.08.2026
