@@ -15,7 +15,7 @@ export default {
       icons: 'assets/icon.iconset',
     },
     win: {
-      icon: 'assets/icon.png',
+      icon: 'assets/icon.iconset/icon_256x256.png',
     },
     linux: {
       icon: 'assets/icon.png',
