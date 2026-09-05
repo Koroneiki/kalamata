@@ -3,7 +3,7 @@ import Electrobun, {
   BrowserWindow,
   Updater,
   Utils,
-} from 'electrobun/bun'
+} from 'electrobun/main'
 
 import { createSteamService } from '../backend/index.ts'
 import { AppService } from '../backend/apps/app-service.ts'
@@ -39,7 +39,7 @@ diagnostics.info({
 })
 
 async function getMainViewUrl(): Promise<string> {
-  if ((await Updater.localInfo.channel()) === 'dev') {
+  if ((await Updater.getLocalInfo()).channel === 'dev') {
     try {
       await fetch(DEV_SERVER_URL, { method: 'HEAD' })
       return DEV_SERVER_URL
@@ -292,6 +292,7 @@ const rpc = BrowserView.defineRPC<AppRpc>({
         return queue.prioritizeQueuedOperation(id)
       },
     }),
+    messages: {},
   },
 })
 

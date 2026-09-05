@@ -2,6 +2,7 @@
   "extends": "@tsconfig/node22/tsconfig.json",
   "include": [
     "electrobun.config.ts",
+    "hutch.config.ts",
     "src/backend/**/*",
     "src/bun/**/*",
     "src/db/**/*",
@@ -15,6 +16,10 @@
     "resolveJsonModule": true,
     "lib": ["ES2024", "WebWorker"],
     "allowImportingTsExtensions": true,
-    "types": ["bun"]
+    "types": ["bun"],
+    "paths": {
+      "electrobun": ["./.hutch/devkit/api/sdks/main/index.ts"],
+      "electrobun/main": ["./.hutch/devkit/api/sdks/main/index.ts"]
+    }
   }
 }

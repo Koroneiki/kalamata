@@ -2,6 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
   "entry": [
     "electrobun.config.ts",
+    "hutch.config.ts",
     "scripts/sign-macos-wrapper.ts",
     "src/bun/index.ts",
     "src/backend/depot/transfer/decompress-worker.ts",
@@ -9,13 +10,14 @@
   ],
   // Generated shadcn-vue and managed anti-slop sources are maintained externally.
   "ignorePatterns": ["src/components/ui/**", "tools/oxlint/anti-slop/**"],
-  // These are consumed by excluded generated UI, runtime requires, or build-time CSS imports.
+  // These are consumed by excluded generated UI, generated SDK code, runtime requires, or build tooling.
   "ignoreDependencies": [
     "@doctormckay/steam-crypto",
     "@oxlint/plugins",
     "@vueuse/core",
     "adm-zip",
     "class-variance-authority",
+    "electrobun",
     "tailwindcss",
   ],
 }

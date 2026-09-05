@@ -4,6 +4,7 @@ coverage/
 dist/
 build/
 artifacts/
+.hutch/
 *.tmp
 /download-*.ts
 fixtures-key-temp.txt

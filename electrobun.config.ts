@@ -10,7 +10,7 @@ export default {
       'Download public Steam depot files using depot keys and manifests stored on this computer.',
   },
   build: {
-    targets: process.env.KALAMATA_BUILD_TARGET ?? 'current',
+    mainProcess: 'bun',
     mac: {
       icons: 'assets/icon.iconset',
     },
@@ -41,7 +41,6 @@ export default {
     watchIgnore: ['dist/**'],
   },
   scripts: {
-    preBuild: './scripts/build-decompress-worker.ts',
     postWrap: './scripts/sign-macos-wrapper.ts',
   },
 } satisfies ElectrobunConfig

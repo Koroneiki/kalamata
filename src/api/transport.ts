@@ -9,10 +9,11 @@ import {
 } from '@/types/rpc-schemas'
 
 type Requests = AppRpc['bun']['requests']
-type AppRequest = <K extends keyof Requests>(
-  method: K,
-  params: Requests[K]['params'],
-) => Promise<Requests[K]['response']>
+type AppRequests = {
+  [K in keyof Requests]: (
+    params: Requests[K]['params'],
+  ) => Promise<Requests[K]['response']>
+}
 
 type DownloadQueueListener = (
   snapshot: DownloadQueueSnapshot,
@@ -35,6 +36,7 @@ const rpc = Electroview.defineRPC<AppRpc>({
   // work such as manifest acquisition, filesystem previews, or durable pauses.
   maxRequestTime: Infinity,
   handlers: {
+    requests: {},
     messages: {
       downloadQueueChanged: (snapshot) => {
         const result = downloadQueueSnapshotSchema.safeParse(snapshot)
@@ -56,16 +58,15 @@ const rpc = Electroview.defineRPC<AppRpc>({
   },
 })
 
-const electroview = new Electroview({ rpc })
+new Electroview({ rpc })
 
 export async function request<K extends keyof Requests>(
   method: K,
   params: Requests[K]['params'],
 ): Promise<Requests[K]['response']> {
-  // SAFETY: every Kalamata RPC request declares required `params`; this removes
-  // Electrobun's conditional rest tuple while preserving each method's pairing.
-  const appRequest = electroview.rpc!.request as AppRequest
-  const response = await appRequest(method, params)
+  // SAFETY: the method key selects the matching parameter and response types.
+  const appRequests = rpc.request as AppRequests
+  const response = await appRequests[method](params)
   // SAFETY: `method` selects both the RPC response contract and its matching schema.
   return rpcResponseSchemas[method].parse(response) as Requests[K]['response']
 }

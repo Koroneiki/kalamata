@@ -66,15 +66,10 @@ jobs:
         include:
           - platform: macos-arm64
             runner: macos-15
-            target: macos-arm64
-            installer: stable-macos-arm64-Kalamata.dmg
+            installer: macos-arm64-Kalamata.dmg
           - platform: windows-x64
             runner: windows-2025
-            target: win-x64
-            installer: stable-win-x64-Kalamata-Setup.zip
-
-    env:
-      KALAMATA_BUILD_TARGET: ${{ matrix.target }}
+            installer: win-x64-Kalamata-Setup.zip
 
     steps:
       - name: Check out repository
@@ -93,15 +88,6 @@ jobs:
         run: |
           bun test --path-ignore-patterns="**/decompress-pool.test.ts"
           bun test ./test/decompress-pool.test.ts
-
-      - name: Work around Electrobun Windows icon resolution
-        if: matrix.platform == 'windows-x64'
-        shell: pwsh
-        run: |
-          # Electrobun 1.18.1 resolves rcedit from the CLI's build-machine path.
-          $target = 'D:\a\electrobun\electrobun\package\node_modules\rcedit'
-          New-Item -ItemType Directory -Force (Split-Path $target) | Out-Null
-          Copy-Item -Recurse -Force node_modules/rcedit $target
 
       - name: Build release
         run: bun run build
@@ -136,8 +122,8 @@ jobs:
         shell: bash
         run: |
           version="${GITHUB_REF_NAME#v}"
-          mv artifacts/stable-macos-arm64-Kalamata.dmg "artifacts/Kalamata-v${version}-macos-arm64.dmg"
-          mv artifacts/stable-win-x64-Kalamata-Setup.zip "artifacts/Kalamata-v${version}-windows-x64.zip"
+          mv artifacts/macos-arm64-Kalamata.dmg "artifacts/Kalamata-v${version}-macos-arm64.dmg"
+          mv artifacts/win-x64-Kalamata-Setup.zip "artifacts/Kalamata-v${version}-windows-x64.zip"
 
       - name: Create GitHub release
         env:
