@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.0.2
+
+Release date: 05.09.2026
+
+[compare changes](https://github.com/Koroneiki/kalamata/compare/v1.0.1...v1.0.2)
+
+### 🩹 Fixes
+
+- **windows:** Use a supported icon size when packaging the application.
+
+### 🏡 Chore
+
+- **runtime:** Migrate development and release tooling to Electrobun 2.
+
+### ❤️ Contributors
+
+- Koroneiki <101889814+Koroneiki@users.noreply.github.com>
+
 ## v1.0.1
 
 Release date: 26.08.2026
