@@ -5,7 +5,11 @@ import { acquireDepotKeys, acquireManifest } from '@/api/apps'
 import { appQueryKeys, hubcapUsageQueryKey } from '@/composables/queries'
 import { requestHubcapApproval } from '@/composables/use-hubcap-approval'
 import { useManifestQueueStore } from '@/stores/manifest-queue'
-import type { EligibleAppDepot } from '@/types/rpc'
+import type {
+  EligibleAppDepot,
+  HubcapDepotKeyOutcome,
+  HubcapManifestOutcome,
+} from '@/types/rpc'
 import { acquiredDepotKeysResult } from '@/utils/depot-key-results'
 import {
   acquisitionNeedsRequest,
@@ -31,7 +35,7 @@ export function useDepotResourceAcquisition() {
   async function acquireKeys(appId: number, depotIds: number[]) {
     const first = await acquireDepotKeys(appId, depotIds)
     if (first.hubcap?.status !== 'approval-required') {
-      await handleHubcapOutcome(first.hubcap)
+      await handleHubcapOutcome(first.hubcap, 'depot-keys')
       return first
     }
 
@@ -43,7 +47,7 @@ export function useDepotResourceAcquisition() {
       [...first.acquiredDepotIds, ...approved.acquiredDepotIds],
       approved.hubcap,
     )
-    await handleHubcapOutcome(approved.hubcap)
+    await handleHubcapOutcome(approved.hubcap, 'depot-keys')
     return result
   }
 
@@ -71,7 +75,8 @@ export function useDepotResourceAcquisition() {
   }
 
   async function handleHubcapOutcome(
-    outcome: Awaited<ReturnType<typeof acquireDepotKeys>>['hubcap'],
+    outcome: HubcapDepotKeyOutcome | HubcapManifestOutcome | undefined,
+    resource: 'depot-keys' | 'manifest',
   ) {
     if (!outcome || outcome.status === 'approval-required') return
     if (outcome.status === 'fetched') {
@@ -79,9 +84,12 @@ export function useDepotResourceAcquisition() {
         key: hubcapUsageQueryKey,
         exact: true,
       })
-      if (outcome.acquiredDepotIds.length > 0) {
+      if (
+        resource === 'manifest' ||
+        ('acquiredDepotIds' in outcome && outcome.acquiredDepotIds.length > 0)
+      ) {
         toast.success(
-          `Depot keys fetched from Hubcap. Rem.: ${outcome.usage.remaining} Gens.`,
+          `${resource === 'manifest' ? 'Manifest' : 'Depot keys'} fetched from Hubcap. Rem.: ${outcome.usage.remaining} Gens.`,
         )
       }
       return
@@ -96,7 +104,13 @@ export function useDepotResourceAcquisition() {
     queueId = manifestQueue.begin(1),
   ) {
     try {
-      return await acquireManifest(ownerAppId, depotId, manifestId)
+      const manifest = await acquireManifestWithHubcap(
+        ownerAppId,
+        depotId,
+        manifestId,
+      )
+      if (!manifest) throw new Error(`Manifest ${manifestId} is unavailable.`)
+      return manifest
     } finally {
       manifestQueue.settle(queueId)
     }
@@ -109,14 +123,41 @@ export function useDepotResourceAcquisition() {
     queueId: number,
   ) {
     try {
-      return await runCachedAcquisition(
+      const acquisition = await runCachedAcquisition(
         queryCache,
         resourceAcquisitionQueryKeys.manifest(depotId, manifestId),
-        () => acquireManifest(ownerAppId, depotId, manifestId),
+        () => acquireManifestWithHubcap(ownerAppId, depotId, manifestId),
       )
+      return {
+        ...acquisition,
+        fetched: acquisition.fetched && acquisition.data !== null,
+      }
     } finally {
       manifestQueue.settle(queueId)
     }
+  }
+
+  async function acquireManifestWithHubcap(
+    ownerAppId: number,
+    depotId: number,
+    manifestId: string,
+  ) {
+    const first = await acquireManifest(ownerAppId, depotId, manifestId)
+    if (first.hubcap?.status !== 'approval-required') {
+      await handleHubcapOutcome(first.hubcap, 'manifest')
+      return first.manifest
+    }
+
+    if (!(await requestHubcapApproval(first.hubcap.usage))) return null
+
+    const approved = await acquireManifest(
+      ownerAppId,
+      depotId,
+      manifestId,
+      true,
+    )
+    await handleHubcapOutcome(approved.hubcap, 'manifest')
+    return approved.manifest
   }
 
   async function acquireRequiredResources(

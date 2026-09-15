@@ -180,12 +180,26 @@ export interface AcquireManifestRequest {
   appId: number
   depotId: number
   manifestId: string
+  approveLowQuotaHubcap?: boolean
 }
 
 export interface AcquiredManifest {
   depotId: number
   manifestId: string
   relativePath: string
+}
+
+export type HubcapManifestOutcome =
+  | { status: 'approval-required'; usage: HubcapUsage }
+  | { status: 'fetched'; usage: HubcapUsage }
+  | { status: 'missing-key' }
+  | { status: 'invalid-key' }
+  | { status: 'quota-exhausted'; usage: HubcapUsage }
+  | { status: 'stats-unavailable' }
+
+export interface ManifestAcquisitionResult {
+  manifest: AcquiredManifest | null
+  hubcap?: HubcapManifestOutcome
 }
 
 export interface AcquireDepotKeysRequest {
@@ -474,7 +488,7 @@ export type AppRpc = {
       }
       acquireManifest: {
         params: AcquireManifestRequest
-        response: AcquiredManifest
+        response: ManifestAcquisitionResult
       }
       acquireDepotKeys: {
         params: AcquireDepotKeysRequest

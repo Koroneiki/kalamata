@@ -417,6 +417,19 @@ const hubcapDepotKeyOutcomeSchema = z.discriminatedUnion('status', [
   strict({ status: z.literal('quota-exhausted'), usage: hubcapUsageSchema }),
   strict({ status: z.literal('stats-unavailable') }),
 ])
+const hubcapManifestOutcomeSchema = z.discriminatedUnion('status', [
+  strict({ status: z.literal('approval-required'), usage: hubcapUsageSchema }),
+  strict({ status: z.literal('fetched'), usage: hubcapUsageSchema }),
+  strict({ status: z.literal('missing-key') }),
+  strict({ status: z.literal('invalid-key') }),
+  strict({ status: z.literal('quota-exhausted'), usage: hubcapUsageSchema }),
+  strict({ status: z.literal('stats-unavailable') }),
+])
+const acquiredManifestSchema = strict({
+  depotId: steamIdSchema,
+  manifestId: manifestIdSchema,
+  relativePath: z.string(),
+})
 
 const rpcRequestSchemas = {
   getAppSummary: idRequestSchema,
@@ -480,6 +493,7 @@ const rpcRequestSchemas = {
     appId: steamIdSchema,
     depotId: steamIdSchema,
     manifestId: manifestIdSchema,
+    approveLowQuotaHubcap: z.boolean().optional(),
   }),
   acquireDepotKeys: strict({
     appId: steamIdSchema,
@@ -566,9 +580,8 @@ export const rpcResponseSchemas = {
   }),
   repairApplication: downloadQueueSnapshotSchema,
   acquireManifest: strict({
-    depotId: steamIdSchema,
-    manifestId: manifestIdSchema,
-    relativePath: z.string(),
+    manifest: acquiredManifestSchema.nullable(),
+    hubcap: hubcapManifestOutcomeSchema.optional(),
   }),
   acquireDepotKeys: strict({
     acquiredDepotIds: z.array(steamIdSchema),

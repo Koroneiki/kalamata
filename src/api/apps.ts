@@ -24,11 +24,13 @@ export function acquireManifest(
   appId: number,
   depotId: number,
   manifestId: string,
+  approveLowQuotaHubcap?: boolean,
 ) {
   return request('acquireManifest', {
     appId,
     depotId,
     manifestId,
+    approveLowQuotaHubcap,
   })
 }
 

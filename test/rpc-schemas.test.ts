@@ -301,6 +301,14 @@ test('validates Hubcap requests, usage, and acquisition outcomes', () => {
       approveLowQuotaHubcap: 'yes',
     }),
   ).toThrow()
+  expect(
+    parseRpcRequest('acquireManifest', {
+      appId: 10,
+      depotId: 20,
+      manifestId: '30',
+      approveLowQuotaHubcap: true,
+    }).approveLowQuotaHubcap,
+  ).toBe(true)
   expect(hubcapUsageSchema.parse(usage)).toEqual(usage)
   expect(() => hubcapUsageSchema.parse({ ...usage, remaining: 9 })).toThrow()
 
@@ -321,6 +329,27 @@ test('validates Hubcap requests, usage, and acquisition outcomes', () => {
       }).success,
     ).toBe(true)
   }
+  for (const hubcap of outcomes.map((outcome) =>
+    outcome.status === 'fetched'
+      ? { status: outcome.status, usage: outcome.usage }
+      : outcome,
+  )) {
+    expect(
+      rpcResponseSchemas.acquireManifest.safeParse({
+        manifest: null,
+        hubcap,
+      }).success,
+    ).toBe(true)
+  }
+  expect(
+    rpcResponseSchemas.acquireManifest.safeParse({
+      manifest: {
+        depotId: 20,
+        manifestId: '30',
+        relativePath: 'manifest-files/20_30.manifest',
+      },
+    }).success,
+  ).toBe(true)
   expect(
     rpcResponseSchemas.getHubcapUsage.safeParse({
       status: 'available',

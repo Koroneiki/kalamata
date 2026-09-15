@@ -222,18 +222,11 @@ export class DepotKeyAcquisitionService {
       apiKey,
       this.#abortController.signal,
     )
-    const refreshed = await this.#hubcap.getUsage(
+    const usage = await this.#hubcap.getUsageAfterRequest(
       apiKey,
+      preflightUsage,
       this.#abortController.signal,
     )
-    const usage =
-      refreshed.status === 'available'
-        ? refreshed.usage
-        : {
-            ...preflightUsage,
-            dailyUsage: preflightUsage.dailyUsage + 1,
-            remaining: Math.max(0, preflightUsage.remaining - 1),
-          }
     return { source, usage }
   }
 

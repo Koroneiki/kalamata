@@ -50,11 +50,13 @@ test.skipIf(process.env.BALATRO_LIVE_INTEGRATION !== '1')(
         missingDepotIds: [],
       })
       const depotKey = depotKeyFromHex(database.getDepotKey(DEPOT_ID) ?? '')
-      const acquiredManifest = await manifests.acquire({
+      const acquisition = await manifests.acquire({
         appId: depot.ownerAppId,
         depotId: DEPOT_ID,
         manifestId,
       })
+      const acquiredManifest = acquisition.manifest
+      if (!acquiredManifest) throw new Error('Balatro manifest is unavailable')
       expect(acquiredManifest.manifestId).toBe(manifestId)
 
       const manifest = parseManifest(

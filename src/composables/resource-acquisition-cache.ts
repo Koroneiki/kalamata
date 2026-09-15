@@ -71,10 +71,6 @@ function invalidateAcquisitions(queryCache: QueryCache, key: EntryKey) {
   }
 }
 
-export function invalidateDepotKeyAcquisitions(queryCache: QueryCache) {
-  invalidateAcquisitions(queryCache, depotKeyAcquisitionQueryKey)
-}
-
 export function invalidateResourceAcquisitions(queryCache: QueryCache) {
   invalidateAcquisitions(queryCache, resourceAcquisitionQueryKey)
 }

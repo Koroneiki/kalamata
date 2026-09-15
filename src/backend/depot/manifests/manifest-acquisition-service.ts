@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { rm, writeFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import type { KalamataDatabase } from '../../../db/database.ts'
 import {
@@ -14,18 +15,22 @@ import {
 import type {
   AcquiredManifest,
   AcquireManifestRequest,
+  HubcapUsage,
+  ManifestAcquisitionResult,
 } from '../../../types/rpc.ts'
 import { abortable } from '../../shared/abortable.ts'
 import type { SteamSession } from '../../steam/steam-session.ts'
 import type { ContentServer } from '../../steam/types.ts'
+import { HubcapClient } from '../keys/hubcap-client.ts'
 import {
   parseManifestEnvelope,
   validateManifestEnvelope,
 } from './manifest-codec.ts'
 
 // Steam CDN manifest URLs require a code obtained from this external compatibility service.
-const REQUEST_CODE_URL = 'https://manifest.opensteamtool.com'
-const REQUEST_CODE_HEADERS = { 'User-Agent': 'OpenSteamTool/1.0' }
+const REQUEST_CODE_URL = 'https://manifest.manifestdex.com'
+const REQUEST_CODE_HEADERS = { 'User-Agent': 'ManifestDeX/1.0' }
+const MAX_HUBCAP_MANIFEST_BYTES = 256 * 1024 * 1024
 const STEAM_HEADERS = {
   Accept: 'text/html,*/*;q=0.9',
   'Accept-Encoding': 'identity',
@@ -38,9 +43,37 @@ type Fetcher = (
   init?: RequestInit,
 ) => Promise<Response>
 
+interface ZipEntry {
+  entryName: string
+  isDirectory: boolean
+  header?: { size?: number }
+}
+
+interface ZipArchive {
+  getEntries(): ZipEntry[]
+  readFile(entry: ZipEntry): Buffer | null
+}
+
+interface ZipArchiveConstructor {
+  new (data: Buffer): ZipArchive
+}
+
+const require = createRequire(import.meta.url)
+const AdmZip: ZipArchiveConstructor = require('adm-zip')
+
+interface HubcapManifestSource {
+  archive: Buffer
+  usage: HubcapUsage
+}
+
 export class ManifestAcquisitionService {
-  readonly #inFlight = new Map<string, Promise<AcquiredManifest>>()
+  readonly #inFlight = new Map<string, Promise<ManifestAcquisitionResult>>()
+  readonly #hubcapManifestSources = new Map<
+    number,
+    Promise<HubcapManifestSource>
+  >()
   readonly #abortController = new AbortController()
+  readonly #hubcap: HubcapClient
   #requestCodeLookup = Promise.resolve()
   #accepting = true
 
@@ -51,9 +84,11 @@ export class ManifestAcquisitionService {
     private readonly decompress: (
       data: Buffer,
     ) => Promise<Buffer> = decompressManifest,
-  ) {}
+  ) {
+    this.#hubcap = new HubcapClient(fetcher)
+  }
 
-  acquire(request: AcquireManifestRequest): Promise<AcquiredManifest> {
+  acquire(request: AcquireManifestRequest): Promise<ManifestAcquisitionResult> {
     if (!this.#accepting) {
       return Promise.reject(new Error('Manifest acquisition is shutting down'))
     }
@@ -77,7 +112,7 @@ export class ManifestAcquisitionService {
 
   private async acquireIndependent(
     request: AcquireManifestRequest,
-  ): Promise<AcquiredManifest> {
+  ): Promise<ManifestAcquisitionResult> {
     const signal = this.#abortController.signal
     signal.throwIfAborted()
     validateId(request.appId, 'appId')
@@ -105,14 +140,24 @@ export class ManifestAcquisitionService {
           existing.relativePath,
           key,
         )
-        return existing
+        return { manifest: existing }
       } catch {}
     }
 
-    const requestCode = await this.fetchManifestRequestCode(
-      request.manifestId,
-      signal,
-    )
+    let requestCode: string
+    try {
+      requestCode = await this.fetchManifestRequestCode(
+        request.manifestId,
+        signal,
+      )
+    } catch {
+      signal.throwIfAborted()
+      return this.acquireFromHubcap(
+        request,
+        new Error('Manifest request code lookup failed'),
+        signal,
+      )
+    }
     const client = await abortable(this.session.getClient(), signal)
     const { servers } = await abortable(
       client.getContentServers(request.appId),
@@ -147,6 +192,115 @@ export class ManifestAcquisitionService {
       ),
       signal,
     )
+    return { manifest: await this.ingest(request, contents, signal) }
+  }
+
+  private async acquireFromHubcap(
+    request: AcquireManifestRequest,
+    requestCodeError: Error,
+    signal: AbortSignal,
+  ): Promise<ManifestAcquisitionResult> {
+    const cached = this.#hubcapManifestSources.get(request.appId)
+    if (cached) return this.useHubcapSource(request, cached, signal)
+
+    const apiKey = this.database.getHubcapApiKey()
+    if (!apiKey) return { manifest: null, hubcap: { status: 'missing-key' } }
+
+    const contentsResult = await this.#hubcap.getManifestContents(
+      request.appId,
+      apiKey,
+      signal,
+    )
+    const availableSource = this.#hubcapManifestSources.get(request.appId)
+    if (availableSource)
+      return this.useHubcapSource(request, availableSource, signal)
+    if (contentsResult.status === 'invalid-key') {
+      return { manifest: null, hubcap: { status: 'invalid-key' } }
+    }
+    if (contentsResult.status === 'unavailable') {
+      return { manifest: null, hubcap: { status: 'stats-unavailable' } }
+    }
+
+    const expectedFilename = `${request.depotId}_${request.manifestId}.manifest`
+    const available =
+      contentsResult.zipExists &&
+      contentsResult.manifests.some(
+        (manifest) =>
+          manifest.depotId === request.depotId &&
+          manifest.manifestId === request.manifestId &&
+          manifest.filename === expectedFilename,
+      )
+    if (!available) throw requestCodeError
+
+    const usageResult = await this.#hubcap.getUsage(apiKey, signal)
+    const inFlight = this.#hubcapManifestSources.get(request.appId)
+    if (inFlight) return this.useHubcapSource(request, inFlight, signal)
+    if (usageResult.status !== 'available') {
+      return { manifest: null, hubcap: usageResult }
+    }
+
+    const { usage } = usageResult
+    if (!usage.canMakeRequests || usage.remaining === 0) {
+      return {
+        manifest: null,
+        hubcap: { status: 'quota-exhausted', usage },
+      }
+    }
+    if (usage.remaining <= 10 && !request.approveLowQuotaHubcap) {
+      return {
+        manifest: null,
+        hubcap: { status: 'approval-required', usage },
+      }
+    }
+
+    const source = this.fetchHubcapManifestSource(request.appId, apiKey, usage)
+    this.#hubcapManifestSources.set(request.appId, source)
+    source.catch(() => {
+      if (this.#hubcapManifestSources.get(request.appId) === source)
+        this.#hubcapManifestSources.delete(request.appId)
+    })
+    return this.useHubcapSource(request, source, signal)
+  }
+
+  private async fetchHubcapManifestSource(
+    appId: number,
+    apiKey: string,
+    preflightUsage: HubcapUsage,
+  ): Promise<HubcapManifestSource> {
+    const archive = await this.#hubcap.getManifestZip(
+      appId,
+      apiKey,
+      this.#abortController.signal,
+    )
+    const usage = await this.#hubcap.getUsageAfterRequest(
+      apiKey,
+      preflightUsage,
+      this.#abortController.signal,
+    )
+    return { archive, usage }
+  }
+
+  private async useHubcapSource(
+    request: AcquireManifestRequest,
+    source: Promise<HubcapManifestSource>,
+    signal: AbortSignal,
+  ): Promise<ManifestAcquisitionResult> {
+    const result = await abortable(source, signal)
+    const contents = extractManifestFromHubcapZip(
+      result.archive,
+      request.depotId,
+      request.manifestId,
+      signal,
+    )
+    const manifest = await this.ingest(request, contents, signal)
+    return { manifest, hubcap: { status: 'fetched', usage: result.usage } }
+  }
+
+  private async ingest(
+    request: AcquireManifestRequest,
+    contents: Buffer,
+    signal: AbortSignal,
+  ): Promise<AcquiredManifest> {
     validateManifestEnvelope(
       parseManifestEnvelope(contents),
       request.depotId,
@@ -180,6 +334,53 @@ export class ManifestAcquisitionService {
     )
     return abortable(lookup, signal)
   }
+}
+
+function extractManifestFromHubcapZip(
+  data: Buffer,
+  depotId: number,
+  manifestId: string,
+  signal: AbortSignal,
+): Buffer {
+  signal.throwIfAborted()
+  let entries: ZipEntry[]
+  let archive: ZipArchive
+  try {
+    archive = new AdmZip(data)
+    entries = archive.getEntries()
+  } catch {
+    throw new Error('Hubcap manifest response is not a valid ZIP')
+  }
+
+  const expectedFilename = `${depotId}_${manifestId}.manifest`
+  const matches = entries.filter(
+    (entry) => entry.entryName === expectedFilename && !entry.isDirectory,
+  )
+  if (matches.length !== 1) {
+    throw new Error(
+      'Hubcap manifest ZIP does not contain the requested manifest',
+    )
+  }
+  const [entry] = matches
+  if (
+    entry.header?.size !== undefined &&
+    entry.header.size > MAX_HUBCAP_MANIFEST_BYTES
+  ) {
+    throw new Error('Hubcap manifest is too large')
+  }
+
+  let contents: Buffer | null
+  try {
+    contents = archive.readFile(entry)
+  } catch {
+    throw new Error('Hubcap manifest ZIP could not be read')
+  }
+  signal.throwIfAborted()
+  if (!contents) throw new Error('Hubcap manifest ZIP could not be read')
+  if (contents.length > MAX_HUBCAP_MANIFEST_BYTES) {
+    throw new Error('Hubcap manifest is too large')
+  }
+  return contents
 }
 
 async function decompressManifest(data: Buffer): Promise<Buffer> {

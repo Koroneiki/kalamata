@@ -7,11 +7,11 @@ import { previewApplicationOperation } from './operations/application-preview.ts
 import type { ApplicationPlan } from './operations/application-planner.ts'
 import type {
   AcquiredDepotKeys,
-  AcquiredManifest,
   AcquireDepotKeysRequest,
   AcquireManifestRequest,
   ApplicationOperationPreview,
   HubcapUsageResult,
+  ManifestAcquisitionResult,
 } from '../types/rpc.ts'
 import { ProductInfoService } from './steam/product-info-service.ts'
 import { SteamSession } from './steam/steam-session.ts'
@@ -91,7 +91,7 @@ export class SteamService {
   acquireManifest(
     database: KalamataDatabase,
     request: AcquireManifestRequest,
-  ): Promise<AcquiredManifest> {
+  ): Promise<ManifestAcquisitionResult> {
     let service = this.#manifestAcquisitions.get(database)
     if (!service) {
       service = new ManifestAcquisitionService(this.#session, database)

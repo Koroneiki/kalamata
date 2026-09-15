@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test'
 import { mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ManifestAcquisitionService } from '../src/backend/depot/manifests/manifest-acquisition-service.ts'
@@ -21,6 +22,22 @@ const hasManifestFixtures = (
   )
 ).every(Boolean)
 const fixtureTest = test.skipIf(!hasManifestFixtures)
+const require = createRequire(import.meta.url)
+const AdmZip = require('adm-zip') as {
+  new (): {
+    addFile(name: string, contents: Buffer): void
+    toBuffer(): Buffer
+  }
+}
+const SETTINGS = {
+  automaticManifestAcquisition: true,
+  hubcapApiKey: 'secret',
+  hideRedistributables: true,
+  hideUnknownDepots: true,
+  hideUnusedDepots: true,
+  hideUnavailableDepots: true,
+  platforms: ['macos'] as const,
+}
 
 let root: string | undefined
 let database: KalamataDatabase | undefined
@@ -49,9 +66,11 @@ describe('ManifestAcquisitionService', () => {
       const service = new ManifestAcquisitionService({ getClient }, db, fetcher)
 
       await expect(service.acquire(request)).resolves.toEqual({
-        depotId: request.depotId,
-        manifestId: request.manifestId,
-        relativePath: path,
+        manifest: {
+          depotId: request.depotId,
+          manifestId: request.manifestId,
+          relativePath: path,
+        },
       })
       expect(fetcher).not.toHaveBeenCalled()
       expect(getClient).not.toHaveBeenCalled()
@@ -67,9 +86,11 @@ describe('ManifestAcquisitionService', () => {
     const service = createService(db, mockFetcher(), async () => fixture)
 
     await expect(service.acquire(request)).resolves.toEqual({
-      depotId: request.depotId,
-      manifestId: request.manifestId,
-      relativePath: path,
+      manifest: {
+        depotId: request.depotId,
+        manifestId: request.manifestId,
+        relativePath: path,
+      },
     })
     expect((await readFile(join(root!, path))).toString('hex')).toBe(
       fixture.toString('hex'),
@@ -83,7 +104,7 @@ describe('ManifestAcquisitionService', () => {
     ])
   })
 
-  test('rejects a malformed request code before connecting to Steam', async () => {
+  test('reports a missing Hubcap key when request-code lookup fails', async () => {
     const getClient = mock(async () => {
       throw new Error('should not connect')
     })
@@ -93,10 +114,160 @@ describe('ManifestAcquisitionService', () => {
       mock(async () => new Response('<html>blocked</html>')),
     )
 
-    await expect(service.acquire(MANIFESTS[0])).rejects.toThrow(
-      'invalid response',
-    )
+    await expect(service.acquire(MANIFESTS[0])).resolves.toEqual({
+      manifest: null,
+      hubcap: { status: 'missing-key' },
+    })
     expect(getClient).not.toHaveBeenCalled()
+  })
+
+  test('requests codes from ManifestDeX with the required client identity', async () => {
+    const fetcher = mock(async () => new Response('invalid'))
+    const service = new ManifestAcquisitionService(
+      {
+        getClient: async () => {
+          throw new Error('should not connect')
+        },
+      },
+      await openDatabase(),
+      fetcher,
+    )
+
+    await expect(service.acquire(MANIFESTS[0])).resolves.toMatchObject({
+      manifest: null,
+      hubcap: { status: 'missing-key' },
+    })
+    expect(fetcher).toHaveBeenCalledWith(
+      `https://manifest.manifestdex.com/${MANIFESTS[0].manifestId}`,
+      expect.objectContaining({
+        headers: { 'User-Agent': 'ManifestDeX/1.0' },
+      }),
+    )
+  })
+
+  fixtureTest(
+    'checks contents before quota and downloads an advertised manifest ZIP',
+    async () => {
+      const request = MANIFESTS[0]
+      const fixture = await fixtureContents(request)
+      const archive = new AdmZip()
+      archive.addFile(
+        `${request.depotId}_${request.manifestId}.manifest`,
+        fixture,
+      )
+      const calls: string[] = []
+      let statsCalls = 0
+      const db = await openDatabase()
+      db.updateSettings({ ...SETTINGS, platforms: [...SETTINGS.platforms] })
+      const fetcher = mock(
+        async (input: string | URL | Request, init?: RequestInit) => {
+          const url = String(input)
+          calls.push(url)
+          if (url.startsWith('https://manifest.manifestdex.com/')) {
+            return new Response(null, { status: 503 })
+          }
+          expect(new Headers(init?.headers).get('Authorization')).toBe(
+            'Bearer secret',
+          )
+          if (url.endsWith('/contents')) {
+            return manifestContents(request)
+          }
+          if (url.endsWith('/user/stats')) {
+            statsCalls++
+            return hubcapUsage(statsCalls === 1 ? 89 : 90)
+          }
+          if (url.endsWith(`/api/v1/manifest/${request.appId}`)) {
+            return new Response(Uint8Array.from(archive.toBuffer()).buffer)
+          }
+          throw new Error(`Unexpected request: ${url}`)
+        },
+      )
+      const service = createService(db, fetcher, async () => {
+        throw new Error('Steam decompression must not run')
+      })
+
+      await expect(service.acquire(request)).resolves.toEqual({
+        manifest: {
+          depotId: request.depotId,
+          manifestId: request.manifestId,
+          relativePath: `manifest-files/${request.depotId}_${request.manifestId}.manifest`,
+        },
+        hubcap: {
+          status: 'fetched',
+          usage: {
+            dailyUsage: 90,
+            dailyLimit: 100,
+            remaining: 10,
+            canMakeRequests: true,
+          },
+        },
+      })
+      expect(calls.map((url) => new URL(url).pathname)).toEqual([
+        `/${request.manifestId}`,
+        `/api/v1/manifest/${request.appId}/contents`,
+        '/api/v1/user/stats',
+        `/api/v1/manifest/${request.appId}`,
+        '/api/v1/user/stats',
+      ])
+    },
+  )
+
+  test('requires approval before a low-quota Hubcap manifest request', async () => {
+    const request = MANIFESTS[0]
+    const db = await openDatabase()
+    db.updateSettings({ ...SETTINGS, platforms: [...SETTINGS.platforms] })
+    const fetcher = mock(async (input: string | URL | Request) => {
+      const url = String(input)
+      if (url.startsWith('https://manifest.manifestdex.com/')) {
+        return new Response(null, { status: 403 })
+      }
+      if (url.endsWith('/contents')) return manifestContents(request)
+      if (url.endsWith('/user/stats')) return hubcapUsage(90)
+      throw new Error('Paid Hubcap request must not run without approval')
+    })
+    const service = createService(db, fetcher, async () => Buffer.alloc(0))
+
+    await expect(service.acquire(request)).resolves.toEqual({
+      manifest: null,
+      hubcap: {
+        status: 'approval-required',
+        usage: {
+          dailyUsage: 90,
+          dailyLimit: 100,
+          remaining: 10,
+          canMakeRequests: true,
+        },
+      },
+    })
+    expect(
+      fetcher.mock.calls.some(
+        ([input]) =>
+          String(input).endsWith(`/api/v1/manifest/${request.appId}`) &&
+          !String(input).endsWith('/contents'),
+      ),
+    ).toBe(false)
+  })
+
+  test('does not spend quota when Hubcap lacks the requested manifest', async () => {
+    const request = MANIFESTS[0]
+    const db = await openDatabase()
+    db.updateSettings({ ...SETTINGS, platforms: [...SETTINGS.platforms] })
+    const fetcher = mock(async (input: string | URL | Request) => {
+      const url = String(input)
+      if (url.startsWith('https://manifest.manifestdex.com/')) {
+        return new Response('blocked')
+      }
+      if (url.endsWith('/contents')) {
+        return manifestContents({ ...request, manifestId: '1' })
+      }
+      throw new Error('Quota and ZIP endpoints must not be requested')
+    })
+    const service = createService(db, fetcher, async () => Buffer.alloc(0))
+
+    await expect(service.acquire(request)).rejects.toThrow(
+      'Manifest request code lookup failed',
+    )
+    expect(fetcher).toHaveBeenCalledTimes(2)
   })
 
   fixtureTest(
@@ -125,9 +296,11 @@ describe('ManifestAcquisitionService', () => {
       const service = createService(db, mockFetcher(), async () => fixture)
 
       await expect(service.acquire(request)).resolves.toEqual({
-        depotId: request.depotId,
-        manifestId: request.manifestId,
-        relativePath: `manifest-files/${request.depotId}_${request.manifestId}.manifest`,
+        manifest: {
+          depotId: request.depotId,
+          manifestId: request.manifestId,
+          relativePath: `manifest-files/${request.depotId}_${request.manifestId}.manifest`,
+        },
       })
       expect(db.getManifestRows(request.depotId)).toEqual([
         {
@@ -198,7 +371,12 @@ describe('ManifestAcquisitionService', () => {
     ]
 
     await Promise.all(
-      requests.map((request) => expect(request).rejects.toThrow('invalid')),
+      requests.map((request) =>
+        expect(request).resolves.toMatchObject({
+          manifest: null,
+          hubcap: { status: 'missing-key' },
+        }),
+      ),
     )
     expect(fetcher).toHaveBeenCalledTimes(1)
   })
@@ -207,7 +385,7 @@ describe('ManifestAcquisitionService', () => {
     let activeLookups = 0
     let maximumActiveLookups = 0
     const fetcher = mock(async (input: string | URL | Request) => {
-      if (String(input).startsWith('https://manifest.opensteamtool.com/')) {
+      if (String(input).startsWith('https://manifest.manifestdex.com/')) {
         activeLookups += 1
         maximumActiveLookups = Math.max(maximumActiveLookups, activeLookups)
         await Bun.sleep(10)
@@ -281,13 +459,43 @@ function createService(
   )
 }
 
+function manifestContents(request: {
+  appId: number
+  depotId: number
+  manifestId: string
+}) {
+  return Response.json({
+    app_id: String(request.appId),
+    branch: 'public',
+    zip_exists: true,
+    manifest_count: 1,
+    manifests: [
+      {
+        depot_id: String(request.depotId),
+        manifest_id: request.manifestId,
+        filename: `${request.depotId}_${request.manifestId}.manifest`,
+      },
+    ],
+    file_size: 51234,
+    last_modified: '2026-09-10T17:20:00',
+  })
+}
+
+function hubcapUsage(dailyUsage: number) {
+  return Response.json({
+    daily_usage: dailyUsage,
+    daily_limit: 100,
+    can_make_requests: dailyUsage < 100,
+  })
+}
+
 function mockFetcher(): (
   input: string | URL | Request,
   init?: RequestInit,
 ) => Promise<Response> {
   return mock(async (input: string | URL | Request) => {
     const url = String(input)
-    if (url.startsWith('https://manifest.opensteamtool.com/')) {
+    if (url.startsWith('https://manifest.manifestdex.com/')) {
       return new Response('10907614392502571426')
     }
     const manifestId = /\/manifest\/(\d+)\/5\//u.exec(url)?.[1]
