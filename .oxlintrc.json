@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "ignorePatterns": ["**/*.test.ts"],
+  "ignorePatterns": ["**/*.test.ts", ".cottontail-tmp/**"],
   "options": {
     "typeAware": true
   },

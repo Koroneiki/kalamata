@@ -17,6 +17,7 @@ test/fixtures/
 /.agents/
 /.playwright-mcp/
 .fallow/
+.cottontail-tmp/
 
 # impeccable-ignore-start
 # Ephemeral output, runtime state, and per-developer overrides.

@@ -94,21 +94,19 @@ const settingsRowSchema = z
     showMacos: z.union([z.literal(0), z.literal(1)]),
     showLinux: z.union([z.literal(0), z.literal(1)]),
   })
-  .transform(
-    (row): AppSettings => ({
-      automaticManifestAcquisition: Boolean(row.automaticManifestAcquisition),
-      hubcapApiKey: row.hubcapApiKey ?? '',
-      hideRedistributables: Boolean(row.hideRedistributables),
-      hideUnknownDepots: Boolean(row.hideUnknownDepots),
-      hideUnusedDepots: Boolean(row.hideUnusedDepots),
-      hideUnavailableDepots: Boolean(row.hideUnavailableDepots),
-      platforms: depotPlatforms.filter((platform) => {
-        if (platform === 'windows') return Boolean(row.showWindows)
-        if (platform === 'macos') return Boolean(row.showMacos)
-        return Boolean(row.showLinux)
-      }),
+  .transform((row): AppSettings => ({
+    automaticManifestAcquisition: Boolean(row.automaticManifestAcquisition),
+    hubcapApiKey: row.hubcapApiKey ?? '',
+    hideRedistributables: Boolean(row.hideRedistributables),
+    hideUnknownDepots: Boolean(row.hideUnknownDepots),
+    hideUnusedDepots: Boolean(row.hideUnusedDepots),
+    hideUnavailableDepots: Boolean(row.hideUnavailableDepots),
+    platforms: depotPlatforms.filter((platform) => {
+      if (platform === 'windows') return Boolean(row.showWindows)
+      if (platform === 'macos') return Boolean(row.showMacos)
+      return Boolean(row.showLinux)
     }),
-  )
+  }))
 
 export class KalamataDatabase {
   readonly sqlite: Database

@@ -42,12 +42,7 @@ export const workerResponseSchema: z.ZodType<WorkerResponse> = z.union([
 ])
 
 export function exactArrayBuffer(data: Uint8Array): ArrayBuffer {
-  // Transfer only visible bytes because Buffers may be views into a larger shared slab.
-  if (data.buffer instanceof ArrayBuffer) {
-    if (data.byteOffset === 0 && data.byteLength === data.buffer.byteLength)
-      return data.buffer
-    return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
-  }
+  // Native modules may return full-size buffers that Bun marks as untransferable.
   return Uint8Array.from(data).buffer
 }
 

@@ -6,7 +6,11 @@
   "printWidth": 80,
   "trailingComma": "all",
   "singleQuote": true,
-  "ignorePatterns": ["src/components/ui/**", "src/db/migrations/meta/**"],
+  "ignorePatterns": [
+    ".cottontail-tmp/**",
+    "src/components/ui/**",
+    "src/db/migrations/meta/**"
+  ],
   "sortTailwindcss": {},
   "sortPackageJson": false
 }

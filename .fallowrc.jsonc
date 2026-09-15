@@ -9,7 +9,11 @@
     "src/mainview/main.ts",
   ],
   // Generated shadcn-vue and managed anti-slop sources are maintained externally.
-  "ignorePatterns": ["src/components/ui/**", "tools/oxlint/anti-slop/**"],
+  "ignorePatterns": [
+    ".cottontail-tmp/**",
+    "src/components/ui/**",
+    "tools/oxlint/anti-slop/**",
+  ],
   // These are consumed by excluded generated UI, generated SDK code, runtime requires, or build tooling.
   "ignoreDependencies": [
     "@doctormckay/steam-crypto",
