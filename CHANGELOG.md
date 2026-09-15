@@ -1,5 +1,27 @@
 # Changelog
 
+## v1.0.3
+
+Release date: 15.09.2026
+
+[compare changes](https://github.com/Koroneiki/kalamata/compare/v1.0.2...v1.0.3)
+
+### 🚀 New
+
+- **manifests:** Fall back to Hubcap when Steam cannot provide a depot manifest.
+
+### 🩹 Fixes
+
+- **downloads:** Copy native decompression buffers before transferring them to Bun workers.
+
+### 🏡 Chore
+
+- **dependencies:** Update application and development dependencies to their latest compatible releases.
+
+### ❤️ Contributors
+
+- Koroneiki <101889814+Koroneiki@users.noreply.github.com>
+
 ## v1.0.2
 
 Release date: 05.09.2026
