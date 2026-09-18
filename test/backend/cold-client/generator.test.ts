@@ -47,7 +47,7 @@ test('runs GSE directly and validates only the expected AppID output', async () 
   expect(invocations).toEqual([
     {
       executable: join(fixture.workingDirectory, 'generate_emu_config.exe'),
-      arguments_: ['-acw', '10'],
+      arguments_: ['10'],
       cwd: fixture.workingDirectory,
     },
   ])
@@ -85,7 +85,7 @@ test('requires login existence without passing credential environment variables'
   try {
     const processRun = runVisibleWindowsProcess(
       'generator.exe',
-      ['-acw', '10'],
+      ['10'],
       fixture.workingDirectory,
       new AbortController().signal,
       (_command, options) => {
@@ -106,7 +106,7 @@ test('starts GSE Tools through a visible PowerShell process', async () => {
   let command: string[] = []
   await runVisibleWindowsProcess(
     'C:\\GSE Tools\\generator.exe',
-    ['-acw', '10'],
+    ['10'],
     'C:\\GSE Tools',
     new AbortController().signal,
     (spawnedCommand) => {
@@ -120,7 +120,7 @@ test('starts GSE Tools through a visible PowerShell process', async () => {
   expect(command[3]).toContain(
     "Start-Process -FilePath 'C:\\GSE Tools\\generator.exe'",
   )
-  expect(command[3]).toContain("-ArgumentList @('-acw', '10')")
+  expect(command[3]).toContain("-ArgumentList @('10')")
 })
 
 test('validates the active GSE artifact before starting its executable', async () => {
@@ -193,7 +193,7 @@ test('cancellation terminates and reaps the Windows process tree', async () => {
   const commands: string[][] = []
   const run = runVisibleWindowsProcess(
     'generator.exe',
-    ['-acw', '10'],
+    ['10'],
     'C:\\gse',
     controller.signal,
     (command) => {

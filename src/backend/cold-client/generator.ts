@@ -128,7 +128,7 @@ export class ColdClientGenerator {
 
     const exitCode = await this.#runProcess(
       executable,
-      ['-acw', String(appId)],
+      [String(appId)],
       workingDirectory,
       signal,
     )

@@ -51,7 +51,7 @@ After the user confirms the setup, Kalamata runs GSE Tools from its extracted
 `generate_emu_config` directory:
 
 ```text
-generate_emu_config.exe -acw <app-id>
+generate_emu_config.exe <app-id>
 ```
 
 GSE Tools uses `generate_emu_config/my_login.txt` and writes the result to:
