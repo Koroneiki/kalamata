@@ -1,5 +1,27 @@
 # Changelog
 
+## v1.0.4
+
+Release date: 18.09.2026
+
+[compare changes](https://github.com/Koroneiki/kalamata/compare/v1.0.3...v1.0.4)
+
+### 🚀 New
+
+- **updates:** Check for, install, and restart into new Kalamata releases from Settings.
+
+### 🩹 Fixes
+
+- **coldclient:** Select the Visual Studio 2026 Goldberg emulator release asset.
+
+### 🏡 Chore
+
+- **release:** Publish Electrobun update metadata, full packages, and delta patches with their generated names.
+
+### ❤️ Contributors
+
+- Koroneiki <101889814+Koroneiki@users.noreply.github.com>
+
 ## v1.0.3
 
 Release date: 15.09.2026

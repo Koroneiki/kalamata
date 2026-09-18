@@ -363,6 +363,11 @@ export type ResumeOperationResult =
   | { accepted: true }
   | { accepted: false; reason: 'no-resumable-operation' }
 
+export interface ApplicationUpdateStatus {
+  currentVersion: string
+  availableVersion: string | null
+}
+
 export type AppRpc = {
   bun: {
     requests: {
@@ -397,6 +402,14 @@ export type AppRpc = {
       updateSettings: {
         params: AppSettings
         response: AppSettings
+      }
+      checkApplicationUpdate: {
+        params: Record<string, never>
+        response: ApplicationUpdateStatus
+      }
+      installApplicationUpdate: {
+        params: Record<string, never>
+        response: void
       }
       getHubcapUsage: {
         params: Record<string, never>

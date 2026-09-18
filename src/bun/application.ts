@@ -176,6 +176,40 @@ const rpc = BrowserView.defineRPC<AppRpc>({
       updateSettings(settings) {
         return database.updateSettings(settings)
       },
+      async checkApplicationUpdate() {
+        const [local, update] = await Promise.all([
+          Updater.getLocalInfo(),
+          Updater.checkForUpdate(),
+        ])
+        if (update.error) throw new Error(update.error)
+        return {
+          currentVersion: local.version,
+          availableVersion: update.updateAvailable ? update.version : null,
+        }
+      },
+      async installApplicationUpdate() {
+        assertApplicationUpdateCanRestart()
+        const update = await Updater.checkForUpdate()
+        if (update.error) throw new Error(update.error)
+        if (!update.updateAvailable) return
+
+        await Updater.downloadUpdate()
+        const prepared = Updater.updateInfo()
+        if (!prepared.updateReady)
+          throw new Error(prepared.error || 'The update could not be prepared')
+
+        assertApplicationUpdateCanRestart()
+        await shutdownApplicationServices().catch((error) => {
+          diagnostics.error({
+            event: 'app.shutdown-failed',
+            error: error instanceof Error ? error : new Error(String(error)),
+          })
+        })
+        allowQuit = true
+        await Updater.applyUpdate()
+        const applied = Updater.updateInfo()
+        if (applied.error) throw new Error(applied.error)
+      },
       getHubcapUsage() {
         return steam.getHubcapUsage(database)
       },
@@ -309,7 +343,49 @@ queue = new DownloadQueueCoordinator(
 
 let shutdownStarted = false
 let allowQuit = false
+let shutdownPromise: Promise<void> | undefined
 let startup = Promise.resolve()
+
+function assertApplicationUpdateCanRestart() {
+  if (
+    queue.getOperationState().status === 'active' ||
+    coldClientOperations.getSnapshot().status === 'active'
+  ) {
+    throw new Error('Wait for the current operation to finish before updating')
+  }
+}
+
+function shutdownApplicationServices(): Promise<void> {
+  if (shutdownPromise) return shutdownPromise
+  shutdownStarted = true
+  diagnostics.info({ event: 'app.shutdown-started' })
+  shutdownPromise = (async () => {
+    try {
+      await startup.catch(() => {})
+      const results = await Promise.allSettled([
+        queue.shutdown(),
+        coldClientOperations.shutdown(),
+        coldClientDependencies.shutdown(),
+        steam.shutdownManifestAcquisitions(),
+        steam.shutdownDepotKeyAcquisitions(),
+      ])
+      const failures = results
+        .filter((result) => result.status === 'rejected')
+        .map((result) => result.reason)
+      if (failures.length > 0)
+        throw new AggregateError(failures, 'Service shutdown failed')
+    } finally {
+      try {
+        steam.dispose()
+      } finally {
+        database.close()
+      }
+    }
+    diagnostics.info({ event: 'app.shutdown-completed' })
+  })()
+  return shutdownPromise
+}
+
 Electrobun.events.on(
   'before-quit',
   (event: { response: { allow: boolean } | undefined }) => {
@@ -319,41 +395,19 @@ Electrobun.events.on(
     }
     event.response = { allow: false }
     if (shutdownStarted) return
-    shutdownStarted = true
-    diagnostics.info({ event: 'app.shutdown-started' })
-    void (async () => {
-      try {
-        await startup.catch(() => {})
-        const results = await Promise.allSettled([
-          queue.shutdown(),
-          coldClientOperations.shutdown(),
-          coldClientDependencies.shutdown(),
-          steam.shutdownManifestAcquisitions(),
-          steam.shutdownDepotKeyAcquisitions(),
-        ])
-        const failures = results
-          .filter((result) => result.status === 'rejected')
-          .map((result) => result.reason)
-        if (failures.length > 0)
-          throw new AggregateError(failures, 'Service shutdown failed')
-      } finally {
-        try {
-          steam.dispose()
-        } finally {
-          database.close()
-        }
-      }
-      diagnostics.info({ event: 'app.shutdown-completed' })
-      allowQuit = true
-      Utils.quit()
-    })().catch((error) => {
-      diagnostics.error({
-        event: 'app.shutdown-failed',
-        error: error instanceof Error ? error : new Error(String(error)),
+    void shutdownApplicationServices()
+      .then(() => {
+        allowQuit = true
+        Utils.quit()
       })
-      allowQuit = true
-      Utils.quit()
-    })
+      .catch((error) => {
+        diagnostics.error({
+          event: 'app.shutdown-failed',
+          error: error instanceof Error ? error : new Error(String(error)),
+        })
+        allowQuit = true
+        Utils.quit()
+      })
   },
 )
 

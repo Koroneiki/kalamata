@@ -11,6 +11,23 @@ import {
 } from '../src/types/rpc-schemas.ts'
 import type { ColdClientSetupDraft } from '../src/types/cold-client.ts'
 
+test('validates application update status', () => {
+  expect(parseRpcRequest('checkApplicationUpdate', {})).toEqual({})
+  expect(parseRpcRequest('installApplicationUpdate', {})).toEqual({})
+  expect(
+    rpcResponseSchemas.checkApplicationUpdate.parse({
+      currentVersion: '1.0.5',
+      availableVersion: '1.0.7',
+    }),
+  ).toEqual({ currentVersion: '1.0.5', availableVersion: '1.0.7' })
+  expect(() =>
+    rpcResponseSchemas.checkApplicationUpdate.parse({
+      currentVersion: '1.0.5',
+      availableVersion: '',
+    }),
+  ).toThrow()
+})
+
 test('validates ColdClient dependency requests and secret-free status', () => {
   expect(
     parseRpcRequest('updateColdClientDependencies', {

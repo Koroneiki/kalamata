@@ -40,6 +40,10 @@ export default {
     },
     watchIgnore: ['dist/**'],
   },
+  release: {
+    baseUrl: 'https://github.com/Koroneiki/kalamata/releases/latest/download',
+    generatePatch: true,
+  },
   scripts: {
     postWrap: './scripts/sign-macos-wrapper.ts',
   },

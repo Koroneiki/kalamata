@@ -8,6 +8,7 @@ import {
   getAppSummary,
 } from '@/api/apps'
 import { getLibrary } from '@/api/library'
+import { checkApplicationUpdate } from '@/api/application-update'
 import { getHubcapUsage, getSettings } from '@/api/settings'
 import {
   getColdClientDependencies,
@@ -23,6 +24,7 @@ export const appQueryKeys = {
 export const libraryQueryKey = ['library'] as const
 export const settingsQueryKey = ['settings'] as const
 export const hubcapUsageQueryKey = ['hubcap-usage'] as const
+const applicationUpdateQueryKey = ['application-update'] as const
 export const coldClientDependenciesQueryKey = [
   'cold-client-dependencies',
 ] as const
@@ -88,6 +90,10 @@ const hubcapUsageQuery = defineQueryOptions({
   key: hubcapUsageQueryKey,
   query: getHubcapUsage,
 })
+const applicationUpdateQuery = defineQueryOptions({
+  key: applicationUpdateQueryKey,
+  query: checkApplicationUpdate,
+})
 const coldClientDependenciesQuery = defineQueryOptions({
   key: coldClientDependenciesQueryKey,
   query: getColdClientDependencies,
@@ -111,6 +117,10 @@ export function useSettingsQuery() {
 
 export function useHubcapUsageQuery() {
   return useQuery(hubcapUsageQuery)
+}
+
+export function useApplicationUpdateQuery() {
+  return useQuery(applicationUpdateQuery)
 }
 
 export function useColdClientDependenciesQuery() {

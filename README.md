@@ -33,8 +33,12 @@ unknown-publisher warning.
 
 ## Updates
 
-Install the package for the newer release. Existing application data is
-preserved.
+Kalamata checks for application updates when the Settings page opens. When an
+update is available, install it from **Settings > Application updates**. The
+application downloads the release, restarts, and preserves existing data.
+
+Versions before the self-updater was introduced must install a newer package
+manually once.
 
 ## Local data
 
@@ -66,7 +70,7 @@ bun run build
 
 1. Update the version in `package.json` and add the release to `CHANGELOG.md`.
 2. Commit and push the release changes.
-3. Run the release workflow manually and test both generated packages. Confirm they contain no GBE, GSE Tools, or 7-Zip binaries, and verify the ColdClient dependency policy in `docs/coldclient-dependencies.md` against the selected upstream releases.
+3. Run the release workflow manually and test both generated packages. Confirm they contain no GBE, GSE Tools, or 7-Zip binaries, verify the ColdClient dependency policy in `docs/coldclient-dependencies.md` against the selected upstream releases, and retain every Electrobun-generated artifact name for updater compatibility.
 4. Create and push the matching version tag.
 
 ```sh

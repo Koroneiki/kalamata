@@ -7,6 +7,7 @@ import {
   openUserDataFolder as requestOpenUserDataFolder,
   updateSettings,
 } from '@/api/settings'
+import { installApplicationUpdate } from '@/api/application-update'
 import {
   checkColdClientDependencyUpdates,
   openColdClientLoginDirectory,
@@ -30,6 +31,7 @@ import {
   coldClientDependencyUpdateMutationKey,
   coldClientQueryKeys,
   settingsQueryKey,
+  useApplicationUpdateQuery,
   useColdClientDependenciesQuery,
   useHubcapUsageQuery,
   useSettingsQuery,
@@ -52,6 +54,14 @@ const {
 } = useHubcapUsageQuery()
 const updateMutation = useMutation({ mutation: updateSettings })
 const openFolderMutation = useMutation({ mutation: requestOpenUserDataFolder })
+const {
+  data: applicationUpdate,
+  error: applicationUpdateQueryError,
+  isPending: applicationUpdatePending,
+} = useApplicationUpdateQuery()
+const installApplicationUpdateMutation = useMutation({
+  mutation: installApplicationUpdate,
+})
 const {
   data: coldClientDependencies,
   error: coldClientQueryError,
@@ -78,6 +88,7 @@ const openLoginFolderMutation = useMutation({
 })
 const mutationError = ref('')
 const coldClientMutationError = ref('')
+const applicationUpdateMutationError = ref('')
 const confirmingDependencyUpdate = ref(false)
 const hubcapApiKeyDraft = ref('')
 const hubcapKeyFocused = ref(false)
@@ -91,15 +102,19 @@ const hasError = computed(() =>
     error.value ||
     mutationError.value ||
     coldClientQueryError.value ||
-    coldClientMutationError.value,
+    coldClientMutationError.value ||
+    applicationUpdateQueryError.value ||
+    applicationUpdateMutationError.value,
   ),
 )
 const errorMessage = computed(
   () =>
     mutationError.value ||
     coldClientMutationError.value ||
+    applicationUpdateMutationError.value ||
     error.value?.message ||
-    coldClientQueryError.value?.message,
+    coldClientQueryError.value?.message ||
+    applicationUpdateQueryError.value?.message,
 )
 const dependencyLabels = {
   '7zip': '7-Zip extractor',
@@ -299,6 +314,16 @@ async function openColdClientLoginFolder() {
     await openLoginFolderMutation.mutateAsync()
   } catch (error) {
     coldClientMutationError.value =
+      error instanceof Error ? error.message : String(error)
+  }
+}
+
+async function installUpdate() {
+  applicationUpdateMutationError.value = ''
+  try {
+    await installApplicationUpdateMutation.mutateAsync()
+  } catch (error) {
+    applicationUpdateMutationError.value =
       error instanceof Error ? error.message : String(error)
   }
 }
@@ -557,6 +582,73 @@ async function openColdClientLoginFolder() {
       <FolderOpen aria-hidden="true" />
       Open user data folder
     </Button>
+
+    <section
+      class="border-border bg-card mt-6 overflow-hidden rounded-xl border"
+      :aria-busy="
+        applicationUpdatePending ||
+        installApplicationUpdateMutation.isLoading.value
+      "
+    >
+      <div class="p-4 sm:p-5">
+        <h2 class="text-sm font-medium">Application updates</h2>
+      </div>
+
+      <div
+        v-if="applicationUpdatePending"
+        class="border-border border-t p-4 sm:p-5"
+        aria-label="Checking for application updates"
+      >
+        <Skeleton class="h-10 w-full" />
+      </div>
+
+      <div
+        v-else
+        class="border-border flex min-w-0 flex-wrap items-center justify-between gap-3 border-t px-4 py-3 sm:flex-nowrap sm:px-5"
+      >
+        <div class="min-w-0">
+          <p class="text-sm font-medium">Kalamata</p>
+          <p
+            v-if="applicationUpdate"
+            class="text-muted-foreground mt-0.5 text-xs tabular-nums"
+          >
+            v{{ applicationUpdate.currentVersion }} installed<span
+              v-if="applicationUpdate.availableVersion"
+            >
+              · v{{ applicationUpdate.availableVersion }} available</span
+            >
+          </p>
+          <p v-else class="text-destructive mt-0.5 text-xs">
+            Update status unavailable
+          </p>
+        </div>
+
+        <div class="ml-auto flex shrink-0 items-center gap-2">
+          <Badge :variant="applicationUpdate ? 'secondary' : 'destructive'">
+            {{
+              applicationUpdate?.availableVersion
+                ? 'Update available'
+                : applicationUpdate
+                  ? 'Current'
+                  : 'Check failed'
+            }}
+          </Badge>
+          <Button
+            v-if="applicationUpdate?.availableVersion"
+            size="sm"
+            :disabled="installApplicationUpdateMutation.isLoading.value"
+            @click="installUpdate"
+          >
+            <Download aria-hidden="true" />
+            {{
+              installApplicationUpdateMutation.isLoading.value
+                ? 'Installing…'
+                : `Install v${applicationUpdate.availableVersion}`
+            }}
+          </Button>
+        </div>
+      </div>
+    </section>
 
     <p v-if="hasError" class="text-destructive mt-3 text-sm" role="alert">
       {{ errorMessage }}

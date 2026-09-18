@@ -39,6 +39,10 @@ const strict = z.strictObject
 const emptySchema = strict({})
 const idRequestSchema = strict({ appId: steamIdSchema })
 const dependencyAssetIdSchema = z.number().int().positive().safe()
+const applicationUpdateStatusSchema = strict({
+  currentVersion: z.string().min(1),
+  availableVersion: z.string().min(1).nullable(),
+})
 const coldClientDependencyItemStatusSchema = strict({
   dependencyId: coldClientDependencyIdSchema,
   status: z.enum(['current', 'update-available', 'missing', 'check-failed']),
@@ -442,6 +446,8 @@ const rpcRequestSchemas = {
   getLibrary: emptySchema,
   getSettings: emptySchema,
   updateSettings: appSettingsSchema,
+  checkApplicationUpdate: emptySchema,
+  installApplicationUpdate: emptySchema,
   getHubcapUsage: emptySchema,
   openUserDataFolder: emptySchema,
   getColdClientDependencies: emptySchema,
@@ -517,6 +523,8 @@ export const rpcResponseSchemas = {
   getLibrary: z.array(libraryEntrySchema),
   getSettings: appSettingsSchema,
   updateSettings: appSettingsSchema,
+  checkApplicationUpdate: applicationUpdateStatusSchema,
+  installApplicationUpdate: z.void(),
   getHubcapUsage: hubcapUsageResultSchema,
   openUserDataFolder: z.void(),
   getColdClientDependencies: coldClientDependencyStatusSchema,
