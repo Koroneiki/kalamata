@@ -67,7 +67,7 @@ const definitions = {
   gbe: {
     dependencyId: 'gbe',
     repository: 'Detanup01/gbe_fork',
-    assetName: 'emu-win-release.7z',
+    assetName: 'emu-win-release-vs26.7z',
     archive: true,
     requiredFiles: [
       'release/steamclient_experimental/ColdClientLoader.ini',

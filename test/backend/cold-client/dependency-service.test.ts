@@ -46,7 +46,11 @@ test('checks exact release assets without downloading them', async () => {
       status: 'missing',
       availableAssetId: 101,
     }),
-    expect.objectContaining({ dependencyId: 'gbe', status: 'missing' }),
+    expect.objectContaining({
+      dependencyId: 'gbe',
+      status: 'missing',
+      availableAssetId: 201,
+    }),
     expect.objectContaining({ dependencyId: 'gse', status: 'missing' }),
   ])
 })
@@ -332,7 +336,7 @@ interface TestArtifact {
 function releaseFor(artifact: TestArtifact) {
   const names: Record<ColdClientDependencyId, string> = {
     '7zip': '7zr.exe',
-    gbe: 'emu-win-release.7z',
+    gbe: 'emu-win-release-vs26.7z',
     gse: 'gen_emu_cfg-Windows-Release.7z',
   }
   return {
@@ -342,6 +346,18 @@ function releaseFor(artifact: TestArtifact) {
     draft: false,
     prerelease: false,
     assets: [
+      ...(artifact.dependencyId === 'gbe'
+        ? [
+            {
+              id: artifact.assetId + 1_000,
+              name: 'emu-win-release-vs22.7z',
+              size: Buffer.byteLength(artifact.contents),
+              digest:
+                artifact.digest === null ? null : `sha256:${artifact.digest}`,
+              browser_download_url: `https://github.com/test/download/${artifact.assetId + 1_000}`,
+            },
+          ]
+        : []),
       {
         id: artifact.assetId,
         name: names[artifact.dependencyId],

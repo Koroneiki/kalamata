@@ -4,7 +4,7 @@
 
 Kalamata does not bundle or mirror Goldberg/GBE Fork, GSE Tools, or 7-Zip binaries. A user must explicitly ask the app to download the configured release assets from their upstream GitHub repositories:
 
-- `Detanup01/gbe_fork`: `emu-win-release.7z`
+- `Detanup01/gbe_fork`: `emu-win-release-vs26.7z`
 - `alex47exe/gse_fork_tools`: `gen_emu_cfg-Windows-Release.7z`
 - `ip7z/7zip`: `7zr.exe`
 
