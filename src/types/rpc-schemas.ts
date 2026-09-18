@@ -8,6 +8,7 @@ import {
 } from './schemas.ts'
 import { AVAILABLE_UPDATE_BATCH_SIZE } from './available-updates.ts'
 import {
+  coldClientConfigurationWarnings,
   coldClientDependencyIdSchema,
   coldClientSetupModes,
   coldClientDetectionSourceSchema,
@@ -189,6 +190,10 @@ const coldClientStatusSchema = z.discriminatedUnion('status', [
   }),
   strict({ status: z.literal('invalid'), message: z.string().min(1) }),
 ])
+const coldClientConfigurationResultSchema = strict({
+  status: coldClientStatusSchema,
+  warnings: z.array(z.enum(coldClientConfigurationWarnings)),
+})
 const manifestTargetSchema = strict({
   depotId: steamIdSchema,
   manifestId: manifestIdSchema,
@@ -533,8 +538,8 @@ export const rpcResponseSchemas = {
   openColdClientLoginDirectory: z.void(),
   inspectColdClientSetup: coldClientSetupDraftSchema,
   getColdClientStatus: coldClientStatusSchema,
-  configureColdClient: coldClientStatusSchema,
-  regenerateColdClientConfiguration: coldClientStatusSchema,
+  configureColdClient: coldClientConfigurationResultSchema,
+  regenerateColdClientConfiguration: coldClientConfigurationResultSchema,
   updateColdClientCore: coldClientStatusSchema,
   removeColdClient: coldClientStatusSchema,
   getColdClientOperation: coldClientOperationSnapshotSchema,

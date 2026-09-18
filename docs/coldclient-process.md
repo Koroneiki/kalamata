@@ -74,6 +74,11 @@ The value in `steam_appid.txt` must match the game being configured. Kalamata
 keeps the complete generated directory, including additional files and
 subdirectories produced by GSE Tools.
 
+When `achievements.json` exists, Kalamata checks that it is valid and that each
+referenced unlocked and locked image exists as a non-empty file in `img`. An
+incomplete achievement image set does not block setup; the UI shows a warning
+after the otherwise successful operation.
+
 ## 3. Assemble the new folder
 
 Kalamata builds the new folder in a temporary directory beside the game. It

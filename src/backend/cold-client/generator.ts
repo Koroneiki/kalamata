@@ -8,8 +8,9 @@ import {
   rm,
   writeFile,
 } from 'node:fs/promises'
-import { isAbsolute, join, relative } from 'node:path'
+import { basename, isAbsolute, join, relative } from 'node:path'
 import { z } from 'zod'
+import type { ColdClientConfigurationWarning } from '../../types/cold-client.ts'
 import { steamIdSchema } from '../../types/schemas.ts'
 import type { ArtifactDescriptor } from './dependency-schema.ts'
 
@@ -70,6 +71,7 @@ export interface GeneratedGseConfiguration {
   gseAssetId: number
   appDirectory: string
   steamSettingsDirectory: string
+  warnings: ColdClientConfigurationWarning[]
 }
 
 const requiredSteamSettingsFiles = [
@@ -79,6 +81,14 @@ const requiredSteamSettingsFiles = [
   'configs.user.ini',
   'steam_appid.txt',
 ]
+const achievementSchema = z.array(
+  z
+    .object({
+      icon: z.string().min(1),
+      icon_gray: z.string().min(1),
+    })
+    .loose(),
+)
 
 export class ColdClientGenerator {
   readonly #dependencies: GseDependencyProvider
@@ -141,11 +151,59 @@ export class ColdClientGenerator {
       appDirectory,
       appId,
     )
+    const warnings = await validateAchievementImages(steamSettingsDirectory)
     return {
       gseAssetId: artifact.assetId,
       appDirectory,
       steamSettingsDirectory,
+      warnings,
     }
+  }
+}
+
+async function validateAchievementImages(
+  steamSettingsDirectory: string,
+): Promise<ColdClientConfigurationWarning[]> {
+  let source: string
+  try {
+    source = await readFile(
+      join(steamSettingsDirectory, 'achievements.json'),
+      'utf8',
+    )
+  } catch (error) {
+    return filesystemErrorSchema.safeParse(error).data?.code === 'ENOENT'
+      ? []
+      : ['achievement-images-incomplete']
+  }
+
+  try {
+    const achievements = achievementSchema.parse(JSON.parse(source))
+    const imageNames = new Set(
+      achievements.flatMap(({ icon, icon_gray: iconGray }) => [icon, iconGray]),
+    )
+    const validImages = await Promise.all(
+      [...imageNames].map((imageName) =>
+        isValidAchievementImage(steamSettingsDirectory, imageName),
+      ),
+    )
+    return validImages.every(Boolean) ? [] : ['achievement-images-incomplete']
+  } catch {
+    return ['achievement-images-incomplete']
+  }
+}
+
+async function isValidAchievementImage(
+  steamSettingsDirectory: string,
+  imageName: string,
+): Promise<boolean> {
+  if (basename(imageName) !== imageName) return false
+  try {
+    const metadata = await lstat(join(steamSettingsDirectory, 'img', imageName))
+    return (
+      metadata.isFile() && !metadata.isSymbolicLink() && metadata.size !== 0
+    )
+  } catch {
+    return false
   }
 }
 

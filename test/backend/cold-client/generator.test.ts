@@ -60,7 +60,69 @@ test('runs GSE directly and validates only the expected AppID output', async () 
       '10',
       'steam_settings',
     ),
+    warnings: [],
   })
+})
+
+test('reports missing achievement images without failing generation', async () => {
+  const fixture = await createFixture()
+  const generator = new ColdClientGenerator(fixture.dependencies, {
+    platform: 'win32',
+    loadTopOwners: fixture.loadTopOwners,
+    runProcess: async (_executable, _arguments, cwd) => {
+      await writeGeneratedOutput(cwd, 10)
+      const settings = join(cwd, '_OUTPUT', '10', 'steam_settings')
+      await mkdir(join(settings, 'img'))
+      await writeFile(
+        join(settings, 'achievements.json'),
+        JSON.stringify([
+          {
+            name: 'FIRST',
+            icon: 'unlocked.jpg',
+            icon_gray: 'locked.jpg',
+          },
+        ]),
+      )
+      await writeFile(join(settings, 'img', 'unlocked.jpg'), 'image')
+      return 0
+    },
+  })
+
+  await expect(
+    generator.generate(10, new AbortController().signal),
+  ).resolves.toMatchObject({ warnings: ['achievement-images-incomplete'] })
+})
+
+test('accepts complete achievement images', async () => {
+  const fixture = await createFixture()
+  const generator = new ColdClientGenerator(fixture.dependencies, {
+    platform: 'win32',
+    loadTopOwners: fixture.loadTopOwners,
+    runProcess: async (_executable, _arguments, cwd) => {
+      await writeGeneratedOutput(cwd, 10)
+      const settings = join(cwd, '_OUTPUT', '10', 'steam_settings')
+      await mkdir(join(settings, 'img'))
+      await writeFile(
+        join(settings, 'achievements.json'),
+        JSON.stringify([
+          {
+            name: 'FIRST',
+            icon: 'unlocked.jpg',
+            icon_gray: 'locked.jpg',
+          },
+        ]),
+      )
+      await Promise.all([
+        writeFile(join(settings, 'img', 'unlocked.jpg'), 'image'),
+        writeFile(join(settings, 'img', 'locked.jpg'), 'image'),
+      ])
+      return 0
+    },
+  })
+
+  await expect(
+    generator.generate(10, new AbortController().signal),
+  ).resolves.toMatchObject({ warnings: [] })
 })
 
 test('requires login existence without passing credential environment variables', async () => {

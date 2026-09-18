@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { cp, lstat, mkdir, readFile, realpath, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import type {
+  ColdClientConfigurationResult,
   ColdClientInstallation,
   ColdClientSetupDraft,
   ColdClientSetupMode,
@@ -174,7 +175,9 @@ export class ColdClientService {
     return applySavedConfiguration(draft, previous, gbe)
   }
 
-  configure(requestInput: ColdClientSetupRequest): Promise<ColdClientStatus> {
+  configure(
+    requestInput: ColdClientSetupRequest,
+  ): Promise<ColdClientConfigurationResult> {
     this.assertSupported()
     const request = coldClientSetupRequestSchema.parse(requestInput)
     return this.operations.run('setup', request.appId, async (context) => {
@@ -202,11 +205,16 @@ export class ColdClientService {
         generated,
         context,
       )
-      return this.getStatus(request.appId)
+      return {
+        status: await this.getStatus(request.appId),
+        warnings: generated.warnings,
+      }
     })
   }
 
-  regenerate(requestInput: ColdClientSetupRequest): Promise<ColdClientStatus> {
+  regenerate(
+    requestInput: ColdClientSetupRequest,
+  ): Promise<ColdClientConfigurationResult> {
     this.assertSupported()
     const request = coldClientSetupRequestSchema.parse(requestInput)
     return this.operations.run('regenerate', request.appId, async (context) => {
@@ -371,7 +379,10 @@ export class ColdClientService {
           await release()
         }
       }
-      return this.getStatus(request.appId)
+      return {
+        status: await this.getStatus(request.appId),
+        warnings: generated.warnings,
+      }
     })
   }
 

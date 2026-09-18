@@ -1,5 +1,6 @@
 import type {
   CancelColdClientOperationResult,
+  ColdClientConfigurationResult,
   ColdClientDependencyId,
   ColdClientDependencyStatus,
   ColdClientOperationSnapshot,
@@ -445,11 +446,11 @@ export type AppRpc = {
       }
       configureColdClient: {
         params: ColdClientSetupRequest
-        response: ColdClientStatus
+        response: ColdClientConfigurationResult
       }
       regenerateColdClientConfiguration: {
         params: ColdClientSetupRequest
-        response: ColdClientStatus
+        response: ColdClientConfigurationResult
       }
       updateColdClientCore: {
         params: { appId: number }

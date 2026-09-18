@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useMutation } from '@pinia/colada'
 import { computed, ref, watch } from 'vue'
+import { toast } from 'vue-sonner'
 
 import {
   configureColdClient,
@@ -174,9 +175,15 @@ function confirmSetup() {
     gseAssetId: draft.value.gse.assetId,
   })
   emit('update:open', false)
-  void operation.catch((reason) =>
-    emit('error', reason instanceof Error ? reason.message : String(reason)),
-  )
+  void operation
+    .then(({ warnings }) => {
+      if (warnings.includes('achievement-images-incomplete')) {
+        toast.warning('Some achievement images could not be generated.')
+      }
+    })
+    .catch((reason) =>
+      emit('error', reason instanceof Error ? reason.message : String(reason)),
+    )
 }
 
 function selectLaunchSource(event: Event) {

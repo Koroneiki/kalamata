@@ -32,13 +32,16 @@ test('configures a complete reviewed ColdClient installation', async () => {
   const fixture = await createFixture()
   const service = createService(fixture)
 
-  const status = await service.configure(fixture.request)
+  const result = await service.configure(fixture.request)
 
-  expect(status).toMatchObject({
-    status: 'configured',
-    installedGbeTag: 'gbe-v1',
-    installedGseTag: 'gse-v1',
-    recommendationReasons: [],
+  expect(result).toMatchObject({
+    status: {
+      status: 'configured',
+      installedGbeTag: 'gbe-v1',
+      installedGseTag: 'gse-v1',
+      recommendationReasons: [],
+    },
+    warnings: [],
   })
   const live = join(fixture.installRoot, '_ColdClient')
   expect(
@@ -205,7 +208,7 @@ test('releases the install-path lock when post-commit cleanup fails', async () =
   })
 
   await expect(service.configure(fixture.request)).resolves.toMatchObject({
-    status: 'configured',
+    status: { status: 'configured' },
   })
   expect(released).toBe(true)
   expect(cleanupErrors).toHaveLength(1)
@@ -265,7 +268,7 @@ test('regenerates reviewed settings and loader choices while preserving custom f
   )
   await writeGeneratedSettings(fixture.generatedSettings, 'regenerated-overlay')
 
-  const status = await service.regenerate({
+  const result = await service.regenerate({
     ...fixture.request,
     executableRelativePath: 'Alternate.exe',
     steamApiRelativePath: 'Game/Binaries/steam_api.dll',
@@ -274,9 +277,11 @@ test('regenerates reviewed settings and loader choices while preserving custom f
     launchArgumentSource: null,
   })
 
-  expect(status).toMatchObject({
-    status: 'configured',
-    recommendationReasons: [],
+  expect(result).toMatchObject({
+    status: {
+      status: 'configured',
+      recommendationReasons: [],
+    },
   })
   expect(await readFile(join(live, 'ColdClientLoader.ini'), 'utf8')).toContain(
     'Exe=..\\Alternate.exe\r\n',
@@ -381,6 +386,7 @@ function createService(
         gseAssetId: 201,
         appDirectory: fixture.generatedApp,
         steamSettingsDirectory: fixture.generatedSettings,
+        warnings: [],
       }),
     },
     {

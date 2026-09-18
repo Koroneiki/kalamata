@@ -126,6 +126,17 @@ export type ColdClientStatus =
     }
   | { status: 'invalid'; message: string }
 
+export const coldClientConfigurationWarnings = [
+  'achievement-images-incomplete',
+] as const
+export type ColdClientConfigurationWarning =
+  (typeof coldClientConfigurationWarnings)[number]
+
+export interface ColdClientConfigurationResult {
+  status: ColdClientStatus
+  warnings: ColdClientConfigurationWarning[]
+}
+
 export const coldClientDependencyIds = ['7zip', 'gbe', 'gse'] as const
 export type ColdClientDependencyId = (typeof coldClientDependencyIds)[number]
 export const coldClientDependencyIdSchema = z.enum(coldClientDependencyIds)

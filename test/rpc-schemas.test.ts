@@ -160,6 +160,21 @@ test('validates reviewed ColdClient setup and app status', () => {
     }),
   ).toMatchObject({ status: 'configured' })
   expect(
+    rpcResponseSchemas.configureColdClient.parse({
+      status: {
+        status: 'configured',
+        coreUpdateAvailable: false,
+        recommendationReasons: [],
+        installedGbeTag: 'gbe-v1',
+        availableGbeTag: 'gbe-v1',
+        installedGseTag: 'gse-v1',
+        availableGseTag: 'gse-v1',
+        lastConfiguredAt: 1000,
+      },
+      warnings: ['achievement-images-incomplete'],
+    }),
+  ).toMatchObject({ warnings: ['achievement-images-incomplete'] })
+  expect(
     rpcResponseSchemas.updateColdClientCore.parse({
       status: 'not-configured',
     }),
