@@ -5,7 +5,7 @@ import Electrobun, {
   Utils,
 } from 'electrobun/main'
 
-import { createSteamService } from '../backend/index.ts'
+import { SteamService } from '../backend/index.ts'
 import { AppService } from '../backend/apps/app-service.ts'
 import { ColdClientDependencyService } from '../backend/cold-client/dependency-service.ts'
 import { ColdClientMutationMutex } from '../backend/cold-client/mutation-mutex.ts'
@@ -52,7 +52,7 @@ async function getMainViewUrl(): Promise<string> {
 }
 
 const database = await openKalamataDatabase(Utils.paths.userData)
-const steam = createSteamService((appIds, countryCode, error) => {
+const steam = new SteamService((appIds, countryCode, error) => {
   diagnostics.error({
     event: 'product-info.package-discovery-failed',
     appIds,

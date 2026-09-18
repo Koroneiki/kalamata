@@ -146,13 +146,3 @@ export class SteamService {
     this.#session.dispose()
   }
 }
-
-export function createSteamService(
-  reportPackageFailure?: (
-    appIds: number[],
-    countryCode: string,
-    error: Error,
-  ) => void,
-): SteamService {
-  return new SteamService(reportPackageFailure)
-}

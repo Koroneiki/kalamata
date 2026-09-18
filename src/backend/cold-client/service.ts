@@ -285,27 +285,13 @@ export class ColdClientService {
             installRoot,
             request.steamApiRelativePath,
           )
-          await this.interfaceGenerator.generate(
-            join(
-              gbe.directory,
-              'release',
-              'tools',
-              'generate_interfaces',
-              'generate_interfaces_x64.exe',
-            ),
-            join(installRoot, ...request.steamApiRelativePath.split('/')),
-            join(installRoot, CONFIG_TEMPORARY_DIRECTORY),
-            join(settings, 'steam_interfaces.txt'),
-            context.signal,
-          )
         }
-        await updateColdClientLoaderIni(
-          join(stagingDirectory, 'ColdClientLoader.ini'),
-          {
-            executableRelativePath: request.executableRelativePath,
-            appId: request.appId,
-            launchArguments: request.launchArguments,
-          },
+        await this.writeGeneratedConfiguration(
+          gbe.directory,
+          installRoot,
+          stagingDirectory,
+          request,
+          context.signal,
         )
         const managedCoreFiles = switchedLoaderInventory(
           previous.managedCoreFiles,
@@ -337,19 +323,12 @@ export class ColdClientService {
           request,
           managedCoreFiles,
         )
-        const target: ColdClientInstallation = {
-          appId: request.appId,
-          loaderArchitecture: request.loaderArchitecture,
-          executableRelativePath: request.executableRelativePath,
-          steamApiRelativePath: request.steamApiRelativePath,
-          launchArguments: request.launchArguments,
-          launchArgumentSource: request.launchArgumentSource,
-          gbeAssetId: request.gbeAssetId,
-          gseAssetId: request.gseAssetId,
-          generatedDepotFingerprint: coldClientDepotFingerprint(currentDepots),
+        const target = createColdClientInstallation(
+          request,
+          currentDepots,
           managedCoreFiles,
-          configuredAt: this.#now(),
-        }
+          this.#now(),
+        )
         context.beginReplacement()
         await this.replacement.replaceConfiguration({
           installRoot,
@@ -674,28 +653,12 @@ export class ColdClientService {
         errorOnExist: true,
         force: false,
       })
-      if (request.steamApiRelativePath) {
-        await this.interfaceGenerator.generate(
-          join(
-            gbe.directory,
-            'release',
-            'tools',
-            'generate_interfaces',
-            'generate_interfaces_x64.exe',
-          ),
-          join(installRoot, ...request.steamApiRelativePath.split('/')),
-          join(installRoot, CONFIG_TEMPORARY_DIRECTORY),
-          join(settings, 'steam_interfaces.txt'),
-          context.signal,
-        )
-      }
-      await updateColdClientLoaderIni(
-        join(stagingDirectory, 'ColdClientLoader.ini'),
-        {
-          executableRelativePath: request.executableRelativePath,
-          appId: request.appId,
-          launchArguments: request.launchArguments,
-        },
+      await this.writeGeneratedConfiguration(
+        gbe.directory,
+        installRoot,
+        stagingDirectory,
+        request,
+        context.signal,
       )
       const managedCoreFiles = await validatePreparedInstallation(
         stagingDirectory,
@@ -704,19 +667,12 @@ export class ColdClientService {
       const previousInstallation = this.database.getColdClientInstallation(
         request.appId,
       )
-      const targetInstallation: ColdClientInstallation = {
-        appId: request.appId,
-        loaderArchitecture: request.loaderArchitecture,
-        executableRelativePath: request.executableRelativePath,
-        steamApiRelativePath: request.steamApiRelativePath,
-        launchArguments: request.launchArguments,
-        launchArgumentSource: request.launchArgumentSource,
-        gbeAssetId: request.gbeAssetId,
-        gseAssetId: request.gseAssetId,
-        generatedDepotFingerprint: coldClientDepotFingerprint(currentDepots),
+      const targetInstallation = createColdClientInstallation(
+        request,
+        currentDepots,
         managedCoreFiles,
-        configuredAt: this.#now(),
-      }
+        this.#now(),
+      )
       context.beginReplacement()
       await this.replacement.replaceSetup({
         installRoot,
@@ -748,9 +704,62 @@ export class ColdClientService {
       }
     }
   }
+
+  private async writeGeneratedConfiguration(
+    gbeDirectory: string,
+    installRoot: string,
+    stagingDirectory: string,
+    request: ColdClientSetupRequest,
+    signal: AbortSignal,
+  ): Promise<void> {
+    if (request.steamApiRelativePath) {
+      await this.interfaceGenerator.generate(
+        join(
+          gbeDirectory,
+          'release',
+          'tools',
+          'generate_interfaces',
+          'generate_interfaces_x64.exe',
+        ),
+        join(installRoot, ...request.steamApiRelativePath.split('/')),
+        join(installRoot, CONFIG_TEMPORARY_DIRECTORY),
+        join(stagingDirectory, 'steam_settings', 'steam_interfaces.txt'),
+        signal,
+      )
+    }
+    await updateColdClientLoaderIni(
+      join(stagingDirectory, 'ColdClientLoader.ini'),
+      {
+        executableRelativePath: request.executableRelativePath,
+        appId: request.appId,
+        launchArguments: request.launchArguments,
+      },
+    )
+  }
 }
 
 const CONFIG_TEMPORARY_DIRECTORY = '.Kalamata-coldclient-interfaces'
+
+function createColdClientInstallation(
+  request: ColdClientSetupRequest,
+  depots: ReturnType<typeof depotSnapshot>,
+  managedCoreFiles: string[],
+  configuredAt: number,
+): ColdClientInstallation {
+  return {
+    appId: request.appId,
+    loaderArchitecture: request.loaderArchitecture,
+    executableRelativePath: request.executableRelativePath,
+    steamApiRelativePath: request.steamApiRelativePath,
+    launchArguments: request.launchArguments,
+    launchArgumentSource: request.launchArgumentSource,
+    gbeAssetId: request.gbeAssetId,
+    gseAssetId: request.gseAssetId,
+    generatedDepotFingerprint: coldClientDepotFingerprint(depots),
+    managedCoreFiles,
+    configuredAt,
+  }
+}
 
 async function cleanupGeneratedOperation(
   installRoot: string,

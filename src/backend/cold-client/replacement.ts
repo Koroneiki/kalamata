@@ -246,31 +246,15 @@ export class ColdClientReplacementService {
     }
     await writeDurableJson(replacementJournalPath(installRoot), journal)
 
-    let databaseCommitted = false
-    try {
-      await this.prepareCoreBackup(journal)
-      await this.installCore(journal)
-      journal.filesystemChanged = true
-      await writeDurableJson(replacementJournalPath(installRoot), journal)
-      await options.validateLive(join(installRoot, LIVE_NAME))
-      this.database.replaceColdClientInstallationIfCurrent(
-        options.previousInstallation,
-        options.targetInstallation,
-      )
-      databaseCommitted = true
-      await this.finishForward(journal)
-    } catch (error) {
-      if (databaseCommitted) {
-        this.#reportCleanupError(
-          error instanceof Error
-            ? error
-            : new Error('ColdClient cleanup failed after commit'),
-        )
-        return
-      }
-      await this.rollback(journal)
-      throw error
-    }
+    await this.commitReplacement(
+      journal,
+      options,
+      join(installRoot, LIVE_NAME),
+      async () => {
+        await this.prepareCoreBackup(journal)
+        await this.installCore(journal)
+      },
+    )
   }
 
   private async replaceDirectory(
@@ -320,14 +304,28 @@ export class ColdClientReplacementService {
     }
     await writeDurableJson(journalPath, journal)
 
-    let databaseCommitted = false
-    try {
+    await this.commitReplacement(journal, options, live, async () => {
       const backup = journalPathInRoot(installRoot, journal.backupRelativePath)
       if (oldLiveExisted) await rename(live, backup)
       await rename(stagingDirectory, live)
+    })
+  }
+
+  private async commitReplacement(
+    journal: ColdClientReplacementJournal,
+    options: ReplaceSetupOptions,
+    liveDirectory: string,
+    replaceFilesystem: () => Promise<void>,
+  ): Promise<void> {
+    let databaseCommitted = false
+    try {
+      await replaceFilesystem()
       journal.filesystemChanged = true
-      await writeDurableJson(journalPath, journal)
-      await options.validateLive(live)
+      await writeDurableJson(
+        replacementJournalPath(journal.installRoot),
+        journal,
+      )
+      await options.validateLive(liveDirectory)
       this.database.replaceColdClientInstallationIfCurrent(
         options.previousInstallation,
         options.targetInstallation,

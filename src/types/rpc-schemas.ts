@@ -1,5 +1,4 @@
 import { z } from 'zod'
-import type { AppRpc } from './rpc.ts'
 import {
   appSettingsSchema,
   manifestIdSchema,
@@ -19,22 +18,6 @@ import {
   coldClientSetupRequestSchema,
   coldClientSetupWarningSchema,
 } from './cold-client.ts'
-
-type Requests = AppRpc['bun']['requests']
-type RequestSchemas = {
-  [K in keyof Requests]: z.ZodType<Requests[K]['params']>
-}
-type ResponseSchemas = {
-  [K in keyof Requests]: z.ZodType<Requests[K]['response']>
-}
-type RpcRequestInput = z.input<
-  (typeof rpcRequestSchemas)[keyof typeof rpcRequestSchemas]
->
-type RequestHandlers = {
-  [K in keyof Requests]: (
-    params: Requests[K]['params'],
-  ) => Requests[K]['response'] | Promise<Requests[K]['response']>
-}
 
 const strict = z.strictObject
 const emptySchema = strict({})
@@ -517,7 +500,7 @@ const rpcRequestSchemas = {
   getDownloadQueue: emptySchema,
   removeQueuedOperation: strict({ id: z.string().min(1) }),
   prioritizeQueuedOperation: strict({ id: z.string().min(1) }),
-} satisfies RequestSchemas
+}
 
 export const rpcResponseSchemas = {
   getAppSummary: appSummarySchema,
@@ -625,7 +608,24 @@ export const rpcResponseSchemas = {
   getDownloadQueue: downloadQueueSnapshotSchema,
   removeQueuedOperation: downloadQueueSnapshotSchema,
   prioritizeQueuedOperation: downloadQueueSnapshotSchema,
-} satisfies ResponseSchemas
+} satisfies Record<keyof typeof rpcRequestSchemas, z.ZodType>
+
+export type RpcRequests = {
+  [K in keyof typeof rpcRequestSchemas]: {
+    params: z.output<(typeof rpcRequestSchemas)[K]>
+    response: z.output<(typeof rpcResponseSchemas)[K]>
+  }
+}
+
+type Requests = RpcRequests
+type RpcRequestInput = z.input<
+  (typeof rpcRequestSchemas)[keyof typeof rpcRequestSchemas]
+>
+type RequestHandlers = {
+  [K in keyof Requests]: (
+    params: Requests[K]['params'],
+  ) => Requests[K]['response'] | Promise<Requests[K]['response']>
+}
 
 export function parseRpcRequest<K extends keyof Requests>(
   method: K,
