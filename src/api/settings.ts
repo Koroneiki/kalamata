@@ -16,3 +16,7 @@ export function getHubcapUsage() {
 export function openUserDataFolder() {
   return request('openUserDataFolder', {})
 }
+
+export function openExternalUrl(url: string) {
+  return request('openExternalUrl', { url })
+}

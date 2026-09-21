@@ -21,6 +21,12 @@ import {
 
 const strict = z.strictObject
 const emptySchema = strict({})
+const externalUrlSchema = z
+  .url()
+  .refine(
+    (value) => ['http:', 'https:'].includes(new URL(value).protocol),
+    'Only HTTP and HTTPS URLs can be opened externally',
+  )
 const idRequestSchema = strict({ appId: steamIdSchema })
 const dependencyAssetIdSchema = z.number().int().positive().safe()
 const applicationUpdateStatusSchema = strict({
@@ -438,6 +444,7 @@ const rpcRequestSchemas = {
   installApplicationUpdate: emptySchema,
   getHubcapUsage: emptySchema,
   openUserDataFolder: emptySchema,
+  openExternalUrl: strict({ url: externalUrlSchema }),
   getColdClientDependencies: emptySchema,
   checkColdClientDependencyUpdates: emptySchema,
   updateColdClientDependencies: strict({
@@ -515,6 +522,7 @@ export const rpcResponseSchemas = {
   installApplicationUpdate: z.void(),
   getHubcapUsage: hubcapUsageResultSchema,
   openUserDataFolder: z.void(),
+  openExternalUrl: z.void(),
   getColdClientDependencies: coldClientDependencyStatusSchema,
   checkColdClientDependencyUpdates: coldClientDependencyStatusSchema,
   updateColdClientDependencies: coldClientDependencyStatusSchema,

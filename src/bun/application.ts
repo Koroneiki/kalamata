@@ -217,6 +217,10 @@ const rpc = BrowserView.defineRPC<AppRpc>({
         if (!Utils.openPath(Utils.paths.userData))
           throw new Error('The user data folder could not be opened')
       },
+      openExternalUrl({ url }) {
+        if (!Utils.openExternal(url))
+          throw new Error('The external link could not be opened')
+      },
       getColdClientDependencies() {
         return coldClientDependencies.getStatus()
       },

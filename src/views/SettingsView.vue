@@ -1,10 +1,18 @@
 <script setup lang="ts">
 import { useMutation, useQueryCache } from '@pinia/colada'
-import { Check, Download, FolderOpen, RefreshCw, X } from '@lucide/vue'
+import {
+  Check,
+  Download,
+  ExternalLink,
+  FolderOpen,
+  RefreshCw,
+  X,
+} from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
 
 import {
   openUserDataFolder as requestOpenUserDataFolder,
+  openExternalUrl,
   updateSettings,
 } from '@/api/settings'
 import { installApplicationUpdate } from '@/api/application-update'
@@ -54,6 +62,7 @@ const {
 } = useHubcapUsageQuery()
 const updateMutation = useMutation({ mutation: updateSettings })
 const openFolderMutation = useMutation({ mutation: requestOpenUserDataFolder })
+const openExternalUrlMutation = useMutation({ mutation: openExternalUrl })
 const {
   data: applicationUpdate,
   error: applicationUpdateQueryError,
@@ -92,6 +101,7 @@ const applicationUpdateMutationError = ref('')
 const confirmingDependencyUpdate = ref(false)
 const hubcapApiKeyDraft = ref('')
 const hubcapKeyFocused = ref(false)
+const hubcapApiKeysUrl = 'https://hubcapmanifest.com/api-keys'
 const hubcapUsageLabels = {
   'missing-key': 'No key configured',
   'invalid-key': 'Key invalid',
@@ -268,6 +278,15 @@ async function openUserDataFolder() {
   }
 }
 
+async function openHubcapApiKeys() {
+  mutationError.value = ''
+  try {
+    await openExternalUrlMutation.mutateAsync(hubcapApiKeysUrl)
+  } catch (error) {
+    mutationError.value = error instanceof Error ? error.message : String(error)
+  }
+}
+
 function dependencyStatusLabel(item: ColdClientDependencyItemStatus) {
   if (item.status === 'check-failed') return 'Check failed'
   if (item.status === 'update-available') return 'Update available'
@@ -371,7 +390,19 @@ async function installUpdate() {
         @update:model-value="setAutomaticManifestAcquisition"
       />
       <div class="border-border border-t p-4 sm:p-5">
-        <Label for="hubcap-api-key">Hubcap API key</Label>
+        <div class="flex items-center justify-between gap-2">
+          <Label for="hubcap-api-key">Hubcap API key</Label>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            :disabled="openExternalUrlMutation.isLoading.value"
+            aria-label="Open Hubcap API keys"
+            title="Open Hubcap API keys"
+            @click="openHubcapApiKeys"
+          >
+            <ExternalLink aria-hidden="true" />
+          </Button>
+        </div>
         <Input
           id="hubcap-api-key"
           v-model="hubcapApiKeyDraft"

@@ -28,6 +28,17 @@ test('validates application update status', () => {
   ).toThrow()
 })
 
+test('only allows HTTP(S) URLs for external links', () => {
+  expect(
+    parseRpcRequest('openExternalUrl', {
+      url: 'https://hubcapmanifest.com/api-keys',
+    }),
+  ).toEqual({ url: 'https://hubcapmanifest.com/api-keys' })
+  expect(() =>
+    parseRpcRequest('openExternalUrl', { url: 'file:///tmp/secrets' }),
+  ).toThrow()
+})
+
 test('validates ColdClient dependency requests and secret-free status', () => {
   expect(
     parseRpcRequest('updateColdClientDependencies', {
