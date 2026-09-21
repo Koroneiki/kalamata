@@ -1,10 +1,9 @@
 import { useQueryCache } from '@pinia/colada'
 import { watch } from 'vue'
-import { toast } from 'vue-sonner'
 
 import { getAppSummary } from '@/api/apps'
-import GameCompletionToast from '@/components/shared/GameCompletionToast.vue'
 import { appQueryKeys } from '@/composables/queries'
+import { appToast } from '@/lib/toast'
 import { useOperationStore } from '@/stores/operation'
 import type { AppSummary } from '@/types/rpc'
 import { operationCompletionMessage } from '@/utils/operation'
@@ -43,7 +42,7 @@ export function useOperationToasts() {
       lastFailureKey = failureKey
 
       const summary = await appSummary(state.appId)
-      toast.error(`${appName(summary, state.appId)} failed`, {
+      appToast.error(`${appName(summary, state.appId)} failed`, {
         description: state.error.message,
       })
     },
@@ -63,19 +62,11 @@ export function useOperationToasts() {
         return
 
       const summary = await appSummary(state.appId)
-      toast.custom(GameCompletionToast, {
-        componentProps: {
-          name: appName(summary, state.appId),
-          iconUrl: summary?.iconUrls[0] ?? null,
-          message: operationCompletionMessage(
-            state.kind,
-            state.desiredDepotIds,
-          ),
-        },
-        duration: 6_000,
-        class:
-          'game-completion-toast !w-88 !max-w-[calc(100vw-2rem)] !border-primary/25 !bg-card !p-0 !text-card-foreground',
-      })
+      appToast.gameCompletion(
+        appName(summary, state.appId),
+        summary?.iconUrls[0] ?? null,
+        operationCompletionMessage(state.kind, state.desiredDepotIds),
+      )
     },
     // Operation messages can arrive in one tick; observe every terminal transition.
     { flush: 'sync' },

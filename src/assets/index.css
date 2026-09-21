@@ -126,24 +126,18 @@
     transition: bottom 200ms ease-out;
   }
 
-  [data-sonner-toast].manifest-queue-toast {
+  [data-sonner-toast].app-toast {
     box-shadow: 0 8px 24px -10px
       color-mix(in oklab, var(--foreground) 20%, transparent);
   }
 
-  [data-sonner-toast].game-completion-toast {
-    background-color: color-mix(in oklab, var(--card) 88%, var(--primary));
-    box-shadow: 0 8px 24px -8px
-      color-mix(in oklab, var(--primary) 30%, transparent);
-  }
-
-  [data-sonner-toast].game-completion-toast [data-close-button] {
+  [data-sonner-toast].app-toast [data-close-button] {
     background: var(--card);
-    border-color: color-mix(in oklab, var(--border) 75%, var(--primary));
+    border-color: var(--border);
     color: var(--muted-foreground);
   }
 
-  [data-sonner-toast].game-completion-toast [data-close-button]:hover {
+  [data-sonner-toast].app-toast [data-close-button]:hover {
     background: var(--accent);
     color: var(--accent-foreground);
   }

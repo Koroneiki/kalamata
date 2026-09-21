@@ -1,9 +1,9 @@
 import { useQueryCache } from '@pinia/colada'
-import { toast } from 'vue-sonner'
 
 import { acquireDepotKeys, acquireManifest } from '@/api/apps'
 import { appQueryKeys, hubcapUsageQueryKey } from '@/composables/queries'
 import { requestHubcapApproval } from '@/composables/use-hubcap-approval'
+import { appToast } from '@/lib/toast'
 import { useManifestQueueStore } from '@/stores/manifest-queue'
 import type {
   EligibleAppDepot,
@@ -18,10 +18,10 @@ import {
 } from '@/composables/resource-acquisition-cache'
 
 const hubcapFailureFeedback = {
-  'missing-key': () => toast.warning('No Hubcap API Key.'),
-  'quota-exhausted': () => toast.warning('No Hubcap Quota left.'),
-  'invalid-key': () => toast.error('Hubcap API Key invalid.'),
-  'stats-unavailable': () => toast.error('Hubcap quota check failed.'),
+  'missing-key': () => appToast.warning('No Hubcap API Key.'),
+  'quota-exhausted': () => appToast.warning('No Hubcap Quota left.'),
+  'invalid-key': () => appToast.error('Hubcap API Key invalid.'),
+  'stats-unavailable': () => appToast.error('Hubcap quota check failed.'),
 }
 
 export function useDepotResourceAcquisition() {
@@ -88,7 +88,7 @@ export function useDepotResourceAcquisition() {
         resource === 'manifest' ||
         ('acquiredDepotIds' in outcome && outcome.acquiredDepotIds.length > 0)
       ) {
-        toast.success(
+        appToast.success(
           `${resource === 'manifest' ? 'Manifest' : 'Depot keys'} fetched from Hubcap. Rem.: ${outcome.usage.remaining} Gens.`,
         )
       }

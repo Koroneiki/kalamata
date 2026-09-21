@@ -16,6 +16,7 @@ import { useOperationToasts } from '@/composables/use-operation-toasts'
 import { useOperationStore } from '@/stores/operation'
 import { useAvailableUpdates } from '@/composables/use-available-updates'
 import { useSidebarResize } from '@/composables/use-sidebar-resize'
+import { MANIFEST_QUEUE_TOASTER_ID } from '@/lib/toast'
 
 const operation = useOperationStore()
 const availableUpdates = useAvailableUpdates()
@@ -93,12 +94,12 @@ watch(
       class="notification-toaster"
       position="bottom-right"
       close-button
-      :offset="notificationOffset"
+      :offset="{ bottom: notificationOffset, right: 20 }"
       :gap="10"
     />
     <HubcapQuotaDialog />
     <Toaster
-      id="manifest-queue"
+      :id="MANIFEST_QUEUE_TOASTER_ID"
       position="bottom-right"
       :offset="20"
       :visible-toasts="1"

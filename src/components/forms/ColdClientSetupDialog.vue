@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { useMutation } from '@pinia/colada'
 import { computed, ref, watch } from 'vue'
-import { toast } from 'vue-sonner'
 
 import {
   configureColdClient,
@@ -21,6 +20,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
+import { appToast } from '@/lib/toast'
 import type {
   ColdClientSetupDraft,
   ColdClientSetupMode,
@@ -178,7 +178,7 @@ function confirmSetup() {
   void operation
     .then(({ warnings }) => {
       if (warnings.includes('achievement-images-incomplete')) {
-        toast.warning('Some achievement images could not be generated.')
+        appToast.warning('Some achievement images could not be generated.')
       }
     })
     .catch((reason) =>
