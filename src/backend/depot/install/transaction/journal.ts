@@ -214,9 +214,7 @@ export async function readJournal(path: string): Promise<TransactionJournal> {
   return result.data
 }
 
-export function isMalformedTransactionJournalError(
-  error: Error,
-): boolean {
+export function isMalformedTransactionJournalError(error: Error): boolean {
   return error instanceof MalformedTransactionJournalError
 }
 
@@ -275,10 +273,7 @@ export async function loadResumableJournal(
   try {
     journal = await readJournal(join(transactionRoot, 'journal.json'))
   } catch (error) {
-    if (
-      !(error instanceof Error) ||
-      !isMalformedTransactionJournalError(error)
-    )
+    if (!(error instanceof Error) || !isMalformedTransactionJournalError(error))
       throw error
     await rm(transactionRoot, { recursive: true, force: true })
     return undefined

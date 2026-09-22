@@ -102,10 +102,7 @@ async function readRecoverableJournal(
   try {
     return await readJournal(journalPath)
   } catch (error) {
-    if (
-      !(error instanceof Error) ||
-      !isMalformedTransactionJournalError(error)
-    )
+    if (!(error instanceof Error) || !isMalformedTransactionJournalError(error))
       throw error
     if (
       !(await pathExists(join(transactionRoot, 'commit-ready'))) &&
