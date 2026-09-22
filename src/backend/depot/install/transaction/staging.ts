@@ -20,7 +20,6 @@ import {
   ApplicationTransactionError,
   emitProgress,
   filesystemErrorCode,
-  isAbort,
   isFilesystemError,
   throwIfAborted,
   type ChunkDestination,
@@ -267,7 +266,7 @@ async function fetchChunk(
     try {
       pool = await contentServerPool(resource, signal, serverPools)
     } catch (error) {
-      if (isAbort(error, signal)) throw error
+      throwIfAborted(signal)
       lastError = new ApplicationTransactionError(
         'steam',
         `Could not list content servers for app ${resource.appId}`,
@@ -303,7 +302,7 @@ async function fetchChunk(
       if ('chunk' in refreshed) return refreshed
       lastError = refreshed.error
     } catch (error) {
-      if (isAbort(error, signal)) throw error
+      throwIfAborted(signal)
       lastError = error instanceof Error ? error : new Error(String(error))
     }
   }
@@ -388,7 +387,7 @@ async function fetchFromResource(
         ),
       }
     } catch (error) {
-      if (isAbort(error, signal)) throw error
+      throwIfAborted(signal)
       if (filesystemErrorCode(error) === 'ENOSPC')
         throw new ApplicationTransactionError(
           'insufficient-space',

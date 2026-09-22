@@ -577,6 +577,24 @@ describe('application filesystem transactions', () => {
     })
   })
 
+  test('preserves staged progress when a transport throws AbortError', async () => {
+    directory = await tempDirectory()
+    const desired = depot(10, '1', { 'game.bin': 'new' })
+    desired.client.downloadChunk = mock(async () => {
+      throw new DOMException('Transport request aborted', 'AbortError')
+    })
+
+    await expect(run(directory, [], [desired])).rejects.toMatchObject({
+      kind: 'transfer-exhausted',
+    })
+    await expect(
+      getResumableApplicationTransaction(directory, 100),
+    ).resolves.toMatchObject({
+      appId: 100,
+      networkBytes: '0',
+    })
+  })
+
   test('rotates after one repeated Retry-After response from a server', async () => {
     directory = await tempDirectory()
     const desired = depot(10, '1', { 'game.bin': 'new' })

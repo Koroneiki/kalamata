@@ -37,7 +37,6 @@ import {
   ApplicationTransactionError,
   classify,
   emitProgress,
-  isAbort,
   filesystemErrorCode,
   isFilesystemError,
   isPause,
@@ -503,10 +502,8 @@ async function cleanupInterruptedStaging(
 function isCancellationAbort(cause: unknown, signal?: AbortSignal): boolean {
   if (cause instanceof ApplicationTransactionError)
     return cause.kind === 'cancellation'
-  if (cause instanceof DOMException) return cause.name === 'AbortError'
-  if (cause instanceof Error && cause.name === 'AbortError') return true
   // Transport failures can abort the shared signal with their own typed error;
-  // only the standard abort reason represents an explicit cancellation.
+  // only an aborted operation with the standard abort reason is cancellation.
   return (
     signal?.aborted === true &&
     (signal.reason instanceof DOMException
@@ -520,7 +517,7 @@ function throwTransactionFailure(
   failure: TransactionFailure,
 ): never {
   if (failure.cause instanceof ApplicationTransactionError) throw failure.cause
-  if (isAbort(failure.cause, options.signal))
+  if (isCancellationAbort(failure.cause, options.signal))
     throw new ApplicationTransactionError(
       'cancellation',
       'Transaction cancelled',
@@ -532,7 +529,11 @@ function throwTransactionFailure(
       'Insufficient space while staging application',
       { cause: failure.cause },
     )
-  throw classify(failure.cause, 'filesystem', 'Application transaction failed')
+  throw new ApplicationTransactionError(
+    'filesystem',
+    'Application transaction failed',
+    { cause: failure.cause },
+  )
 }
 
 async function assertSpace(path: string, required: bigint): Promise<void> {
