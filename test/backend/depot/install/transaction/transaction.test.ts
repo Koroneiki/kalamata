@@ -351,6 +351,24 @@ describe('application filesystem transactions', () => {
     expect(await text('game.bin')).toBe('good')
   })
 
+  test('preserves staging when its journal cannot be read', async () => {
+    directory = await tempDirectory()
+    const desired = depot(10, '1', { 'game.bin': 'good' })
+    await writeStagingJournal(desired, 'good')
+    const journalPath = join(
+      directory,
+      '.Kalamata/transactions/resume-test/journal.json',
+    )
+    await rm(journalPath)
+    await mkdir(journalPath)
+
+    await expect(run(directory, [], [desired])).rejects.toMatchObject({
+      kind: 'recovery',
+      message: `Could not read journal ${journalPath}`,
+    })
+    expect(await transactionEntries()).toEqual(['resume-test'])
+  })
+
   test('discards staging when its retained and staged bytes omit target files', async () => {
     directory = await tempDirectory()
     const desired = depot(10, '1', { 'game.bin': 'good' })

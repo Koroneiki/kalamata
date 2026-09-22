@@ -4,7 +4,11 @@ import { join } from 'node:path'
 import { CONFIG_DIRECTORY } from '../internal-paths.ts'
 import { acquireOutputLock } from '../output-lock.ts'
 import { rollForward } from './commit.ts'
-import { assertJournalIdentity, readJournal } from './journal.ts'
+import {
+  assertJournalIdentity,
+  isMalformedTransactionJournalError,
+  readJournal,
+} from './journal.ts'
 import { pathExists } from './projection.ts'
 import {
   ApplicationTransactionError,
@@ -98,6 +102,11 @@ async function readRecoverableJournal(
   try {
     return await readJournal(journalPath)
   } catch (error) {
+    if (
+      !(error instanceof Error) ||
+      !isMalformedTransactionJournalError(error)
+    )
+      throw error
     if (
       !(await pathExists(join(transactionRoot, 'commit-ready'))) &&
       !(await pathExists(join(transactionRoot, 'backup')))

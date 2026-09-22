@@ -33,6 +33,8 @@ import {
 
 export const TRANSACTION_VERSION = 3
 
+class MalformedTransactionJournalError extends ApplicationTransactionError {}
+
 const journalPathSchema = z.string().refine(safeJournalPath)
 const depotRecordSchema = z.object({
   depotId: steamIdSchema,
@@ -177,11 +179,27 @@ export async function writeJournal(
 }
 
 export async function readJournal(path: string): Promise<TransactionJournal> {
+  let contents: string
+  try {
+    contents = await readFile(path, 'utf8')
+  } catch (error) {
+    if (filesystemErrorCode(error) === 'ENOENT')
+      throw new MalformedTransactionJournalError(
+        'recovery',
+        `Malformed journal ${path}`,
+        { cause: error },
+      )
+    throw new ApplicationTransactionError(
+      'recovery',
+      `Could not read journal ${path}`,
+      { cause: error },
+    )
+  }
   let parsed: unknown
   try {
-    parsed = JSON.parse(await readFile(path, 'utf8'))
+    parsed = JSON.parse(contents)
   } catch (error) {
-    throw new ApplicationTransactionError(
+    throw new MalformedTransactionJournalError(
       'recovery',
       `Malformed journal ${path}`,
       { cause: error },
@@ -189,11 +207,17 @@ export async function readJournal(path: string): Promise<TransactionJournal> {
   }
   const result = transactionJournalSchema.safeParse(parsed)
   if (!result.success)
-    throw new ApplicationTransactionError(
+    throw new MalformedTransactionJournalError(
       'recovery',
       `Malformed journal ${path}`,
     )
   return result.data
+}
+
+export function isMalformedTransactionJournalError(
+  error: Error,
+): boolean {
+  return error instanceof MalformedTransactionJournalError
 }
 
 function safeJournalPath(path: string): boolean {
@@ -250,7 +274,12 @@ export async function loadResumableJournal(
   let journal: TransactionJournal
   try {
     journal = await readJournal(join(transactionRoot, 'journal.json'))
-  } catch {
+  } catch (error) {
+    if (
+      !(error instanceof Error) ||
+      !isMalformedTransactionJournalError(error)
+    )
+      throw error
     await rm(transactionRoot, { recursive: true, force: true })
     return undefined
   }
