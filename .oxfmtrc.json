@@ -9,7 +9,8 @@
   "ignorePatterns": [
     ".cottontail-tmp/**",
     "src/components/ui/**",
-    "src/db/migrations/meta/**"
+    "src/db/migrations/meta/**",
+    "tools/oxlint/**"
   ],
   "sortTailwindcss": {},
   "sortPackageJson": false
