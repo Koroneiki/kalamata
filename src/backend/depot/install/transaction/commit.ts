@@ -89,8 +89,11 @@ export async function planCommitActions(
   }))
   const installs = planInstalls(changed, staged, backupRoot)
   const obsoleteDirectories = [...source.values()]
-    .filter((entry) => isDirectory(entry.file) && !target.has(entry.key))
-    .map((entry) => normalizeManifestSeparators(entry.file.filename))
+    .flatMap((entry) =>
+      isDirectory(entry.file) && !target.has(entry.key)
+        ? [normalizeManifestSeparators(entry.file.filename)]
+        : [],
+    )
     .sort((left, right) => pathDepth(right) - pathDepth(left))
   return { oldMoves, installs, obsoleteDirectories }
 }

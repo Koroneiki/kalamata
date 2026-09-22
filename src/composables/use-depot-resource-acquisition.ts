@@ -164,9 +164,9 @@ export function useDepotResourceAcquisition() {
     appId: number,
     depots: EligibleAppDepot[],
   ) {
-    const missingKeyIds = depots
-      .filter(({ keyStatus }) => keyStatus !== 'present')
-      .map(({ depotId }) => depotId)
+    const missingKeyIds = depots.flatMap(({ depotId, keyStatus }) =>
+      keyStatus === 'present' ? [] : [depotId],
+    )
     if (missingKeyIds.length) {
       const result = await acquireKeys(appId, missingKeyIds)
       if (result.missingDepotIds.length) {

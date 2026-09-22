@@ -51,8 +51,9 @@ function depotCountSummary(value: ApplicationOperationPreview) {
     [value.counts.remove, 'removal'],
   ] as const
   return parts
-    .filter(([count]) => count > 0)
-    .map(([count, label]) => `${count} ${label}${count === 1 ? '' : 's'}`)
+    .flatMap(([count, label]) =>
+      count > 0 ? [`${count} ${label}${count === 1 ? '' : 's'}`] : [],
+    )
     .join(' · ')
 }
 </script>

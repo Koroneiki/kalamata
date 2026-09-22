@@ -63,12 +63,16 @@ const visibleDepots = computed(
     ),
 )
 const manifestTargets = computed(() =>
-  [...props.customManifestTargets]
-    .filter(([depotId]) => props.selectedDepotIds.includes(depotId))
-    .map(([depotId, manifestId]) => ({
-      depotId,
-      manifestId,
-    })),
+  [...props.customManifestTargets].flatMap(([depotId, manifestId]) =>
+    props.selectedDepotIds.includes(depotId)
+      ? [
+          {
+            depotId,
+            manifestId,
+          },
+        ]
+      : [],
+  ),
 )
 const isFirstInstall = computed(() => props.app.installedDepotIds.length === 0)
 const confirmationLabel = computed(() => {

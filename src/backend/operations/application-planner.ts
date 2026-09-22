@@ -244,17 +244,17 @@ function getDesiredDepotOrder(
   if (request.fixedDesired)
     return request.fixedDesired.map(({ depotId }) => depotId)
   if (request.kind === 'repair' || pureRemoval)
-    return installedRows
-      .map(({ depotId }) => depotId)
-      .filter((depotId) => desiredIds.has(depotId))
+    return installedRows.flatMap(({ depotId }) =>
+      desiredIds.has(depotId) ? [depotId] : [],
+    )
 
   return [
     ...metadataOrder.filter((depotId) => desiredIds.has(depotId)),
     // Keep unavailable installed depots after published depots without
     // disturbing their persisted relative mount order.
-    ...installedRows
-      .map(({ depotId }) => depotId)
-      .filter((depotId) => desiredIds.has(depotId) && !metadata.has(depotId)),
+    ...installedRows.flatMap(({ depotId }) =>
+      desiredIds.has(depotId) && !metadata.has(depotId) ? [depotId] : [],
+    ),
   ]
 }
 
