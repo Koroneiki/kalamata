@@ -553,6 +553,30 @@ describe('application filesystem transactions', () => {
     await expect(transaction).rejects.toMatchObject({ kind: 'cancellation' })
   })
 
+  test('preserves staged progress when Steam disconnects', async () => {
+    directory = await tempDirectory()
+    const controller = new AbortController()
+    const desired = depot(10, '1', { 'game.bin': 'new' })
+    desired.client.downloadChunk = mock(async () => {
+      const error = new ApplicationTransactionError(
+        'steam',
+        'Steam disconnected during the application operation',
+      )
+      controller.abort(error)
+      throw error
+    })
+
+    await expect(
+      run(directory, [], [desired], { signal: controller.signal }),
+    ).rejects.toMatchObject({ kind: 'steam' })
+    await expect(
+      getResumableApplicationTransaction(directory, 100),
+    ).resolves.toMatchObject({
+      appId: 100,
+      networkBytes: '0',
+    })
+  })
+
   test('rotates after one repeated Retry-After response from a server', async () => {
     directory = await tempDirectory()
     const desired = depot(10, '1', { 'game.bin': 'new' })

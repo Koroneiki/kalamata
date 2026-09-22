@@ -478,7 +478,7 @@ async function cleanupInterruptedStaging(
 ): Promise<void> {
   if (journalContext.journal.phase !== 'staging') return
   if (
-    isAbort(failure.cause, options.signal) &&
+    isCancellationAbort(failure.cause, options.signal) &&
     !isPause(failure.cause, options.signal) &&
     !isShutdown(failure.cause, options.signal)
   ) {
@@ -498,6 +498,21 @@ async function cleanupInterruptedStaging(
       'Could not checkpoint interrupted staging',
     )
   }
+}
+
+function isCancellationAbort(cause: unknown, signal?: AbortSignal): boolean {
+  if (cause instanceof ApplicationTransactionError)
+    return cause.kind === 'cancellation'
+  if (cause instanceof DOMException) return cause.name === 'AbortError'
+  if (cause instanceof Error && cause.name === 'AbortError') return true
+  // Transport failures can abort the shared signal with their own typed error;
+  // only the standard abort reason represents an explicit cancellation.
+  return (
+    signal?.aborted === true &&
+    (signal.reason instanceof DOMException
+      ? signal.reason.name === 'AbortError'
+      : signal.reason instanceof Error && signal.reason.name === 'AbortError')
+  )
 }
 
 function throwTransactionFailure(
