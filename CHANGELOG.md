@@ -1,5 +1,36 @@
 # Changelog
 
+## v1.0.5
+
+Release date: 22.09.2026
+
+[compare changes](https://github.com/Koroneiki/kalamata/compare/v1.0.4...v1.0.5)
+
+### 🚀 New
+
+- **settings:** Remember the last selected installation directory.
+
+### 🩹 Fixes
+
+- **achievements:** Skip unused Achievement Watcher output and warn when achievement images are incomplete.
+- **settings:** Open Hubcap API key management in the external browser.
+- **downloads:** Preserve progress across Steam disconnects and transport aborts.
+- **recovery:** Preserve staged files when a transaction journal cannot be read.
+
+### 💅 Refactors
+
+- **services:** Consolidate backend service contracts.
+- **desktop:** Centralize toast presentation.
+- **codebase:** Replace filtered array mappings with direct iteration.
+
+### 🏡 Chore
+
+- **quality:** Update the vendored anti-slop rules and remove obsolete Impeccable project files.
+
+### ❤️ Contributors
+
+- Koroneiki <101889814+Koroneiki@users.noreply.github.com>
+
 ## v1.0.4
 
 Release date: 18.09.2026
