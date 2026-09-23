@@ -13,6 +13,7 @@ export function useCustomManifest(options: {
     appId: number,
     depotId: number,
     manifestId: string,
+    parentAppId: number,
   ) => Promise<void>
   setDepotPinned: (
     appId: number,
@@ -64,7 +65,12 @@ export function useCustomManifest(options: {
       if (missingDepotIds.includes(depot.depotId))
         throw new Error(`Depot key ${depot.depotId} is unavailable.`)
     }
-    await options.acquireManifest(depot.ownerAppId, depot.depotId, manifestId)
+    await options.acquireManifest(
+      depot.ownerAppId,
+      depot.depotId,
+      manifestId,
+      targetAppId,
+    )
   }
 
   async function pinInstalledManifest(

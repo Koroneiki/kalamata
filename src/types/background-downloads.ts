@@ -11,6 +11,14 @@ export interface BackgroundDownloadJob {
   title: string
   appId: number | null
   depotId: number | null
+  itemCount?: number
+  manifestProgress?: {
+    finishedCount: number
+    currentIndex: number | null
+    currentDepotId: number | null
+    transferredBytes: number
+    totalBytes: number | null
+  }
   status: 'queued' | 'active' | 'completed' | 'failed'
   phase: string
   source: string | null

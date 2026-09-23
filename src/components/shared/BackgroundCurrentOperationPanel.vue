@@ -9,11 +9,55 @@ import { formatBytes } from '@/utils/bytes'
 import { backgroundDownloadLabel } from '@/utils/background-downloads'
 
 const props = defineProps<{ job: BackgroundDownloadJob }>()
-const percentage = computed(() =>
-  props.job.totalBytes && props.job.totalBytes > 0
+const manifestStatus = computed(() => {
+  const { itemCount, manifestProgress } = props.job
+  if (!itemCount || !manifestProgress) return null
+  const processed = `${manifestProgress.finishedCount} of ${itemCount} processed`
+  if (manifestProgress.currentIndex === null) return processed
+  const current = `Manifest ${manifestProgress.currentIndex} of ${itemCount}`
+  const depot = manifestProgress.currentDepotId
+    ? ` · Depot ${manifestProgress.currentDepotId}`
+    : ''
+  return `${processed} · ${current}${depot}`
+})
+const totalTransfer = computed(() => {
+  const { transferredBytes, totalBytes } = props.job
+  return totalBytes !== null || transferredBytes > 0
+    ? transferLabel(transferredBytes, totalBytes)
+    : null
+})
+const currentTransfer = computed(() => {
+  const progress = props.job.manifestProgress
+  return progress &&
+    (progress.totalBytes !== null || progress.transferredBytes > 0)
+    ? transferLabel(progress.transferredBytes, progress.totalBytes)
+    : null
+})
+
+function transferLabel(transferred: number, total: number | null): string {
+  const amount = formatBytes(String(transferred))
+  return total === null ? amount : `${amount} / ${formatBytes(String(total))}`
+}
+
+const percentage = computed(() => {
+  const { manifestProgress, itemCount } = props.job
+  if (manifestProgress && itemCount) {
+    // Unknown transfer sizes advance the group bar only when that manifest finishes.
+    const currentFraction = manifestProgress.totalBytes
+      ? Math.min(
+          1,
+          manifestProgress.transferredBytes / manifestProgress.totalBytes,
+        )
+      : 0
+    return Math.min(
+      100,
+      ((manifestProgress.finishedCount + currentFraction) / itemCount) * 100,
+    )
+  }
+  return props.job.totalBytes && props.job.totalBytes > 0
     ? Math.min(100, (props.job.transferredBytes / props.job.totalBytes) * 100)
-    : null,
-)
+    : null
+})
 </script>
 
 <template>
@@ -53,15 +97,13 @@ const percentage = computed(() =>
         class="text-muted-foreground mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs"
       >
         <span class="capitalize">{{ job.phase }}</span>
-        <span
-          v-if="job.totalBytes !== null || job.transferredBytes > 0"
-          class="flex items-center gap-1 tabular-nums"
-        >
+        <span v-if="manifestStatus">{{ manifestStatus }}</span>
+        <span v-if="totalTransfer" class="flex items-center gap-1 tabular-nums">
           <Download class="size-3" aria-hidden="true" />
-          {{ formatBytes(String(job.transferredBytes)) }}
-          <template v-if="job.totalBytes !== null">
-            / {{ formatBytes(String(job.totalBytes)) }}
-          </template>
+          {{ totalTransfer }}
+        </span>
+        <span v-if="currentTransfer" class="tabular-nums">
+          Current: {{ currentTransfer }}
         </span>
       </div>
     </div>

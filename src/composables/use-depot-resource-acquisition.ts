@@ -95,11 +95,13 @@ export function useDepotResourceAcquisition() {
     ownerAppId: number,
     depotId: number,
     manifestId: string,
+    parentAppId = ownerAppId,
   ) {
     const manifest = await acquireManifestWithHubcap(
       ownerAppId,
       depotId,
       manifestId,
+      parentAppId,
     )
     if (!manifest) throw new Error(`Manifest ${manifestId} is unavailable.`)
     return manifest
@@ -109,11 +111,13 @@ export function useDepotResourceAcquisition() {
     ownerAppId: number,
     depotId: number,
     manifestId: string,
+    parentAppId = ownerAppId,
   ) {
     const acquisition = await runCachedAcquisition(
       queryCache,
       resourceAcquisitionQueryKeys.manifest(depotId, manifestId),
-      () => acquireManifestWithHubcap(ownerAppId, depotId, manifestId),
+      () =>
+        acquireManifestWithHubcap(ownerAppId, depotId, manifestId, parentAppId),
     )
     return {
       ...acquisition,
@@ -125,8 +129,15 @@ export function useDepotResourceAcquisition() {
     ownerAppId: number,
     depotId: number,
     manifestId: string,
+    parentAppId: number,
   ) {
-    const first = await acquireManifest(ownerAppId, depotId, manifestId)
+    const first = await acquireManifest(
+      ownerAppId,
+      depotId,
+      manifestId,
+      undefined,
+      parentAppId,
+    )
     if (first.hubcap?.status !== 'approval-required') {
       await handleHubcapOutcome(first.hubcap, 'manifest')
       return first.manifest
@@ -139,6 +150,7 @@ export function useDepotResourceAcquisition() {
       depotId,
       manifestId,
       true,
+      parentAppId,
     )
     await handleHubcapOutcome(approved.hubcap, 'manifest')
     return approved.manifest
@@ -170,6 +182,7 @@ export function useDepotResourceAcquisition() {
             depot.ownerAppId,
             depot.depotId,
             depot.manifestId!,
+            appId,
           ),
         ),
       )

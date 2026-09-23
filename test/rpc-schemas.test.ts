@@ -1,6 +1,7 @@
 import { expect, mock, test } from 'bun:test'
 import {
   availableUpdateResultSchema,
+  backgroundDownloadsSnapshotSchema,
   coldClientOperationSnapshotSchema,
   downloadQueueSnapshotSchema,
   hubcapUsageSchema,
@@ -252,6 +253,41 @@ test('validates complete download queue snapshots', () => {
   ).toThrow()
 })
 
+test('validates grouped manifest background downloads', () => {
+  expect(
+    backgroundDownloadsSnapshotSchema.parse({
+      jobs: [
+        {
+          id: 'd94fe126-321e-4d30-86e7-7ef1a2f7a38a',
+          key: 'manifest-app:100',
+          kind: 'manifest',
+          title: 'Manifests for app 100',
+          appId: 100,
+          depotId: null,
+          itemCount: 3,
+          manifestProgress: {
+            finishedCount: 1,
+            currentIndex: 2,
+            currentDepotId: 203,
+            transferredBytes: 4,
+            totalBytes: 8,
+          },
+          status: 'queued',
+          phase: 'preparing',
+          source: null,
+          transferredBytes: 0,
+          totalBytes: null,
+          error: null,
+        },
+      ],
+    }).jobs[0],
+  ).toMatchObject({
+    appId: 100,
+    itemCount: 3,
+    manifestProgress: { currentIndex: 2, currentDepotId: 203 },
+  })
+})
+
 test('validates RPC parameters before invoking a handler', () => {
   const getAppSummary = mock(() => ({
     appId: 10,
@@ -347,11 +383,12 @@ test('validates Hubcap requests, usage, and acquisition outcomes', () => {
   expect(
     parseRpcRequest('acquireManifest', {
       appId: 10,
+      parentAppId: 9,
       depotId: 20,
       manifestId: '30',
       approveLowQuotaHubcap: true,
-    }).approveLowQuotaHubcap,
-  ).toBe(true)
+    }),
+  ).toMatchObject({ approveLowQuotaHubcap: true, parentAppId: 9 })
   expect(hubcapUsageSchema.parse(usage)).toEqual(usage)
   expect(() => hubcapUsageSchema.parse({ ...usage, remaining: 9 })).toThrow()
 

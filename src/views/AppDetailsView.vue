@@ -181,8 +181,13 @@ const {
     depotDrafts.removeManifestTarget(appId.value, depotId),
   acquireDepotKeys: async (id, depotIds) =>
     (await resourceAcquisition.acquireKeys(id, depotIds)).missingDepotIds,
-  acquireManifest: async (id, depotId, manifestId) => {
-    await resourceAcquisition.acquireManifestResource(id, depotId, manifestId)
+  acquireManifest: async (id, depotId, manifestId, parentAppId) => {
+    await resourceAcquisition.acquireManifestResource(
+      id,
+      depotId,
+      manifestId,
+      parentAppId,
+    )
   },
   setDepotPinned: async (id, depotId, pinned) => {
     await pinMutation.mutateAsync({ appId: id, depotId, pinned })
@@ -520,6 +525,7 @@ async function getManifest(
         depot.ownerAppId,
         depot.depotId,
         targetManifestId,
+        targetAppId,
       )
     }
     if (fetched && options.invalidateDetails !== false) {
@@ -601,6 +607,7 @@ async function acquireAutomaticManifests(
           depot.ownerAppId,
           depot.depotId,
           manifestId,
+          targetAppId,
         ),
       targetAppId,
       invalidateDetails: false,

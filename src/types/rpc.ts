@@ -171,6 +171,8 @@ export interface RepairApplicationRequest {
 
 export interface AcquireManifestRequest {
   appId: number
+  // Keeps DLC-owned CDN requests grouped under the game shown in app details.
+  parentAppId?: number
   depotId: number
   manifestId: string
   approveLowQuotaHubcap?: boolean

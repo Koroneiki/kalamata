@@ -100,11 +100,13 @@ export class SteamService {
       this.#manifestAcquisitions.set(database, service)
     }
     if (!this.backgroundDownloads) return service.acquire(request)
+    const parentAppId = request.parentAppId ?? request.appId
     return this.backgroundDownloads.enqueue({
       key: `manifest:${request.depotId}:${request.manifestId}`,
+      groupKey: `manifest-app:${parentAppId}`,
       kind: 'manifest',
-      title: `Manifest ${request.depotId}:${request.manifestId}`,
-      appId: request.appId,
+      title: `Manifests for app ${parentAppId}`,
+      appId: parentAppId,
       depotId: request.depotId,
       run: (context) => service.acquireWithContext(request, context),
     })

@@ -304,6 +304,14 @@ export const backgroundDownloadsSnapshotSchema = strict({
       title: z.string(),
       appId: steamIdSchema.nullable(),
       depotId: steamIdSchema.nullable(),
+      itemCount: z.number().int().positive().optional(),
+      manifestProgress: strict({
+        finishedCount: z.number().int().nonnegative(),
+        currentIndex: z.number().int().positive().nullable(),
+        currentDepotId: steamIdSchema.nullable(),
+        transferredBytes: z.number().nonnegative(),
+        totalBytes: z.number().nonnegative().nullable(),
+      }).optional(),
       status: z.enum(['queued', 'active', 'completed', 'failed']),
       phase: z.string(),
       source: z.string().nullable(),
@@ -515,6 +523,7 @@ const rpcRequestSchemas = {
   repairApplication: idRequestSchema,
   acquireManifest: strict({
     appId: steamIdSchema,
+    parentAppId: steamIdSchema.optional(),
     depotId: steamIdSchema,
     manifestId: manifestIdSchema,
     approveLowQuotaHubcap: z.boolean().optional(),

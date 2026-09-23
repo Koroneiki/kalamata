@@ -112,6 +112,192 @@ test('shares a semantic job, runs queued downloads in order, and retries failure
   }
 })
 
+test('groups manifest tasks by parent app and retries only failed manifests', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'background-jobs-'))
+  const coordinator = new BackgroundDownloadCoordinator(root, () => {})
+  try {
+    await coordinator.initialize()
+    let releaseFirst!: () => void
+    let firstStarted!: () => void
+    const firstReady = new Promise<void>((resolve) => {
+      firstStarted = resolve
+    })
+    const holdFirst = new Promise<void>((resolve) => {
+      releaseFirst = resolve
+    })
+    let firstAttempts = 0
+    const first = coordinator.enqueue({
+      key: 'manifest:dlc-depot:1',
+      groupKey: 'manifest-app:100',
+      kind: 'manifest',
+      title: 'Manifests for app 100',
+      appId: 100,
+      run: async () => {
+        firstAttempts++
+        if (firstAttempts === 1) {
+          firstStarted()
+          await holdFirst
+          throw new Error('first manifest failed')
+        }
+        return 'retried manifest'
+      },
+    })
+    await firstReady
+    const second = coordinator.enqueue({
+      key: 'manifest:base-depot:2',
+      groupKey: 'manifest-app:100',
+      kind: 'manifest',
+      title: 'Manifests for app 100',
+      appId: 100,
+      run: async () => 'second manifest',
+    })
+    const otherApp = coordinator.enqueue({
+      key: 'manifest:other-app-depot:3',
+      groupKey: 'manifest-app:200',
+      kind: 'manifest',
+      title: 'Manifests for app 200',
+      appId: 200,
+      run: async () => 'other app manifest',
+    })
+
+    expect(coordinator.snapshot().jobs).toHaveLength(2)
+    expect(coordinator.snapshot().jobs[0]).toMatchObject({
+      appId: 100,
+      depotId: null,
+      itemCount: 2,
+      status: 'active',
+    })
+    releaseFirst()
+    const outcomes = await Promise.allSettled([first, second, otherApp])
+    expect(outcomes.map(({ status }) => status)).toEqual([
+      'rejected',
+      'fulfilled',
+      'fulfilled',
+    ])
+    expect(firstAttempts).toBe(1)
+
+    const failed = coordinator
+      .snapshot()
+      .jobs.find(({ appId }) => appId === 100)
+    expect(failed).toMatchObject({
+      itemCount: 2,
+      status: 'failed',
+      totalBytes: null,
+      manifestProgress: { finishedCount: 2, currentIndex: null },
+    })
+    const retryId = coordinator.retry(failed!.id)
+    while (
+      coordinator.snapshot().jobs.find(({ id }) => id === retryId)?.status !==
+      'completed'
+    ) {
+      await Bun.sleep(1)
+    }
+    expect(firstAttempts).toBe(2)
+    expect(
+      coordinator.snapshot().jobs.find(({ id }) => id === retryId),
+    ).toMatchObject({
+      appId: 100,
+      itemCount: 1,
+      status: 'completed',
+      totalBytes: null,
+    })
+  } finally {
+    await coordinator.shutdown()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('keeps manifest progress and byte totals across grouped tasks', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'background-jobs-'))
+  const coordinator = new BackgroundDownloadCoordinator(root, () => {})
+  try {
+    await coordinator.initialize()
+    let firstStarted!: () => void
+    let releaseFirst!: () => void
+    let secondStarted!: () => void
+    let releaseSecond!: () => void
+    const firstReady = new Promise<void>((resolve) => (firstStarted = resolve))
+    const holdFirst = new Promise<void>((resolve) => (releaseFirst = resolve))
+    const secondReady = new Promise<void>(
+      (resolve) => (secondStarted = resolve),
+    )
+    const holdSecond = new Promise<void>((resolve) => (releaseSecond = resolve))
+    const first = coordinator.enqueue({
+      key: 'manifest:1:10',
+      groupKey: 'manifest-app:100',
+      kind: 'manifest',
+      title: 'Manifests for app 100',
+      appId: 100,
+      depotId: 1,
+      run: async ({ progress }: JobContext) => {
+        progress('downloading', 5, 10)
+        firstStarted()
+        await holdFirst
+        progress('verifying', 10, 10)
+      },
+    })
+    await firstReady
+    const second = coordinator.enqueue({
+      key: 'manifest:2:20',
+      groupKey: 'manifest-app:100',
+      kind: 'manifest',
+      title: 'Manifests for app 100',
+      appId: 100,
+      depotId: 2,
+      run: async ({ progress, setSource }: JobContext) => {
+        progress('downloading', 3, 6)
+        setSource('Hubcap API')
+        progress('downloading', 4, 6)
+        secondStarted()
+        await holdSecond
+        progress('verifying', 6, 6)
+      },
+    })
+    const duringFirst = coordinator.snapshot().jobs[0]!
+    expect(duringFirst).toMatchObject({
+      itemCount: 2,
+      transferredBytes: 5,
+      totalBytes: null,
+      manifestProgress: {
+        finishedCount: 0,
+        currentIndex: 1,
+        currentDepotId: 1,
+        transferredBytes: 5,
+        totalBytes: 10,
+      },
+    })
+    releaseFirst()
+    await secondReady
+    expect(coordinator.snapshot().jobs[0]).toMatchObject({
+      transferredBytes: 14,
+      totalBytes: null,
+      manifestProgress: {
+        finishedCount: 1,
+        currentIndex: 2,
+        currentDepotId: 2,
+        transferredBytes: 4,
+        totalBytes: 6,
+      },
+    })
+    expect(duringFirst.manifestProgress?.finishedCount).toBe(0)
+    releaseSecond()
+    await Promise.all([first, second])
+    expect(coordinator.snapshot().jobs[0]).toMatchObject({
+      status: 'completed',
+      transferredBytes: 16,
+      totalBytes: 16,
+      manifestProgress: {
+        finishedCount: 2,
+        currentIndex: null,
+        currentDepotId: null,
+      },
+    })
+  } finally {
+    await coordinator.shutdown()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
 test('startup discards abandoned scratch and shutdown waits for abortable jobs', async () => {
   const root = await mkdtemp(join(tmpdir(), 'background-jobs-'))
   const scratch = join(root, 'background-downloads')
