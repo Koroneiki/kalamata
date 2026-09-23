@@ -15,6 +15,7 @@ import type {
 } from '../types/rpc.ts'
 import { ProductInfoService } from './steam/product-info-service.ts'
 import { SteamSession } from './steam/steam-session.ts'
+import type { BackgroundDownloadCoordinator } from './downloads/background-download-coordinator.ts'
 import type { ProductInfo, ProductInfoResult } from './steam/types.ts'
 import type { KalamataDatabase } from '../db/database.ts'
 
@@ -39,6 +40,7 @@ export class SteamService {
       countryCode: string,
       error: Error,
     ) => void,
+    private readonly backgroundDownloads?: BackgroundDownloadCoordinator,
   ) {
     this.#session = new SteamSession()
     this.#downloads = new DepotDownloadService(this.#session)
@@ -97,7 +99,15 @@ export class SteamService {
       service = new ManifestAcquisitionService(this.#session, database)
       this.#manifestAcquisitions.set(database, service)
     }
-    return service.acquire(request)
+    if (!this.backgroundDownloads) return service.acquire(request)
+    return this.backgroundDownloads.enqueue({
+      key: `manifest:${request.depotId}:${request.manifestId}`,
+      kind: 'manifest',
+      title: `Manifest ${request.depotId}:${request.manifestId}`,
+      appId: request.appId,
+      depotId: request.depotId,
+      run: (context) => service.acquireWithContext(request, context),
+    })
   }
 
   initializeDepotKeyCache(database: KalamataDatabase): Promise<void> {
@@ -108,7 +118,15 @@ export class SteamService {
     database: KalamataDatabase,
     request: AcquireDepotKeysRequest,
   ): Promise<AcquiredDepotKeys> {
-    return this.getDepotKeyAcquisitionService(database).acquire(request)
+    const service = this.getDepotKeyAcquisitionService(database)
+    if (!this.backgroundDownloads) return service.acquire(request)
+    return this.backgroundDownloads.enqueue({
+      key: `depot-keys:${request.appId}:${[...request.depotIds].sort((a, b) => a - b).join(',')}:${!!request.approveLowQuotaHubcap}`,
+      kind: 'depot-keys',
+      title: `Depot keys for ${request.appId}`,
+      appId: request.appId,
+      run: (context) => service.acquireWithContext(request, context),
+    })
   }
 
   getHubcapUsage(database: KalamataDatabase): Promise<HubcapUsageResult> {
@@ -136,7 +154,11 @@ export class SteamService {
   ): DepotKeyAcquisitionService {
     let service = this.#depotKeyAcquisitions.get(database)
     if (!service) {
-      service = new DepotKeyAcquisitionService(database)
+      service = new DepotKeyAcquisitionService(
+        database,
+        fetch,
+        this.backgroundDownloads,
+      )
       this.#depotKeyAcquisitions.set(database, service)
     }
     return service

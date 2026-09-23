@@ -1,0 +1,96 @@
+<script setup lang="ts">
+import { ArrowUp, X } from '@lucide/vue'
+import { computed, ref } from 'vue'
+
+import BackgroundDownloadIdentity from '@/components/shared/BackgroundDownloadIdentity.vue'
+import { Button } from '@/components/ui/button'
+import { useBackgroundDownloadsStore } from '@/stores/background-downloads'
+import type { BackgroundDownloadJob } from '@/types/background-downloads'
+import { formatBytes } from '@/utils/bytes'
+import { backgroundDownloadLabel } from '@/utils/background-downloads'
+
+const props = defineProps<{ job: BackgroundDownloadJob }>()
+const downloads = useBackgroundDownloadsStore()
+const busy = ref(false)
+const error = ref('')
+const history = computed(() =>
+  ['completed', 'failed'].includes(props.job.status),
+)
+
+async function action(kind: 'retry' | 'dismiss' | 'prioritize') {
+  busy.value = true
+  error.value = ''
+  try {
+    await downloads[kind](props.job.id)
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : String(cause)
+  } finally {
+    busy.value = false
+  }
+}
+</script>
+
+<template>
+  <li
+    class="grid min-w-0 gap-4 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+  >
+    <div class="min-w-0">
+      <BackgroundDownloadIdentity v-if="job.appId !== null" :job="job" />
+      <p v-else class="font-medium">{{ job.title }}</p>
+      <p class="text-muted-foreground mt-1 text-sm break-words">
+        {{ backgroundDownloadLabel(job) }}
+        <template v-if="history"> · {{ job.status }}</template>
+      </p>
+      <p
+        v-if="job.totalBytes !== null || job.transferredBytes > 0"
+        class="text-muted-foreground mt-1 text-xs tabular-nums"
+      >
+        {{ formatBytes(String(job.transferredBytes)) }}
+        <template v-if="job.totalBytes !== null">
+          / {{ formatBytes(String(job.totalBytes)) }}
+        </template>
+      </p>
+      <p
+        v-if="job.error || error"
+        class="text-destructive mt-1 text-sm break-words"
+        role="alert"
+      >
+        {{ error || job.error }}
+      </p>
+    </div>
+    <div v-if="job.status === 'queued'" class="flex justify-end">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        :disabled="busy"
+        :aria-label="`Move ${job.title} next in queue`"
+        @click="action('prioritize')"
+      >
+        <ArrowUp aria-hidden="true" /> Next
+      </Button>
+    </div>
+    <div v-else-if="history" class="flex items-center justify-end gap-2">
+      <Button
+        v-if="job.status === 'failed'"
+        type="button"
+        variant="outline"
+        size="sm"
+        :disabled="busy"
+        @click="action('retry')"
+        >Retry</Button
+      >
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        :disabled="busy"
+        :aria-label="`Dismiss ${job.title}`"
+        :title="`Dismiss ${job.title}`"
+        @click="action('dismiss')"
+      >
+        <X aria-hidden="true" />
+      </Button>
+    </div>
+  </li>
+</template>

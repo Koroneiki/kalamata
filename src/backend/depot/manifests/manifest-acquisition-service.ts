@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { rm, writeFile } from 'node:fs/promises'
+import { readFile, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import type { KalamataDatabase } from '../../../db/database.ts'
@@ -22,6 +22,8 @@ import { abortable } from '../../shared/abortable.ts'
 import type { SteamSession } from '../../steam/steam-session.ts'
 import type { ContentServer } from '../../steam/types.ts'
 import { HubcapClient } from '../keys/hubcap-client.ts'
+import type { JobContext } from '../../downloads/background-download-coordinator.ts'
+import { writeHttpTransfer } from '../../downloads/http-transfer.ts'
 import {
   parseManifestEnvelope,
   validateManifestEnvelope,
@@ -66,12 +68,16 @@ interface HubcapManifestSource {
   usage: HubcapUsage
 }
 
+interface SharedManifestSource {
+  promise: Promise<HubcapManifestSource>
+  controller: AbortController
+  users: number
+  settled: boolean
+}
+
 export class ManifestAcquisitionService {
   readonly #inFlight = new Map<string, Promise<ManifestAcquisitionResult>>()
-  readonly #hubcapManifestSources = new Map<
-    number,
-    Promise<HubcapManifestSource>
-  >()
+  readonly #hubcapManifestSources = new Map<number, SharedManifestSource>()
   readonly #abortController = new AbortController()
   readonly #hubcap: HubcapClient
   #requestCodeLookup = Promise.resolve()
@@ -104,16 +110,33 @@ export class ManifestAcquisitionService {
     return acquisition
   }
 
+  acquireWithContext(
+    request: AcquireManifestRequest,
+    context: JobContext,
+  ): Promise<ManifestAcquisitionResult> {
+    if (!this.#accepting)
+      throw new Error('Manifest acquisition is shutting down')
+    return this.acquireIndependent(request, context)
+  }
+
   async shutdown(): Promise<void> {
     this.#accepting = false
     this.#abortController.abort(new Error('Manifest acquisition was cancelled'))
-    await Promise.allSettled(this.#inFlight.values())
+    for (const source of this.#hubcapManifestSources.values())
+      source.controller.abort()
+    await Promise.allSettled([
+      ...this.#inFlight.values(),
+      ...[...this.#hubcapManifestSources.values()].map(
+        ({ promise }) => promise,
+      ),
+    ])
   }
 
   private async acquireIndependent(
     request: AcquireManifestRequest,
+    context?: JobContext,
   ): Promise<ManifestAcquisitionResult> {
-    const signal = this.#abortController.signal
+    const signal = context?.signal ?? this.#abortController.signal
     signal.throwIfAborted()
     validateId(request.appId, 'appId')
     validateId(request.depotId, 'depotId')
@@ -156,6 +179,7 @@ export class ManifestAcquisitionService {
         request,
         new Error('Manifest request code lookup failed'),
         signal,
+        context,
       )
     }
     const client = await abortable(this.session.getClient(), signal)
@@ -186,22 +210,32 @@ export class ManifestAcquisitionService {
       throw new Error(`Steam manifest download failed (${response.status})`)
     }
 
-    const contents = await abortable(
-      abortable(response.arrayBuffer(), signal).then((body) =>
-        this.decompress(Buffer.from(body)),
-      ),
-      signal,
-    )
-    return { manifest: await this.ingest(request, contents, signal) }
+    context?.setSource('Steam CDN')
+    const body = context
+      ? await writeHttpTransfer({
+          response,
+          workspace: context.workspace,
+          filename: 'manifest.download',
+          signal,
+          progress: (bytes, total) =>
+            context.progress('downloading', bytes, total),
+        }).then(({ path }) => readFile(path))
+      : Buffer.from(await abortable(response.arrayBuffer(), signal))
+    const contents = await abortable(this.decompress(body), signal)
+    context?.progress('verifying')
+    return { manifest: await this.ingest(request, contents, signal, context) }
   }
 
   private async acquireFromHubcap(
     request: AcquireManifestRequest,
     requestCodeError: Error,
     signal: AbortSignal,
+    context?: JobContext,
   ): Promise<ManifestAcquisitionResult> {
+    context?.setSource('Hubcap API')
+    context?.progress('downloading')
     const cached = this.#hubcapManifestSources.get(request.appId)
-    if (cached) return this.useHubcapSource(request, cached, signal)
+    if (cached) return this.useHubcapSource(request, cached, signal, context)
 
     const apiKey = this.database.getHubcapApiKey()
     if (!apiKey) return { manifest: null, hubcap: { status: 'missing-key' } }
@@ -213,7 +247,7 @@ export class ManifestAcquisitionService {
     )
     const availableSource = this.#hubcapManifestSources.get(request.appId)
     if (availableSource)
-      return this.useHubcapSource(request, availableSource, signal)
+      return this.useHubcapSource(request, availableSource, signal, context)
     if (contentsResult.status === 'invalid-key') {
       return { manifest: null, hubcap: { status: 'invalid-key' } }
     }
@@ -234,7 +268,8 @@ export class ManifestAcquisitionService {
 
     const usageResult = await this.#hubcap.getUsage(apiKey, signal)
     const inFlight = this.#hubcapManifestSources.get(request.appId)
-    if (inFlight) return this.useHubcapSource(request, inFlight, signal)
+    if (inFlight)
+      return this.useHubcapSource(request, inFlight, signal, context)
     if (usageResult.status !== 'available') {
       return { manifest: null, hubcap: usageResult }
     }
@@ -253,53 +288,80 @@ export class ManifestAcquisitionService {
       }
     }
 
-    const source = this.fetchHubcapManifestSource(request.appId, apiKey, usage)
+    const controller = new AbortController()
+    const source: SharedManifestSource = {
+      controller,
+      users: 0,
+      settled: false,
+      promise: this.fetchHubcapManifestSource(
+        request.appId,
+        apiKey,
+        usage,
+        controller.signal,
+      ),
+    }
     this.#hubcapManifestSources.set(request.appId, source)
-    source.catch(() => {
-      if (this.#hubcapManifestSources.get(request.appId) === source)
-        this.#hubcapManifestSources.delete(request.appId)
-    })
-    return this.useHubcapSource(request, source, signal)
+    void source.promise.then(
+      () => {
+        source.settled = true
+      },
+      () => {
+        source.settled = true
+        if (this.#hubcapManifestSources.get(request.appId) === source)
+          this.#hubcapManifestSources.delete(request.appId)
+      },
+    )
+    return this.useHubcapSource(request, source, signal, context)
   }
 
   private async fetchHubcapManifestSource(
     appId: number,
     apiKey: string,
     preflightUsage: HubcapUsage,
+    signal: AbortSignal,
   ): Promise<HubcapManifestSource> {
-    const archive = await this.#hubcap.getManifestZip(
-      appId,
-      apiKey,
-      this.#abortController.signal,
-    )
+    const archive = await this.#hubcap.getManifestZip(appId, apiKey, signal)
     const usage = await this.#hubcap.getUsageAfterRequest(
       apiKey,
       preflightUsage,
-      this.#abortController.signal,
+      signal,
     )
     return { archive, usage }
   }
 
   private async useHubcapSource(
     request: AcquireManifestRequest,
-    source: Promise<HubcapManifestSource>,
+    source: SharedManifestSource,
     signal: AbortSignal,
+    context?: JobContext,
   ): Promise<ManifestAcquisitionResult> {
-    const result = await abortable(source, signal)
-    const contents = extractManifestFromHubcapZip(
-      result.archive,
-      request.depotId,
-      request.manifestId,
-      signal,
-    )
-    const manifest = await this.ingest(request, contents, signal)
-    return { manifest, hubcap: { status: 'fetched', usage: result.usage } }
+    source.users++
+    try {
+      const result = await abortable(source.promise, signal)
+      const contents = extractManifestFromHubcapZip(
+        result.archive,
+        request.depotId,
+        request.manifestId,
+        signal,
+      )
+      context?.progress('verifying')
+      const manifest = await this.ingest(request, contents, signal, context)
+      return { manifest, hubcap: { status: 'fetched', usage: result.usage } }
+    } finally {
+      source.users--
+      if (source.users === 0 && !source.settled) {
+        source.controller.abort()
+        if (this.#hubcapManifestSources.get(request.appId) === source)
+          this.#hubcapManifestSources.delete(request.appId)
+      }
+    }
   }
 
   private async ingest(
     request: AcquireManifestRequest,
     contents: Buffer,
     signal: AbortSignal,
+    context?: JobContext,
   ): Promise<AcquiredManifest> {
     validateManifestEnvelope(
       parseManifestEnvelope(contents),
@@ -307,9 +369,13 @@ export class ManifestAcquisitionService {
       request.manifestId,
     )
     const sourceName = `.manifest-${randomUUID()}.tmp`
-    const incoming = join(this.database.dataRoot, 'manifest-files', sourceName)
+    const incoming = join(
+      context?.workspace ?? join(this.database.dataRoot, 'manifest-files'),
+      sourceName,
+    )
     try {
       await writeFile(incoming, contents, { signal })
+      context?.beginPublish()
       return await ingestManifestFile(
         this.database,
         incoming,

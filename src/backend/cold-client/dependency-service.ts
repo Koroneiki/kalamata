@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import {
   access,
   copyFile,
@@ -34,6 +34,12 @@ import {
 } from './dependency-schema.ts'
 import { asError } from './error.ts'
 import { ColdClientMutationMutex } from './mutation-mutex.ts'
+import type {
+  BackgroundDownloadCoordinator,
+  JobContext,
+} from '../downloads/background-download-coordinator.ts'
+import { writeHttpTransfer } from '../downloads/http-transfer.ts'
+import { abortable } from '../shared/abortable.ts'
 
 interface DependencyDefinition {
   dependencyId: ColdClientDependencyId
@@ -52,6 +58,7 @@ interface DependencyServiceOptions {
   fetcher?: ColdClientFetcher
   extractor?: ArchiveExtractor
   mutex?: ColdClientMutationMutex
+  backgroundDownloads?: BackgroundDownloadCoordinator
   now?: () => number
   reportCleanupError?: (error: Error) => void
 }
@@ -107,6 +114,7 @@ export class ColdClientDependencyService {
   readonly #fetcher: ColdClientFetcher
   readonly #extractor: ArchiveExtractor
   readonly #mutex: ColdClientMutationMutex
+  readonly #backgroundDownloads?: BackgroundDownloadCoordinator
   readonly #metadataMutex = new ColdClientMutationMutex()
   readonly #now: () => number
   readonly #reportCleanupError: (error: Error) => void
@@ -129,6 +137,7 @@ export class ColdClientDependencyService {
     this.#fetcher = options.fetcher ?? fetch
     this.#extractor = options.extractor ?? new ArchiveExtractor()
     this.#mutex = options.mutex ?? new ColdClientMutationMutex()
+    this.#backgroundDownloads = options.backgroundDownloads
     this.#now = options.now ?? Date.now
     this.#reportCleanupError = options.reportCleanupError ?? (() => {})
   }
@@ -326,21 +335,42 @@ export class ColdClientDependencyService {
 
   private async installDependency(
     dependencyId: ColdClientDependencyId,
+    context?: JobContext,
   ): Promise<void> {
+    if (this.#backgroundDownloads && !context) {
+      return this.#backgroundDownloads.enqueue({
+        key: `dependency:${dependencyId}`,
+        kind: 'dependency',
+        title: `Dependency ${dependencyId}`,
+        source: `GitHub: ${definitions[dependencyId].repository}`,
+        run: (job) => this.installDependency(dependencyId, job),
+      })
+    }
     this.#abortController.signal.throwIfAborted()
+    const signal = context?.signal ?? this.#abortController.signal
     const remote =
       this.#remote.get(dependencyId) ??
-      (await this.fetchLatestArtifact(dependencyId))
+      (await this.fetchLatestArtifact(dependencyId, signal))
     this.#remote.set(dependencyId, remote)
     this.#checkErrors.delete(dependencyId)
     const operationId = randomUUID()
-    const downloadDirectory = join(this.#downloadsRoot, operationId)
-    const stagingDirectory = join(this.#stagingRoot, operationId)
+    const downloadDirectory = context
+      ? join(context.workspace, 'download')
+      : join(this.#downloadsRoot, operationId)
+    const stagingDirectory = context
+      ? join(context.workspace, 'staging')
+      : join(this.#stagingRoot, operationId)
     const downloadPath = join(downloadDirectory, remote.assetName)
     await mkdir(downloadDirectory, { recursive: true })
     await mkdir(stagingDirectory, { recursive: true })
     try {
-      const sha256 = await this.download(remote, downloadPath)
+      const sha256 = await this.download(
+        remote,
+        downloadDirectory,
+        signal,
+        context,
+      )
+      context?.progress('verifying')
       if (remote.digest !== null && remote.digest !== sha256) {
         throw new Error('Downloaded dependency digest does not match GitHub')
       }
@@ -354,7 +384,7 @@ export class ColdClientDependencyService {
           join(this.artifactDirectory('7zip', extractorId), '7zr.exe'),
           downloadPath,
           stagingDirectory,
-          this.#abortController.signal,
+          signal,
         )
       }
       await validateInventory(
@@ -375,7 +405,7 @@ export class ColdClientDependencyService {
           remote.digest === null ? 'https-inventory' : 'github-digest',
         validatedAt: this.#now(),
       })
-      await this.activate(descriptor, stagingDirectory)
+      await this.activate(descriptor, stagingDirectory, signal, context)
     } finally {
       await rm(downloadDirectory, { recursive: true, force: true })
       await rm(stagingDirectory, { recursive: true, force: true })
@@ -385,9 +415,11 @@ export class ColdClientDependencyService {
   private async activate(
     descriptor: ArtifactDescriptor,
     stagingDirectory: string,
+    signal: AbortSignal = this.#abortController.signal,
+    context?: JobContext,
   ): Promise<void> {
     await this.#mutex.runExclusive(async () => {
-      this.#abortController.signal.throwIfAborted()
+      signal.throwIfAborted()
       const dependencyId = descriptor.dependencyId
       let oldLogin: string | null = null
       if (dependencyId === 'gse') {
@@ -405,6 +437,8 @@ export class ColdClientDependencyService {
         stagingDirectory,
         definitions[dependencyId].requiredFiles,
       )
+      signal.throwIfAborted()
+      context?.beginPublish()
       const destination = this.artifactDirectory(
         dependencyId,
         descriptor.assetId,
@@ -467,11 +501,13 @@ export class ColdClientDependencyService {
 
   private async download(
     remote: RemoteArtifact,
-    destination: string,
+    directory: string,
+    signal: AbortSignal,
+    context?: JobContext,
   ): Promise<string> {
     const response = await this.#fetcher(remote.sourceUrl, {
       headers: { Accept: 'application/octet-stream' },
-      signal: this.#abortController.signal,
+      signal,
     })
     if (!response.ok || !response.body) {
       throw new Error(`Dependency download failed (${response.status})`)
@@ -479,53 +515,39 @@ export class ColdClientDependencyService {
     if (new URL(response.url || remote.sourceUrl).protocol !== 'https:') {
       throw new Error('Dependency download redirected outside HTTPS')
     }
-    const handle = await open(destination, 'wx')
-    const hash = createHash('sha256')
-    let size = 0
-    try {
-      const reader = response.body.getReader()
-      while (true) {
-        const result = await reader.read()
-        if (result.done) break
-        this.#abortController.signal.throwIfAborted()
-        let offset = 0
-        while (offset < result.value.byteLength) {
-          const { bytesWritten } = await handle.write(
-            result.value,
-            offset,
-            result.value.byteLength - offset,
-          )
-          if (bytesWritten === 0) {
-            throw new Error('Dependency download could not be written')
-          }
-          hash.update(result.value.subarray(offset, offset + bytesWritten))
-          size += bytesWritten
-          offset += bytesWritten
-        }
-      }
-      await handle.sync()
-    } finally {
-      await handle.close()
-    }
-    if (size !== remote.expectedSize) {
+    const result = await writeHttpTransfer({
+      response,
+      workspace: directory,
+      filename: remote.assetName,
+      signal,
+      hash: 'sha256',
+      maxBytes: remote.expectedSize,
+      progress: (bytes, total) =>
+        context?.progress('downloading', bytes, total ?? remote.expectedSize),
+    })
+    if (result.bytes !== remote.expectedSize) {
       throw new Error('Downloaded dependency size does not match GitHub')
     }
-    return hash.digest('hex')
+    return result.digest!
   }
 
   private async fetchLatestArtifact(
     dependencyId: ColdClientDependencyId,
+    signal: AbortSignal = this.#abortController.signal,
   ): Promise<RemoteArtifact> {
     const definition = definitions[dependencyId]
-    const response = await this.#fetcher(
-      `https://api.github.com/repos/${definition.repository}/releases/latest`,
-      {
-        headers: {
-          Accept: 'application/vnd.github+json',
-          'X-GitHub-Api-Version': '2022-11-28',
+    const response = await abortable(
+      this.#fetcher(
+        `https://api.github.com/repos/${definition.repository}/releases/latest`,
+        {
+          headers: {
+            Accept: 'application/vnd.github+json',
+            'X-GitHub-Api-Version': '2022-11-28',
+          },
+          signal,
         },
-        signal: this.#abortController.signal,
-      },
+      ),
+      signal,
     )
     if (!response.ok) {
       throw new Error(`Dependency update check failed (${response.status})`)
@@ -534,7 +556,7 @@ export class ColdClientDependencyService {
       dependencyId,
       definition.repository,
       definition.assetName,
-      githubReleaseSchema.parse(await response.json()),
+      githubReleaseSchema.parse(await abortable(response.json(), signal)),
     )
   }
 

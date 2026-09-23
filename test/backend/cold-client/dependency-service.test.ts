@@ -1,10 +1,18 @@
 import { createHash } from 'node:crypto'
 import { afterEach, expect, test } from 'bun:test'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ArchiveExtractor } from '../../../src/backend/cold-client/archive-extractor.ts'
 import { ColdClientDependencyService } from '../../../src/backend/cold-client/dependency-service.ts'
+import { BackgroundDownloadCoordinator } from '../../../src/backend/downloads/background-download-coordinator.ts'
 import { ColdClientMutationMutex } from '../../../src/backend/cold-client/mutation-mutex.ts'
 import type { ColdClientDependencyId } from '../../../src/types/cold-client.ts'
 import { removeTemporaryDirectory } from '../../helpers/filesystem.ts'
@@ -97,6 +105,31 @@ test('bootstraps 7-Zip and preserves an active cache after digest failure', asyn
       'utf8',
     ),
   ).toBe('fixture')
+})
+
+test('coordinated dependency work never activates a bad digest and removes scratch data', async () => {
+  const fixture = await createFixture(new ColdClientMutationMutex(), true)
+  const coordinator = fixture.coordinator!
+  try {
+    fixture.setArtifact('7zip', 101, 'MZ7zip', '0'.repeat(64))
+    await fixture.service.checkForUpdates()
+    await expect(fixture.service.updateDependencies(['7zip'])).rejects.toThrow(
+      'digest does not match',
+    )
+    expect(fixture.service.activeArtifact('7zip')).toBeNull()
+    expect(coordinator.snapshot().jobs[0]).toMatchObject({
+      kind: 'dependency',
+      status: 'failed',
+    })
+    expect(
+      await Bun.file(
+        join(root!, 'coldclient', 'dependencies', '7zip', '101', '7zr.exe'),
+      ).exists(),
+    ).toBe(false)
+    expect(await readdir(join(root!, 'background-downloads'))).toEqual([])
+  } finally {
+    await coordinator.shutdown()
+  }
 })
 
 test('accepts inventory validation without a digest and copies login opaquely', async () => {
@@ -229,8 +262,38 @@ test('shutdown cancels activation waiting for the mutation mutex', async () => {
   expect(fixture.service.activeArtifact('7zip')).toBeNull()
 })
 
+test('coordinated shutdown settles a dependency waiting for the shared mutex', async () => {
+  const mutex = new ColdClientMutationMutex()
+  let release!: () => void
+  let locked!: () => void
+  const acquired = new Promise<void>((resolve) => {
+    locked = resolve
+  })
+  const blocker = mutex.runExclusive(async () => {
+    locked()
+    await new Promise<void>((resolve) => {
+      release = resolve
+    })
+  })
+  await acquired
+  const fixture = await createFixture(mutex, true)
+  await fixture.service.checkForUpdates()
+  const update = fixture.service.updateDependencies(['7zip'])
+  while (fixture.downloads.length === 0) await Bun.sleep(1)
+  const stopping = Promise.all([
+    fixture.coordinator!.shutdown(),
+    fixture.service.shutdown(),
+  ])
+  release()
+  await expect(update).rejects.toThrow('shutting down')
+  await stopping
+  await blocker
+  expect(fixture.service.activeArtifact('7zip')).toBeNull()
+})
+
 interface Fixture {
   service: ColdClientDependencyService
+  coordinator?: BackgroundDownloadCoordinator
   downloads: number[]
   failChecks: Set<ColdClientDependencyId>
   releaseChecks: ColdClientDependencyId[]
@@ -246,8 +309,13 @@ interface Fixture {
 
 async function createFixture(
   mutex: ColdClientMutationMutex = new ColdClientMutationMutex(),
+  coordinated = false,
 ): Promise<Fixture> {
   root = await mkdtemp(join(tmpdir(), 'cold-client-dependencies-'))
+  const coordinator = coordinated
+    ? new BackgroundDownloadCoordinator(root, () => {})
+    : undefined
+  await coordinator?.initialize()
   const artifacts = new Map<ColdClientDependencyId, TestArtifact>()
   const downloads: number[] = []
   const failChecks = new Set<ColdClientDependencyId>()
@@ -307,6 +375,7 @@ async function createFixture(
       fetcher,
       extractor,
       mutex,
+      backgroundDownloads: coordinator,
       now: () => now,
     })
     await service.initialize()
@@ -315,6 +384,7 @@ async function createFixture(
   const service = await createService()
   return {
     service,
+    coordinator,
     downloads,
     failChecks,
     releaseChecks,

@@ -4,6 +4,7 @@ import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ManifestAcquisitionService } from '../src/backend/depot/manifests/manifest-acquisition-service.ts'
+import { BackgroundDownloadCoordinator } from '../src/backend/downloads/background-download-coordinator.ts'
 import type { SteamContentUser } from '../src/backend/steam/types.ts'
 import { KalamataDatabase } from '../src/db/database.ts'
 import { removeTemporaryDirectory } from './helpers/filesystem.ts'
@@ -320,6 +321,58 @@ describe('ManifestAcquisitionService', () => {
           )
         ).toString('hex'),
       ).toBe(fixture.toString('hex'))
+    },
+  )
+
+  fixtureTest(
+    'cancels a streamed manifest before publication and cleans its workspace',
+    async () => {
+      const request = MANIFESTS[0]
+      const db = await openDatabase()
+      let transferStarted!: () => void
+      const started = new Promise<void>((resolve) => {
+        transferStarted = resolve
+      })
+      const receivedSignal: { value: AbortSignal | null } = { value: null }
+      const fetcher = mock(
+        async (input: string | URL | Request, init?: RequestInit) => {
+          if (String(input).startsWith('https://manifest.manifestdex.com/'))
+            return new Response('12345')
+          receivedSignal.value = init?.signal ?? null
+          return new Response(
+            new ReadableStream({
+              start(controller) {
+                controller.enqueue(new Uint8Array([1, 2, 3]))
+                transferStarted()
+              },
+            }),
+          )
+        },
+      )
+      const service = createService(db, fetcher, async () =>
+        fixtureContents(request),
+      )
+      const coordinator = new BackgroundDownloadCoordinator(root!, () => {})
+      await coordinator.initialize()
+      try {
+        const operation = coordinator.enqueue({
+          key: `manifest:${request.depotId}:${request.manifestId}`,
+          kind: 'manifest',
+          title: 'Manifest',
+          run: (context) => service.acquireWithContext(request, context),
+        })
+        await started
+        await coordinator.shutdown()
+        await expect(operation).rejects.toThrow()
+        expect(receivedSignal.value?.aborted).toBe(true)
+        expect(db.getManifestRows(request.depotId)).toEqual([])
+        expect(await readdir(join(root!, 'manifest-files'))).toEqual([])
+        await expect(
+          readdir(join(root!, 'background-downloads')),
+        ).rejects.toMatchObject({ code: 'ENOENT' })
+      } finally {
+        await coordinator.shutdown()
+      }
     },
   )
 

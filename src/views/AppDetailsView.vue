@@ -495,7 +495,6 @@ async function removeFromLibrary() {
 
 interface ManifestAcquisitionOptions {
   acquire?: (manifestId: string) => Promise<{ fetched: boolean }>
-  queueId?: number
   precedingError?: string
   targetAppId?: number
   invalidateDetails?: boolean
@@ -521,7 +520,6 @@ async function getManifest(
         depot.ownerAppId,
         depot.depotId,
         targetManifestId,
-        options.queueId,
       )
     }
     if (fetched && options.invalidateDetails !== false) {
@@ -595,7 +593,6 @@ async function acquireAutomaticManifests(
   targetAppId: number,
   pending: AppDepot[],
 ) {
-  const queueId = resourceAcquisition.beginManifestBatch(pending.length)
   const acquisitions = pending.map((depot) => {
     attemptedManifests.add(manifestKey(targetAppId, depot))
     return getManifest(depot, {
@@ -604,7 +601,6 @@ async function acquireAutomaticManifests(
           depot.ownerAppId,
           depot.depotId,
           manifestId,
-          queueId,
         ),
       targetAppId,
       invalidateDetails: false,

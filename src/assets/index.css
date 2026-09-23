@@ -122,6 +122,25 @@
 }
 
 @layer utilities {
+  @keyframes operation-indeterminate {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(200%);
+    }
+  }
+
+  .operation-indeterminate {
+    animation: operation-indeterminate 1.2s ease-in-out infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .operation-indeterminate {
+      animation: none;
+    }
+  }
+
   [data-sonner-toaster].notification-toaster {
     transition: bottom 200ms ease-out;
   }

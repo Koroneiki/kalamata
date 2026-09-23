@@ -290,6 +290,29 @@ export const downloadQueueSnapshotSchema = strict({
   pending: z.array(pendingDownloadSchema),
   repairRequiredAppIds: uniqueSteamIdsSchema,
 })
+export const backgroundDownloadsSnapshotSchema = strict({
+  jobs: z.array(
+    strict({
+      id: z.string().uuid(),
+      key: z.string().min(1),
+      kind: z.enum([
+        'application-update',
+        'dependency',
+        'manifest',
+        'depot-keys',
+      ]),
+      title: z.string(),
+      appId: steamIdSchema.nullable(),
+      depotId: steamIdSchema.nullable(),
+      status: z.enum(['queued', 'active', 'completed', 'failed']),
+      phase: z.string(),
+      source: z.string().nullable(),
+      transferredBytes: z.number().nonnegative(),
+      totalBytes: z.number().nonnegative().nullable(),
+      error: z.string().nullable(),
+    }),
+  ),
+})
 const summaryFields = {
   appId: steamIdSchema,
   name: z.string(),
@@ -505,6 +528,10 @@ const rpcRequestSchemas = {
   pauseOperation: emptySchema,
   resumeOperation: emptySchema,
   getDownloadQueue: emptySchema,
+  getBackgroundDownloads: emptySchema,
+  prioritizeBackgroundDownload: strict({ id: z.string().uuid() }),
+  retryBackgroundDownload: strict({ id: z.string().uuid() }),
+  dismissBackgroundDownload: strict({ id: z.string().uuid() }),
   removeQueuedOperation: strict({ id: z.string().min(1) }),
   prioritizeQueuedOperation: strict({ id: z.string().min(1) }),
 }
@@ -614,6 +641,10 @@ export const rpcResponseSchemas = {
     }),
   ]),
   getDownloadQueue: downloadQueueSnapshotSchema,
+  getBackgroundDownloads: backgroundDownloadsSnapshotSchema,
+  prioritizeBackgroundDownload: z.boolean(),
+  retryBackgroundDownload: z.string().uuid(),
+  dismissBackgroundDownload: z.boolean(),
   removeQueuedOperation: downloadQueueSnapshotSchema,
   prioritizeQueuedOperation: downloadQueueSnapshotSchema,
 } satisfies Record<keyof typeof rpcRequestSchemas, z.ZodType>

@@ -3,6 +3,7 @@ import { mkdtemp, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DepotKeyAcquisitionService } from '../src/backend/depot/keys/depot-key-acquisition-service.ts'
+import { BackgroundDownloadCoordinator } from '../src/backend/downloads/background-download-coordinator.ts'
 import { KalamataDatabase } from '../src/db/database.ts'
 import { removeTemporaryDirectory } from './helpers/filesystem.ts'
 
@@ -43,6 +44,50 @@ afterEach(async () => {
 })
 
 describe('DepotKeyAcquisitionService', () => {
+  test('cancels a shared Lua source without publishing keys', async () => {
+    const db = await openDatabase()
+    const coordinator = new BackgroundDownloadCoordinator(root!, () => {})
+    await coordinator.initialize()
+    let started!: () => void
+    const requested = new Promise<void>((resolve) => {
+      started = resolve
+    })
+    let sourceAborted = false
+    const fetcher = mock(
+      async (_input: string | URL | Request, init?: RequestInit) => {
+        started()
+        return await new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener(
+            'abort',
+            () => {
+              sourceAborted = true
+              reject(init.signal!.reason)
+            },
+            { once: true },
+          )
+        })
+      },
+    )
+    const service = new DepotKeyAcquisitionService(db, fetcher, coordinator)
+    try {
+      const operation = coordinator.enqueue({
+        key: 'depot-keys:100:10',
+        kind: 'depot-keys',
+        title: 'Depot keys',
+        run: (context) =>
+          service.acquireWithContext({ appId: 100, depotIds: [10] }, context),
+      })
+      await requested
+      await coordinator.shutdown()
+      await expect(operation).rejects.toThrow()
+      expect(sourceAborted).toBe(true)
+      expect(db.getDepotKey(10)).toBeNull()
+    } finally {
+      await service.shutdown()
+      await coordinator.shutdown()
+    }
+  })
+
   test('prefers Lua and resolves remaining requested depots from the shared cache', async () => {
     const fetcher = mock(async (input: string | URL | Request) => {
       const url = String(input)

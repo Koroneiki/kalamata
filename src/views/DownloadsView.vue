@@ -2,6 +2,7 @@
 import { computed, reactive } from 'vue'
 
 import AvailableUpdatesSection from '@/components/shared/AvailableUpdatesSection.vue'
+import BackgroundDownloadsSection from '@/components/shared/BackgroundDownloadsSection.vue'
 import CurrentOperationPanel from '@/components/shared/CurrentOperationPanel.vue'
 import PendingOperationRow from '@/components/shared/PendingOperationRow.vue'
 import { useOperationStore } from '@/stores/operation'
@@ -88,5 +89,6 @@ async function prioritize(id: string) {
     </section>
 
     <AvailableUpdatesSection />
+    <BackgroundDownloadsSection />
   </main>
 </template>

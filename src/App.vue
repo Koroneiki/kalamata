@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ConfigProvider } from 'reka-ui'
-import { computed, watch } from 'vue'
+import { watch } from 'vue'
 import { RouterView } from 'vue-router'
 import 'vue-sonner/style.css'
 
@@ -11,18 +11,14 @@ import HubcapQuotaDialog from '@/components/shared/HubcapQuotaDialog.vue'
 import { Button } from '@/components/ui/button'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { Toaster } from '@/components/ui/sonner'
-import { useManifestQueueToasts } from '@/composables/use-manifest-queue-toasts'
 import { useOperationToasts } from '@/composables/use-operation-toasts'
 import { useOperationStore } from '@/stores/operation'
 import { useAvailableUpdates } from '@/composables/use-available-updates'
 import { useSidebarResize } from '@/composables/use-sidebar-resize'
-import { MANIFEST_QUEUE_TOASTER_ID } from '@/lib/toast'
 
 const operation = useOperationStore()
 const availableUpdates = useAvailableUpdates()
 useOperationToasts()
-const { active: manifestQueueActive } = useManifestQueueToasts()
-const notificationOffset = computed(() => (manifestQueueActive.value ? 94 : 20))
 const { sidebarWidth } = useSidebarResize()
 
 watch(
@@ -94,15 +90,9 @@ watch(
       class="notification-toaster"
       position="bottom-right"
       close-button
-      :offset="{ bottom: notificationOffset, right: 20 }"
+      :offset="{ bottom: 20, right: 20 }"
       :gap="10"
     />
     <HubcapQuotaDialog />
-    <Toaster
-      :id="MANIFEST_QUEUE_TOASTER_ID"
-      position="bottom-right"
-      :offset="20"
-      :visible-toasts="1"
-    />
   </ConfigProvider>
 </template>

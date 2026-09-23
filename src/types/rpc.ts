@@ -1,4 +1,5 @@
 import type { ColdClientOperationSnapshot } from './cold-client.ts'
+import type { BackgroundDownloadsSnapshot } from './background-downloads.ts'
 import type { RpcRequests } from './rpc-schemas.ts'
 
 export interface AppSummary {
@@ -365,6 +366,7 @@ export type AppRpc = {
     messages: {
       downloadQueueChanged: DownloadQueueSnapshot
       coldClientOperationChanged: ColdClientOperationSnapshot
+      backgroundDownloadsChanged: BackgroundDownloadsSnapshot
     }
   }
 }

@@ -1,9 +1,11 @@
 import { Electroview } from 'electrobun/view'
 
 import type { ColdClientOperationSnapshot } from '@/types/cold-client'
+import type { BackgroundDownloadsSnapshot } from '@/types/background-downloads'
 import type { AppRpc, DownloadQueueSnapshot } from '@/types/rpc'
 import {
   coldClientOperationSnapshotSchema,
+  backgroundDownloadsSnapshotSchema,
   downloadQueueSnapshotSchema,
   rpcResponseSchemas,
 } from '@/types/rpc-schemas'
@@ -28,6 +30,11 @@ const downloadQueueListeners = new Set<DownloadQueueListener>()
 let latestDownloadQueue: DownloadQueueSnapshot | undefined
 let downloadQueueMessageSequence = 0
 const coldClientOperationListeners = new Set<ColdClientOperationListener>()
+const backgroundListeners = new Set<
+  (snapshot: BackgroundDownloadsSnapshot) => void
+>()
+let latestBackground: BackgroundDownloadsSnapshot | undefined
+let backgroundSequence = 0
 let latestColdClientOperation: ColdClientOperationSnapshot | undefined
 let coldClientOperationMessageSequence = 0
 
@@ -53,6 +60,13 @@ const rpc = Electroview.defineRPC<AppRpc>({
         coldClientOperationMessageSequence += 1
         for (const listener of coldClientOperationListeners)
           listener(result.data, coldClientOperationMessageSequence)
+      },
+      backgroundDownloadsChanged: (snapshot) => {
+        const result = backgroundDownloadsSnapshotSchema.safeParse(snapshot)
+        if (!result.success) return
+        latestBackground = result.data
+        backgroundSequence += 1
+        for (const listener of backgroundListeners) listener(result.data)
       },
     },
   },
@@ -95,4 +109,16 @@ export function subscribeToColdClientOperation(
 
 export function getColdClientOperationMessageSequence() {
   return coldClientOperationMessageSequence
+}
+
+export function subscribeToBackgroundDownloads(
+  listener: (snapshot: BackgroundDownloadsSnapshot) => void,
+) {
+  backgroundListeners.add(listener)
+  if (latestBackground) listener(latestBackground)
+  return () => backgroundListeners.delete(listener)
+}
+
+export function getBackgroundDownloadsMessageSequence() {
+  return backgroundSequence
 }

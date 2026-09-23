@@ -353,24 +353,3 @@ defineExpose({
     @confirm="confirmCancel"
   />
 </template>
-
-<style scoped>
-@keyframes operation-indeterminate {
-  from {
-    transform: translateX(-100%);
-  }
-  to {
-    transform: translateX(200%);
-  }
-}
-
-.operation-indeterminate {
-  animation: operation-indeterminate 1.2s ease-in-out infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .operation-indeterminate {
-    animation: none;
-  }
-}
-</style>

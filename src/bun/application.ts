@@ -16,6 +16,7 @@ import { ColdClientInterfaceGenerator } from '../backend/cold-client/interface-g
 import { ColdClientReplacementService } from '../backend/cold-client/replacement.ts'
 import { ColdClientService } from '../backend/cold-client/service.ts'
 import { DownloadQueueCoordinator } from '../backend/operations/download-queue.ts'
+import { BackgroundDownloadCoordinator } from '../backend/downloads/background-download-coordinator.ts'
 import {
   getResumableApplicationTransaction,
   hasRepairFallback,
@@ -52,6 +53,14 @@ async function getMainViewUrl(): Promise<string> {
 }
 
 const database = await openKalamataDatabase(Utils.paths.userData)
+let rpcReady = false
+const backgroundDownloads = new BackgroundDownloadCoordinator(
+  Utils.paths.userData,
+  (snapshot) => {
+    if (rpcReady) rpc.send.backgroundDownloadsChanged(snapshot)
+  },
+)
+await backgroundDownloads.initialize()
 const steam = new SteamService((appIds, countryCode, error) => {
   diagnostics.error({
     event: 'product-info.package-discovery-failed',
@@ -59,7 +68,7 @@ const steam = new SteamService((appIds, countryCode, error) => {
     countryCode,
     error,
   })
-})
+}, backgroundDownloads)
 // Warm the shared fallback without delaying the main window.
 void steam.initializeDepotKeyCache(database).catch((error) => {
   diagnostics.error({
@@ -85,6 +94,7 @@ const coldClientDependencies = new ColdClientDependencyService(
   Utils.paths.userData,
   {
     mutex: coldClientMutex,
+    backgroundDownloads,
     reportCleanupError: (error) =>
       diagnostics.error({
         event: 'cold-client-dependencies.cleanup-failed',
@@ -125,7 +135,6 @@ const coldClient = new ColdClientService(
 let coldClientDependenciesReady = false
 let queue: DownloadQueueCoordinator
 // Recovery runs before BrowserWindow attaches the RPC transport.
-let rpcReady = false
 const systemPlatform: DepotPlatform =
   process.platform === 'darwin'
     ? 'macos'
@@ -193,18 +202,37 @@ const rpc = BrowserView.defineRPC<AppRpc>({
         if (update.error) throw new Error(update.error)
         if (!update.updateAvailable) return
 
-        await Updater.downloadUpdate()
+        await backgroundDownloads.enqueue({
+          key: 'application-update',
+          kind: 'application-update',
+          title: 'Application update',
+          canCancel: false,
+          run: async ({ signal, progress }) => {
+            progress('downloading')
+            Updater.onStatusChange(({ status, details }) => {
+              if (!signal.aborted)
+                progress(status, details?.bytesDownloaded, details?.totalBytes)
+            })
+            try {
+              await Updater.downloadUpdate()
+            } finally {
+              Updater.onStatusChange(null)
+            }
+            signal.throwIfAborted()
+          },
+        })
+        if (shutdownStarted) throw new Error('Application is shutting down')
         const prepared = Updater.updateInfo()
         if (!prepared.updateReady)
           throw new Error(prepared.error || 'The update could not be prepared')
 
         assertApplicationUpdateCanRestart()
-        await shutdownApplicationServices().catch((error) => {
-          diagnostics.error({
-            event: 'app.shutdown-failed',
-            error: error instanceof Error ? error : new Error(String(error)),
-          })
-        })
+        await shutdownApplicationServices()
+        if (quitRequested) {
+          allowQuit = true
+          Utils.quit()
+          throw new Error('Application is shutting down')
+        }
         allowQuit = true
         await Updater.applyUpdate()
         const applied = Updater.updateInfo()
@@ -223,6 +251,18 @@ const rpc = BrowserView.defineRPC<AppRpc>({
       },
       getColdClientDependencies() {
         return coldClientDependencies.getStatus()
+      },
+      getBackgroundDownloads() {
+        return backgroundDownloads.snapshot()
+      },
+      prioritizeBackgroundDownload({ id }) {
+        return backgroundDownloads.prioritize(id)
+      },
+      retryBackgroundDownload({ id }) {
+        return backgroundDownloads.retry(id)
+      },
+      dismissBackgroundDownload({ id }) {
+        return backgroundDownloads.dismiss(id)
       },
       checkColdClientDependencyUpdates() {
         return coldClientDependencies.checkForUpdates()
@@ -346,6 +386,7 @@ queue = new DownloadQueueCoordinator(
 )
 
 let shutdownStarted = false
+let quitRequested = false
 let allowQuit = false
 let shutdownPromise: Promise<void> | undefined
 let startup = Promise.resolve()
@@ -353,7 +394,12 @@ let startup = Promise.resolve()
 function assertApplicationUpdateCanRestart() {
   if (
     queue.getOperationState().status === 'active' ||
-    coldClientOperations.getSnapshot().status === 'active'
+    coldClientOperations.getSnapshot().status === 'active' ||
+    backgroundDownloads
+      .snapshot()
+      .jobs.some(
+        (job) => job.status === 'active' && job.kind !== 'application-update',
+      )
   ) {
     throw new Error('Wait for the current operation to finish before updating')
   }
@@ -362,11 +408,13 @@ function assertApplicationUpdateCanRestart() {
 function shutdownApplicationServices(): Promise<void> {
   if (shutdownPromise) return shutdownPromise
   shutdownStarted = true
+  backgroundDownloads.stopAccepting()
   diagnostics.info({ event: 'app.shutdown-started' })
   shutdownPromise = (async () => {
     try {
       await startup.catch(() => {})
       const results = await Promise.allSettled([
+        backgroundDownloads.shutdown(),
         queue.shutdown(),
         coldClientOperations.shutdown(),
         coldClientDependencies.shutdown(),
@@ -397,6 +445,7 @@ Electrobun.events.on(
       event.response = { allow: true }
       return
     }
+    quitRequested = true
     event.response = { allow: false }
     if (shutdownStarted) return
     void shutdownApplicationServices()

@@ -4,15 +4,11 @@ import { toast } from 'vue-sonner'
 
 import AppToast from '@/components/shared/AppToast.vue'
 import GameCompletionToast from '@/components/shared/GameCompletionToast.vue'
-import ManifestQueueToast from '@/components/shared/ManifestQueueToast.vue'
 import { cn } from '@/lib/utils'
-
-export const MANIFEST_QUEUE_TOASTER_ID = 'manifest-queue'
 
 const APP_TOAST_CLASS =
   'app-toast !w-88 !max-w-[calc(100vw-2rem)] !border-border !bg-card !text-card-foreground'
 const RawAppToast = markRaw(AppToast)
-const RawManifestQueueToast = markRaw(ManifestQueueToast)
 const RawGameCompletionToast = markRaw(GameCompletionToast)
 
 type AppToastOptions = Omit<ExternalToast, 'componentProps' | 'description'> & {
@@ -38,20 +34,6 @@ export const appToast = {
   },
   dismiss(id?: string | number) {
     return toast.dismiss(id)
-  },
-  manifestQueue(completed: number, total: number, id: string) {
-    return toast.custom(
-      RawManifestQueueToast,
-      optionsWithAppStyle({
-        id,
-        toasterId: MANIFEST_QUEUE_TOASTER_ID,
-        componentProps: { completed, total },
-        duration: Infinity,
-        dismissible: false,
-        closeButton: false,
-        class: '!h-16 !p-0',
-      }),
-    )
   },
   gameCompletion(name: string, iconUrl: string | null, message: string) {
     return toast.custom(

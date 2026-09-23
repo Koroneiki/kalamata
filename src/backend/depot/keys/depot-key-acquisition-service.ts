@@ -10,6 +10,9 @@ import type {
 import { DepotKeyCache } from './depot-key-cache.ts'
 import { parseDepotKeysLua } from './depot-key-lua-parser.ts'
 import { HubcapClient } from './hubcap-client.ts'
+import type { JobContext } from '../../downloads/background-download-coordinator.ts'
+import { abortable } from '../../shared/abortable.ts'
+import type { BackgroundDownloadCoordinator } from '../../downloads/background-download-coordinator.ts'
 
 const REPOSITORY_RAW_URL =
   'https://raw.githubusercontent.com/dvahana2424-web/sojogamesdatabase1'
@@ -19,13 +22,20 @@ type Fetcher = (
   init?: RequestInit,
 ) => Promise<Response>
 
+interface SharedSource<T> {
+  promise: Promise<T>
+  controller: AbortController
+  users: number
+  settled: boolean
+}
+
 export class DepotKeyAcquisitionService {
   readonly #abortController = new AbortController()
   readonly #cache: DepotKeyCache
-  readonly #luaSources = new Map<number, Promise<string | null>>()
+  readonly #luaSources = new Map<number, SharedSource<string | null>>()
   readonly #hubcapLuaSources = new Map<
     number,
-    Promise<{ source: string; usage: HubcapUsage }>
+    SharedSource<{ source: string; usage: HubcapUsage }>
   >()
   readonly #hubcap: HubcapClient
   #accepting = true
@@ -33,6 +43,7 @@ export class DepotKeyAcquisitionService {
   constructor(
     private readonly database: KalamataDatabase,
     private readonly fetcher: Fetcher = fetch,
+    private readonly backgroundDownloads?: BackgroundDownloadCoordinator,
   ) {
     this.#cache = new DepotKeyCache(
       database.dataRoot,
@@ -43,10 +54,25 @@ export class DepotKeyAcquisitionService {
   }
 
   initializeCache(): Promise<void> {
-    return this.#cache.initialize()
+    return this.backgroundDownloads
+      ? this.backgroundDownloads.enqueue({
+          key: 'depot-key-cache',
+          kind: 'depot-keys',
+          title: 'Depot key cache',
+          source: 'GitHub: dvahana2424-web/sojogamesdatabase1',
+          run: (context) => this.#cache.initialize(context),
+        })
+      : this.#cache.initialize()
   }
 
   async acquire(request: AcquireDepotKeysRequest): Promise<AcquiredDepotKeys> {
+    return this.acquireWithContext(request)
+  }
+
+  async acquireWithContext(
+    request: AcquireDepotKeysRequest,
+    context?: JobContext,
+  ): Promise<AcquiredDepotKeys> {
     if (!this.#accepting) {
       throw new Error('Depot key acquisition is shutting down')
     }
@@ -55,6 +81,7 @@ export class DepotKeyAcquisitionService {
     for (const depotId of depotIds) validateId(depotId, 'depotId')
 
     const acquiredDepotIds: number[] = []
+    const signal = context?.signal ?? this.#abortController.signal
     const pending = depotIds.filter((depotId) => {
       const existing = this.database.getDepotKey(depotId)
       if (existing === null) return true
@@ -71,7 +98,10 @@ export class DepotKeyAcquisitionService {
     if (pending.length > 0) {
       const requested = new Set(pending)
       // The base-app Lua source includes keys for its DLC depots as well.
-      const lua = await this.getLuaSource(request.appId)
+      context?.setSource('GitHub: dvahana2424-web/sojogamesdatabase1')
+      context?.progress('downloading')
+      const lua = await this.getLuaSource(request.appId, signal)
+      signal.throwIfAborted()
       const luaKeys = lua ? parseDepotKeysLua(lua, requested) : new Map()
       for (const [depotId, key] of luaKeys) {
         this.database.setDepotKey(depotId, key)
@@ -80,7 +110,12 @@ export class DepotKeyAcquisitionService {
       }
 
       if (requested.size > 0) {
-        const cachedKeys = await this.#cache.getKeys(requested)
+        context?.setSource('GitHub: dvahana2424-web/sojogamesdatabase1')
+        const cachedKeys = await abortable(
+          this.#cache.getKeys(requested, context),
+          signal,
+        )
+        signal.throwIfAborted()
         for (const [depotId, key] of cachedKeys) {
           this.database.setDepotKey(depotId, key)
           acquiredDepotIds.push(depotId)
@@ -89,7 +124,13 @@ export class DepotKeyAcquisitionService {
       }
 
       if (requested.size > 0) {
-        const hubcapResult = await this.acquireFromHubcap(request, requested)
+        context?.setSource('Hubcap API')
+        const hubcapResult = await this.acquireFromHubcap(
+          request,
+          requested,
+          signal,
+        )
+        signal.throwIfAborted()
         hubcap = hubcapResult.outcome
         for (const [depotId, key] of hubcapResult.keys) {
           this.database.setDepotKey(depotId, key)
@@ -107,9 +148,14 @@ export class DepotKeyAcquisitionService {
     this.#abortController.abort(
       new Error('Depot key acquisition was cancelled'),
     )
-    await Promise.allSettled([
+    for (const source of [
       ...this.#luaSources.values(),
       ...this.#hubcapLuaSources.values(),
+    ])
+      source.controller.abort()
+    await Promise.allSettled([
+      ...[...this.#luaSources.values()].map(({ promise }) => promise),
+      ...[...this.#hubcapLuaSources.values()].map(({ promise }) => promise),
     ])
   }
 
@@ -124,22 +170,27 @@ export class DepotKeyAcquisitionService {
   private async acquireFromHubcap(
     request: AcquireDepotKeysRequest,
     requested: Set<number>,
+    signal: AbortSignal,
   ): Promise<{
     keys: Map<number, string>
     outcome?: NonNullable<AcquiredDepotKeys['hubcap']>
   }> {
     const cached = this.#hubcapLuaSources.get(request.appId)
-    if (cached) return this.useHubcapSource(cached, requested)
+    if (cached)
+      return this.useHubcapSource(request.appId, cached, requested, signal)
 
     const apiKey = this.database.getHubcapApiKey()
     if (!apiKey) return { keys: new Map(), outcome: { status: 'missing-key' } }
 
-    const depotIdsResult = await this.#hubcap.getDepotIds(
-      apiKey,
-      this.#abortController.signal,
-    )
+    const depotIdsResult = await this.#hubcap.getDepotIds(apiKey, signal)
     const availableSource = this.#hubcapLuaSources.get(request.appId)
-    if (availableSource) return this.useHubcapSource(availableSource, requested)
+    if (availableSource)
+      return this.useHubcapSource(
+        request.appId,
+        availableSource,
+        requested,
+        signal,
+      )
     if (depotIdsResult.status === 'invalid-key')
       return { keys: new Map(), outcome: { status: 'invalid-key' } }
     if (depotIdsResult.status === 'unavailable')
@@ -150,13 +201,11 @@ export class DepotKeyAcquisitionService {
     )
     if (availableDepotIds.size === 0) return { keys: new Map() }
 
-    const usageResult = await this.#hubcap.getUsage(
-      apiKey,
-      this.#abortController.signal,
-    )
+    const usageResult = await this.#hubcap.getUsage(apiKey, signal)
 
     const inFlight = this.#hubcapLuaSources.get(request.appId)
-    if (inFlight) return this.useHubcapSource(inFlight, requested)
+    if (inFlight)
+      return this.useHubcapSource(request.appId, inFlight, requested, signal)
 
     if (usageResult.status !== 'available')
       return { keys: new Map(), outcome: usageResult }
@@ -175,13 +224,18 @@ export class DepotKeyAcquisitionService {
       }
     }
 
-    const sourcePromise = this.fetchHubcapLua(request.appId, apiKey, usage)
-    this.#hubcapLuaSources.set(request.appId, sourcePromise)
-    sourcePromise.catch(() => {
-      if (this.#hubcapLuaSources.get(request.appId) === sourcePromise)
-        this.#hubcapLuaSources.delete(request.appId)
-    })
-    const result = await sourcePromise
+    const source = this.sharedSource(
+      this.#hubcapLuaSources,
+      request.appId,
+      (sourceSignal) =>
+        this.fetchHubcapLua(request.appId, apiKey, usage, sourceSignal),
+    )
+    const result = await this.useSource(
+      this.#hubcapLuaSources,
+      request.appId,
+      source,
+      signal,
+    )
     const keys = parseDepotKeysLua(result.source, availableDepotIds)
     return {
       keys,
@@ -194,13 +248,20 @@ export class DepotKeyAcquisitionService {
   }
 
   private async useHubcapSource(
-    source: Promise<{ source: string; usage: HubcapUsage }>,
+    appId: number,
+    source: SharedSource<{ source: string; usage: HubcapUsage }>,
     requested: ReadonlySet<number>,
+    signal: AbortSignal,
   ): Promise<{
     keys: Map<number, string>
     outcome: NonNullable<AcquiredDepotKeys['hubcap']>
   }> {
-    const result = await source
+    const result = await this.useSource(
+      this.#hubcapLuaSources,
+      appId,
+      source,
+      signal,
+    )
     const keys = parseDepotKeysLua(result.source, requested)
     return {
       keys,
@@ -216,51 +277,89 @@ export class DepotKeyAcquisitionService {
     appId: number,
     apiKey: string,
     preflightUsage: HubcapUsage,
+    signal: AbortSignal,
   ): Promise<{ source: string; usage: HubcapUsage }> {
-    const source = await this.#hubcap.getLua(
-      appId,
-      apiKey,
-      this.#abortController.signal,
-    )
+    const source = await this.#hubcap.getLua(appId, apiKey, signal)
     const usage = await this.#hubcap.getUsageAfterRequest(
       apiKey,
       preflightUsage,
-      this.#abortController.signal,
+      signal,
     )
     return { source, usage }
   }
 
-  private getLuaSource(appId: number): Promise<string | null> {
+  private getLuaSource(
+    appId: number,
+    signal: AbortSignal,
+  ): Promise<string | null> {
     let source = this.#luaSources.get(appId)
     if (!source) {
-      source = this.fetchLuaSource(appId).then(
-        (value) => {
-          if (value === null && this.#luaSources.get(appId) === source)
-            this.#luaSources.delete(appId)
-          return value
-        },
-        (error) => {
-          if (this.#luaSources.get(appId) === source)
-            this.#luaSources.delete(appId)
-          throw error
-        },
+      source = this.sharedSource(this.#luaSources, appId, (sourceSignal) =>
+        this.fetchLuaSource(appId, sourceSignal),
       )
-      this.#luaSources.set(appId, source)
     }
-    return source
+    return this.useSource(this.#luaSources, appId, source, signal)
   }
 
-  private async fetchLuaSource(appId: number): Promise<string | null> {
+  private async fetchLuaSource(
+    appId: number,
+    signal: AbortSignal,
+  ): Promise<string | null> {
     try {
       const response = await this.fetcher(
         `${REPOSITORY_RAW_URL}/${appId}/${appId}.lua`,
-        { signal: this.#abortController.signal },
+        { signal },
       )
       if (!response.ok) return null
       return await response.text()
     } catch (error) {
-      if (this.#abortController.signal.aborted) throw error
+      if (signal.aborted) throw error
       return null
+    }
+  }
+
+  private sharedSource<T>(
+    sources: Map<number, SharedSource<T>>,
+    appId: number,
+    fetchSource: (signal: AbortSignal) => Promise<T>,
+  ): SharedSource<T> {
+    const controller = new AbortController()
+    const source: SharedSource<T> = {
+      controller,
+      users: 0,
+      settled: false,
+      promise: fetchSource(controller.signal),
+    }
+    sources.set(appId, source)
+    void source.promise.then(
+      (value) => {
+        source.settled = true
+        if (value === null && sources.get(appId) === source)
+          sources.delete(appId)
+      },
+      () => {
+        source.settled = true
+        if (sources.get(appId) === source) sources.delete(appId)
+      },
+    )
+    return source
+  }
+
+  private async useSource<T>(
+    sources: Map<number, SharedSource<T>>,
+    appId: number,
+    source: SharedSource<T>,
+    signal: AbortSignal,
+  ): Promise<T> {
+    source.users++
+    try {
+      return await abortable(source.promise, signal)
+    } finally {
+      source.users--
+      if (source.users === 0 && !source.settled) {
+        source.controller.abort()
+        if (sources.get(appId) === source) sources.delete(appId)
+      }
     }
   }
 }

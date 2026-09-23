@@ -4,7 +4,6 @@ import { acquireDepotKeys, acquireManifest } from '@/api/apps'
 import { appQueryKeys, hubcapUsageQueryKey } from '@/composables/queries'
 import { requestHubcapApproval } from '@/composables/use-hubcap-approval'
 import { appToast } from '@/lib/toast'
-import { useManifestQueueStore } from '@/stores/manifest-queue'
 import type {
   EligibleAppDepot,
   HubcapDepotKeyOutcome,
@@ -26,11 +25,6 @@ const hubcapFailureFeedback = {
 
 export function useDepotResourceAcquisition() {
   const queryCache = useQueryCache()
-  const manifestQueue = useManifestQueueStore()
-
-  function beginManifestBatch(count: number) {
-    return manifestQueue.begin(count)
-  }
 
   async function acquireKeys(appId: number, depotIds: number[]) {
     const first = await acquireDepotKeys(appId, depotIds)
@@ -101,39 +95,29 @@ export function useDepotResourceAcquisition() {
     ownerAppId: number,
     depotId: number,
     manifestId: string,
-    queueId = manifestQueue.begin(1),
   ) {
-    try {
-      const manifest = await acquireManifestWithHubcap(
-        ownerAppId,
-        depotId,
-        manifestId,
-      )
-      if (!manifest) throw new Error(`Manifest ${manifestId} is unavailable.`)
-      return manifest
-    } finally {
-      manifestQueue.settle(queueId)
-    }
+    const manifest = await acquireManifestWithHubcap(
+      ownerAppId,
+      depotId,
+      manifestId,
+    )
+    if (!manifest) throw new Error(`Manifest ${manifestId} is unavailable.`)
+    return manifest
   }
 
   async function acquireManifestAutomatically(
     ownerAppId: number,
     depotId: number,
     manifestId: string,
-    queueId: number,
   ) {
-    try {
-      const acquisition = await runCachedAcquisition(
-        queryCache,
-        resourceAcquisitionQueryKeys.manifest(depotId, manifestId),
-        () => acquireManifestWithHubcap(ownerAppId, depotId, manifestId),
-      )
-      return {
-        ...acquisition,
-        fetched: acquisition.fetched && acquisition.data !== null,
-      }
-    } finally {
-      manifestQueue.settle(queueId)
+    const acquisition = await runCachedAcquisition(
+      queryCache,
+      resourceAcquisitionQueryKeys.manifest(depotId, manifestId),
+      () => acquireManifestWithHubcap(ownerAppId, depotId, manifestId),
+    )
+    return {
+      ...acquisition,
+      fetched: acquisition.fetched && acquisition.data !== null,
     }
   }
 
@@ -180,14 +164,12 @@ export function useDepotResourceAcquisition() {
       (depot) => depot.manifestStatus !== 'ready' && depot.manifestId,
     )
     if (missingManifests.length) {
-      const queueId = manifestQueue.begin(missingManifests.length)
       await Promise.all(
         missingManifests.map((depot) =>
           acquireManifestResource(
             depot.ownerAppId,
             depot.depotId,
             depot.manifestId!,
-            queueId,
           ),
         ),
       )
@@ -200,7 +182,6 @@ export function useDepotResourceAcquisition() {
   }
 
   return {
-    beginManifestBatch,
     acquireKeys,
     acquireKeysAutomatically,
     acquireManifestAutomatically,

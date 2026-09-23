@@ -8,6 +8,7 @@ import App from '@/App.vue'
 import router from '@/router'
 import { useColdClientOperationStore } from '@/stores/cold-client-operation'
 import { useOperationStore } from '@/stores/operation'
+import { useBackgroundDownloadsStore } from '@/stores/background-downloads'
 
 const app = createApp(App)
 const pinia = createPinia()
@@ -23,4 +24,5 @@ app.use(router)
 
 app.mount('#app')
 void useOperationStore(pinia).initialize()
+void useBackgroundDownloadsStore(pinia).initialize()
 void useColdClientOperationStore(pinia).initialize()
