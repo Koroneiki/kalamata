@@ -20,6 +20,7 @@ test('a newer Bun push wins over an older initial RPC, including after store rec
         transferredBytes: 30,
         totalBytes: 100,
         error: null,
+        finishedAt: null,
       },
     ],
   }
@@ -94,6 +95,7 @@ test('a newer Bun push wins over an older initial RPC, including after store rec
         transferredBytes: 0,
         totalBytes: null,
         error: null,
+        finishedAt: 1_700_000_000_000,
       },
     ],
   }

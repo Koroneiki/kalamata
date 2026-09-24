@@ -278,6 +278,7 @@ test('validates grouped manifest background downloads', () => {
           transferredBytes: 0,
           totalBytes: null,
           error: null,
+          finishedAt: null,
         },
       ],
     }).jobs[0],

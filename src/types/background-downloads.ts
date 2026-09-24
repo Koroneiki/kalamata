@@ -25,6 +25,7 @@ export interface BackgroundDownloadJob {
   transferredBytes: number
   totalBytes: number | null
   error: string | null
+  finishedAt: number | null
 }
 
 export interface BackgroundDownloadsSnapshot {

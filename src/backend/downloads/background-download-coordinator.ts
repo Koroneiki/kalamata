@@ -264,6 +264,7 @@ export class BackgroundDownloadCoordinator {
       transferredBytes: 0,
       totalBytes: null,
       error: null,
+      finishedAt: null,
     }
     if (definition.groupKey) state.itemCount = 1
     if (definition.groupKey)
@@ -515,6 +516,7 @@ export class BackgroundDownloadCoordinator {
     const failed = record.tasks.filter(({ status }) => status === 'failed')
     record.state.status = failed.length ? 'failed' : 'completed'
     record.state.phase = record.state.status
+    record.state.finishedAt = Date.now()
     record.state.error = failed.length
       ? failed
           .map(({ error }) => error?.message ?? 'Background task failed')

@@ -72,6 +72,11 @@ test('shares a semantic job, runs queued downloads in order, and retries failure
       'queued',
       'queued',
     ])
+    expect(
+      coordinator
+        .snapshot()
+        .jobs.every(({ finishedAt }) => finishedAt === null),
+    ).toBe(true)
     expect(coordinator.prioritize(thirdId)).toBe(true)
     expect(coordinator.snapshot().jobs[1]?.id).toBe(thirdId)
     expect(coordinator.snapshot().jobs[0]?.status).toBe('active')
@@ -82,11 +87,18 @@ test('shares a semantic job, runs queued downloads in order, and retries failure
       totalBytes: null,
     })
     release()
+    const beforeFinish = Date.now()
     await expect(first).rejects.toThrow('Network unavailable')
     expect(await second).toBe('installed')
     expect(await third).toBe('installed')
     expect(order).toEqual(['third', 'second'])
     expect(coordinator.snapshot().jobs[0]!.status).toBe('failed')
+    expect(coordinator.snapshot().jobs[0]!.finishedAt).toBeGreaterThanOrEqual(
+      beforeFinish,
+    )
+    expect(coordinator.snapshot().jobs[0]!.finishedAt).toBeLessThanOrEqual(
+      Date.now(),
+    )
     expect(await readdir(join(root, 'background-downloads'))).toEqual([])
     const nextId = coordinator.retry(id)
     expect(nextId).not.toBe(id)
@@ -100,6 +112,9 @@ test('shares a semantic job, runs queued downloads in order, and retries failure
     expect(
       coordinator.snapshot().jobs.find(({ id }) => id === nextId)?.status,
     ).toBe('completed')
+    expect(
+      coordinator.snapshot().jobs.find(({ id }) => id === nextId)?.finishedAt,
+    ).toBeGreaterThanOrEqual(beforeFinish)
     expect(snapshots.some(({ jobs }) => jobs[1]?.status === 'queued')).toBe(
       true,
     )

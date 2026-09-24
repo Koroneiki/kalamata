@@ -318,6 +318,7 @@ export const backgroundDownloadsSnapshotSchema = strict({
       transferredBytes: z.number().nonnegative(),
       totalBytes: z.number().nonnegative().nullable(),
       error: z.string().nullable(),
+      finishedAt: z.number().int().nonnegative().nullable(),
     }),
   ),
 })

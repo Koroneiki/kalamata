@@ -12,9 +12,10 @@ const queued = computed(() =>
   downloads.jobs.filter((job) => job.status === 'queued'),
 )
 const history = computed(() =>
-  downloads.jobs.filter(
-    (job) => job.status === 'completed' || job.status === 'failed',
-  ),
+  downloads.jobs
+    .filter((job) => job.status === 'completed' || job.status === 'failed')
+    .toReversed()
+    .sort((left, right) => (right.finishedAt ?? 0) - (left.finishedAt ?? 0)),
 )
 </script>
 
