@@ -389,3 +389,105 @@ test('shutdown does not wait for an unabortable provider or admit its late resul
     await rm(root, { recursive: true, force: true })
   }
 })
+
+test('keeps the queue reserved until the updater makes its restart decision', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'background-jobs-'))
+  const coordinator = new BackgroundDownloadCoordinator(root, () => {})
+  try {
+    await coordinator.initialize()
+    const update = coordinator.enqueue({
+      key: 'application-update',
+      kind: 'application-update',
+      title: 'Update',
+      holdQueueAfterCompletion: true,
+      run: async () => 'downloaded',
+    })
+    let started = false
+    const next = coordinator.enqueue({
+      key: 'manifest:1:2',
+      kind: 'manifest',
+      title: 'Manifest',
+      run: async () => {
+        started = true
+      },
+    })
+    expect(await update).toBe('downloaded')
+    expect(started).toBe(false)
+    expect(coordinator.snapshot().jobs[1]?.status).toBe('queued')
+    coordinator.releaseQueue('application-update')
+    await next
+    expect(started).toBe(true)
+  } finally {
+    await coordinator.shutdown()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('does not replay a failed step of an updater or dependency workflow', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'background-jobs-'))
+  const coordinator = new BackgroundDownloadCoordinator(root, () => {})
+  try {
+    await coordinator.initialize()
+    for (const kind of ['application-update', 'dependency'] as const) {
+      const job = coordinator.enqueue({
+        key: kind,
+        kind,
+        title: kind,
+        run: async () => {
+          throw new Error('Transfer failed')
+        },
+      })
+      await expect(job).rejects.toThrow('Transfer failed')
+      const id = coordinator.snapshot().jobs.at(-1)!.id
+      expect(() => coordinator.retry(id)).toThrow(
+        'Retry this operation from Settings',
+      )
+    }
+  } finally {
+    await coordinator.shutdown()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('finishes a publishing manifest but aborts the rest of its group on shutdown', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'background-jobs-'))
+  const coordinator = new BackgroundDownloadCoordinator(root, () => {})
+  try {
+    await coordinator.initialize()
+    let publishing!: () => void
+    let finishPublish!: () => void
+    const started = new Promise<void>((resolve) => (publishing = resolve))
+    const held = new Promise<void>((resolve) => (finishPublish = resolve))
+    const first = coordinator.enqueue({
+      key: 'manifest:1:1',
+      groupKey: 'manifest-app:1',
+      kind: 'manifest',
+      title: 'Manifests',
+      run: async ({ beginPublish }) => {
+        beginPublish()
+        publishing()
+        await held
+        return 'published'
+      },
+    })
+    await started
+    let secondStarted = false
+    const second = coordinator.enqueue({
+      key: 'manifest:2:2',
+      groupKey: 'manifest-app:1',
+      kind: 'manifest',
+      title: 'Manifests',
+      run: async () => {
+        secondStarted = true
+      },
+    })
+    const stopping = coordinator.shutdown()
+    finishPublish()
+    expect(await first).toBe('published')
+    await expect(second).rejects.toThrow('shutting down')
+    await stopping
+    expect(secondStarted).toBe(false)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})

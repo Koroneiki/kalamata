@@ -16,7 +16,10 @@ import { ColdClientInterfaceGenerator } from '../backend/cold-client/interface-g
 import { ColdClientReplacementService } from '../backend/cold-client/replacement.ts'
 import { ColdClientService } from '../backend/cold-client/service.ts'
 import { DownloadQueueCoordinator } from '../backend/operations/download-queue.ts'
-import { BackgroundDownloadCoordinator } from '../backend/downloads/background-download-coordinator.ts'
+import {
+  BackgroundDownloadCoordinator,
+  type JobContext,
+} from '../backend/downloads/background-download-coordinator.ts'
 import {
   getResumableApplicationTransaction,
   hasRepairFallback,
@@ -150,6 +153,30 @@ const defaultSettings: AppSettings = {
   hideUnavailableDepots: true,
   platforms: [systemPlatform],
 }
+let applicationUpdateInProgress = false
+
+async function prepareApplicationUpdate(): Promise<boolean> {
+  assertApplicationUpdateCanRestart()
+  const update = await Updater.checkForUpdate()
+  if (update.error) throw new Error(update.error)
+  if (!update.updateAvailable) return false
+
+  // Keep the queue slot until the caller has decided whether to restart.
+  await backgroundDownloads.enqueue({
+    key: 'application-update',
+    kind: 'application-update',
+    title: 'Application update',
+    canCancel: false,
+    holdQueueAfterCompletion: true,
+    run: downloadApplicationUpdate,
+  })
+  if (shutdownStarted) throw new Error('Application is shutting down')
+  const prepared = Updater.updateInfo()
+  if (!prepared.updateReady)
+    throw new Error(prepared.error || 'The update could not be prepared')
+  return true
+}
+
 const rpc = BrowserView.defineRPC<AppRpc>({
   handlers: {
     requests: validatedRpcHandlers({
@@ -197,46 +224,27 @@ const rpc = BrowserView.defineRPC<AppRpc>({
         }
       },
       async installApplicationUpdate() {
-        assertApplicationUpdateCanRestart()
-        const update = await Updater.checkForUpdate()
-        if (update.error) throw new Error(update.error)
-        if (!update.updateAvailable) return
+        if (applicationUpdateInProgress)
+          throw new Error('An application update is already in progress')
+        applicationUpdateInProgress = true
+        try {
+          if (!(await prepareApplicationUpdate())) return
 
-        await backgroundDownloads.enqueue({
-          key: 'application-update',
-          kind: 'application-update',
-          title: 'Application update',
-          canCancel: false,
-          run: async ({ signal, progress }) => {
-            progress('downloading')
-            Updater.onStatusChange(({ status, details }) => {
-              if (!signal.aborted)
-                progress(status, details?.bytesDownloaded, details?.totalBytes)
-            })
-            try {
-              await Updater.downloadUpdate()
-            } finally {
-              Updater.onStatusChange(null)
-            }
-            signal.throwIfAborted()
-          },
-        })
-        if (shutdownStarted) throw new Error('Application is shutting down')
-        const prepared = Updater.updateInfo()
-        if (!prepared.updateReady)
-          throw new Error(prepared.error || 'The update could not be prepared')
-
-        assertApplicationUpdateCanRestart()
-        await shutdownApplicationServices()
-        if (quitRequested) {
+          assertApplicationUpdateCanRestart()
+          await shutdownApplicationServices()
+          if (quitRequested) {
+            allowQuit = true
+            Utils.quit()
+            throw new Error('Application is shutting down')
+          }
           allowQuit = true
-          Utils.quit()
-          throw new Error('Application is shutting down')
+          await Updater.applyUpdate()
+          const applied = Updater.updateInfo()
+          if (applied.error) throw new Error(applied.error)
+        } finally {
+          backgroundDownloads.releaseQueue('application-update')
+          applicationUpdateInProgress = false
         }
-        allowQuit = true
-        await Updater.applyUpdate()
-        const applied = Updater.updateInfo()
-        if (applied.error) throw new Error(applied.error)
       },
       getHubcapUsage() {
         return steam.getHubcapUsage(database)
@@ -390,6 +398,20 @@ let quitRequested = false
 let allowQuit = false
 let shutdownPromise: Promise<void> | undefined
 let startup = Promise.resolve()
+
+async function downloadApplicationUpdate({ signal, progress }: JobContext) {
+  progress('downloading')
+  Updater.onStatusChange(({ status, details }) => {
+    if (!signal.aborted)
+      progress(status, details?.bytesDownloaded, details?.totalBytes)
+  })
+  try {
+    await Updater.downloadUpdate()
+  } finally {
+    Updater.onStatusChange(null)
+  }
+  signal.throwIfAborted()
+}
 
 function assertApplicationUpdateCanRestart() {
   if (

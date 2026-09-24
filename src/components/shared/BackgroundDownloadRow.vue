@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { ArrowUp, X } from '@lucide/vue'
 import { computed, ref } from 'vue'
+import { useRouter } from 'vue-router'
 
+import { installApplicationUpdate } from '@/api/application-update'
 import BackgroundDownloadIdentity from '@/components/shared/BackgroundDownloadIdentity.vue'
 import { Button } from '@/components/ui/button'
 import { useBackgroundDownloadsStore } from '@/stores/background-downloads'
@@ -10,18 +12,29 @@ import { formatBytes } from '@/utils/bytes'
 import { backgroundDownloadLabel } from '@/utils/background-downloads'
 
 const props = defineProps<{ job: BackgroundDownloadJob }>()
+const router = useRouter()
 const downloads = useBackgroundDownloadsStore()
 const busy = ref(false)
 const error = ref('')
 const history = computed(() =>
   ['completed', 'failed'].includes(props.job.status),
 )
+const retryLabel = computed(() =>
+  props.job.kind === 'dependency' ? 'Retry in Settings' : 'Retry',
+)
+
+function retry() {
+  if (props.job.kind === 'dependency') return router.push('/settings')
+  if (props.job.kind === 'application-update') return installApplicationUpdate()
+  return downloads.retry(props.job.id)
+}
 
 async function action(kind: 'retry' | 'dismiss' | 'prioritize') {
   busy.value = true
   error.value = ''
   try {
-    await downloads[kind](props.job.id)
+    if (kind === 'retry') await retry()
+    else await downloads[kind](props.job.id)
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : String(cause)
   } finally {
@@ -78,7 +91,7 @@ async function action(kind: 'retry' | 'dismiss' | 'prioritize') {
         size="sm"
         :disabled="busy"
         @click="action('retry')"
-        >Retry</Button
+        >{{ retryLabel }}</Button
       >
       <Button
         type="button"

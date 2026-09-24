@@ -13,6 +13,7 @@ import {
 } from '@/api/transport'
 import {
   appQueryKeys,
+  coldClientDependenciesQueryKey,
   coldClientQueryKeys,
   libraryQueryKey,
 } from '@/composables/queries'
@@ -34,6 +35,13 @@ export const useBackgroundDownloadsStore = defineStore(
         if (job.status !== 'completed' || prior.get(job.id) === 'completed')
           continue
         void queryCache.invalidateQueries({ key: libraryQueryKey, exact: true })
+        if (job.kind === 'dependency') {
+          void queryCache.invalidateQueries({
+            key: coldClientDependenciesQueryKey,
+            exact: true,
+          })
+          void queryCache.invalidateQueries({ key: coldClientQueryKeys.all })
+        }
         if (job.appId !== null) {
           void queryCache.invalidateQueries({
             key: appQueryKeys.details(job.appId),

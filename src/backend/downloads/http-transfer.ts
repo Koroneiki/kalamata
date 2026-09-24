@@ -35,6 +35,7 @@ export async function writeHttpTransfer(options: {
     response.headers.has('content-length')
       ? length
       : null
+  let completed = false
   try {
     while (true) {
       signal.throwIfAborted()
@@ -62,10 +63,11 @@ export async function writeHttpTransfer(options: {
     }
     signal.throwIfAborted()
     await handle.sync()
+    completed = true
     return { path, bytes, digest: digest?.digest('hex') ?? null }
   } finally {
     signal.removeEventListener('abort', stop)
-    if (signal.aborted) await reader.cancel().catch(() => {})
+    if (!completed) await reader.cancel().catch(() => {})
     await handle.close()
   }
 }

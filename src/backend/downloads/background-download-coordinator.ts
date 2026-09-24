@@ -38,6 +38,7 @@ export interface JobDefinition<T extends JobResult> {
   appId?: number
   depotId?: number
   canCancel?: boolean
+  holdQueueAfterCompletion?: boolean
   run: (context: JobContext) => Promise<T>
 }
 
@@ -75,6 +76,7 @@ export class BackgroundDownloadCoordinator {
   readonly #groups = new Map<string, JobRecord>()
   #running: JobRecord | undefined
   #priorityId: string | undefined
+  #heldKey: string | undefined
   #accepting = false
 
   constructor(
@@ -130,6 +132,12 @@ export class BackgroundDownloadCoordinator {
     const record = this.#jobs.get(id)
     if (!record || record.state.status !== 'failed' || !this.#accepting)
       throw new Error('Download cannot be retried')
+    // These jobs are only one step in a larger operation owned by another RPC.
+    if (
+      record.state.kind === 'application-update' ||
+      record.state.kind === 'dependency'
+    )
+      throw new Error('Retry this operation from Settings')
     const failedTasks = record.tasks.filter(({ status }) => status === 'failed')
     this.assertRetryAvailable(record, failedTasks)
     this.#jobs.delete(id)
@@ -168,6 +176,12 @@ export class BackgroundDownloadCoordinator {
     this.#priorityId = id
     this.notify()
     return true
+  }
+
+  releaseQueue(key: string): void {
+    if (this.#heldKey !== key) return
+    this.#heldKey = undefined
+    this.startNext()
   }
 
   dismiss(id: string): boolean {
@@ -332,6 +346,9 @@ export class BackgroundDownloadCoordinator {
       const task = record.tasks[taskIndex]!
       if (task.status !== 'queued') continue
       await this.runTask(record, task, taskIndex)
+      // Publication must finish, but shutdown must not start another child.
+      if (!this.#accepting && index < record.tasks.length)
+        record.controller.abort(new Error('Application is shutting down'))
     }
     this.closeGroup(record)
   }
@@ -505,11 +522,18 @@ export class BackgroundDownloadCoordinator {
       : null
     this.notify()
     record.complete()
+    if (
+      record.state.status === 'completed' &&
+      record.tasks[0]?.definition.holdQueueAfterCompletion
+    ) {
+      this.#heldKey = record.state.key
+      return
+    }
     this.startNext()
   }
 
   private startNext() {
-    if (this.#running || !this.#accepting) return
+    if (this.#running || this.#heldKey || !this.#accepting) return
     const priority = this.#priorityId
       ? this.#jobs.get(this.#priorityId)
       : undefined

@@ -1,5 +1,5 @@
 import { expect, mock, test } from 'bun:test'
-import { PiniaColada } from '@pinia/colada'
+import { PiniaColada, useQueryCache } from '@pinia/colada'
 import { createPinia } from 'pinia'
 import { createApp } from 'vue'
 import type { BackgroundDownloadsSnapshot } from '../src/types/background-downloads.ts'
@@ -70,5 +70,34 @@ test('a newer Bun push wins over an older initial RPC, including after store rec
   const restored = useBackgroundDownloadsStore(pinia)
   await restored.initialize()
   expect(restored.jobs).toEqual(active.jobs)
+  const cache = useQueryCache(pinia)
+  const coldClientDependenciesQueryKey = ['cold-client-dependencies'] as const
+  const dependencyStatus = cache.ensure({
+    key: coldClientDependenciesQueryKey,
+    query: async () => 'old status',
+    staleTime: Infinity,
+  })
+  cache.setQueryData(coldClientDependenciesQueryKey, 'old status')
+  expect(dependencyStatus.stale).toBe(false)
+  const installed: BackgroundDownloadsSnapshot = {
+    jobs: [
+      {
+        id: '22222222-2222-4222-8222-222222222222',
+        key: 'dependency:7zip',
+        kind: 'dependency',
+        title: 'Dependency 7zip',
+        appId: null,
+        depotId: null,
+        status: 'completed',
+        phase: 'completed',
+        source: null,
+        transferredBytes: 0,
+        totalBytes: null,
+        error: null,
+      },
+    ],
+  }
+  for (const listener of listeners) listener(installed)
+  expect(dependencyStatus.stale).toBe(true)
   restored.$dispose()
 })
