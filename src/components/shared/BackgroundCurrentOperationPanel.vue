@@ -1,14 +1,43 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { Download } from '@lucide/vue'
 
 import BackgroundDownloadIdentity from '@/components/shared/BackgroundDownloadIdentity.vue'
+import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
+import { useColdClientOperationStore } from '@/stores/cold-client-operation'
 import type { BackgroundDownloadJob } from '@/types/background-downloads'
 import { formatBytes } from '@/utils/bytes'
 import { backgroundDownloadLabel } from '@/utils/background-downloads'
 
 const props = defineProps<{ job: BackgroundDownloadJob }>()
+const coldClientOperation = useColdClientOperationStore()
+const canCancel = computed(() => {
+  const state = coldClientOperation.state
+  return (
+    props.job.kind === 'cold-client' &&
+    state.status === 'active' &&
+    state.appId === props.job.appId &&
+    state.cancellable
+  )
+})
+const cancelError = ref('')
+const cancelling = ref(false)
+
+async function cancel() {
+  if (props.job.appId === null) return
+  cancelling.value = true
+  cancelError.value = ''
+  try {
+    const result = await coldClientOperation.cancel(props.job.appId)
+    if (!result.accepted)
+      cancelError.value = 'This job can no longer be cancelled.'
+  } catch (error) {
+    cancelError.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    cancelling.value = false
+  }
+}
 const manifestStatus = computed(() => {
   const { itemCount, manifestProgress } = props.job
   if (!itemCount || !manifestProgress) return null
@@ -81,7 +110,7 @@ const percentage = computed(() => {
         v-if="percentage !== null"
         class="mt-2 h-1"
         :model-value="percentage"
-        aria-label="Background download progress"
+        aria-label="Background job progress"
       />
       <div
         v-else
@@ -105,6 +134,18 @@ const percentage = computed(() => {
         <span v-if="currentTransfer" class="tabular-nums">
           Current: {{ currentTransfer }}
         </span>
+        <Button
+          v-if="canCancel"
+          type="button"
+          variant="outline"
+          size="sm"
+          :disabled="cancelling"
+          @click="cancel"
+          >Cancel</Button
+        >
+        <span v-if="cancelError" class="text-destructive" role="alert">{{
+          cancelError
+        }}</span>
       </div>
     </div>
   </div>

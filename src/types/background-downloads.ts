@@ -3,6 +3,7 @@ export type BackgroundDownloadKind =
   | 'dependency'
   | 'manifest'
   | 'depot-keys'
+  | 'cold-client'
 
 export interface BackgroundDownloadJob {
   id: string

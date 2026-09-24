@@ -108,8 +108,7 @@ export class BackgroundDownloadCoordinator {
   }
 
   enqueue<T extends JobResult>(definition: JobDefinition<T>): Promise<T> {
-    if (!this.#accepting)
-      throw new Error('Background downloads are shutting down')
+    if (!this.#accepting) throw new Error('Background jobs are shutting down')
     const pending = this.#pending.get(definition.key)
     if (pending) return this.taskResult<T>(pending)
     const task = this.createTask(definition)
@@ -133,6 +132,8 @@ export class BackgroundDownloadCoordinator {
     if (!record || record.state.status !== 'failed' || !this.#accepting)
       throw new Error('Download cannot be retried')
     // These jobs are only one step in a larger operation owned by another RPC.
+    if (record.state.kind === 'cold-client')
+      throw new Error('Retry this operation from its game')
     if (
       record.state.kind === 'application-update' ||
       record.state.kind === 'dependency'

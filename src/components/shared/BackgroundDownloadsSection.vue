@@ -29,9 +29,9 @@ const history = computed(() =>
       id="background-downloads-heading"
       class="border-b pb-3 text-xl font-semibold"
     >
-      Background downloads
+      Jobs
     </h2>
-    <div v-if="active" class="mt-6" aria-label="Current background download">
+    <div v-if="active" class="mt-6" aria-label="Current background job">
       <BackgroundCurrentOperationPanel :job="active" />
     </div>
     <section

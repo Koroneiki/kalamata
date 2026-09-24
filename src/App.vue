@@ -6,7 +6,6 @@ import 'vue-sonner/style.css'
 
 import AppHeader from '@/components/shared/AppHeader.vue'
 import AppSidebar from '@/components/shared/AppSidebar.vue'
-import ColdClientOperationStatus from '@/components/shared/ColdClientOperationStatus.vue'
 import HubcapQuotaDialog from '@/components/shared/HubcapQuotaDialog.vue'
 import { Button } from '@/components/ui/button'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
@@ -82,7 +81,6 @@ watch(
       <AppSidebar />
       <SidebarInset class="min-w-0 overflow-y-auto">
         <AppHeader />
-        <ColdClientOperationStatus />
         <RouterView />
       </SidebarInset>
     </SidebarProvider>

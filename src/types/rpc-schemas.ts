@@ -300,6 +300,7 @@ export const backgroundDownloadsSnapshotSchema = strict({
         'dependency',
         'manifest',
         'depot-keys',
+        'cold-client',
       ]),
       title: z.string(),
       appId: steamIdSchema.nullable(),

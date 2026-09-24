@@ -5,6 +5,7 @@ const labels: Record<BackgroundDownloadJob['kind'], string> = {
   dependency: 'Dependency',
   manifest: 'Manifest',
   'depot-keys': 'Depot Keys',
+  'cold-client': 'ColdClient',
 }
 
 export function backgroundDownloadLabel(job: BackgroundDownloadJob): string {
@@ -13,6 +14,7 @@ export function backgroundDownloadLabel(job: BackgroundDownloadJob): string {
 }
 
 function backgroundDownloadName(job: BackgroundDownloadJob): string {
+  if (job.kind === 'cold-client') return job.title
   if (job.kind === 'manifest' && job.itemCount !== undefined)
     return manifestCountLabel(job.itemCount)
   return job.appId === null ? job.title : labels[job.kind]

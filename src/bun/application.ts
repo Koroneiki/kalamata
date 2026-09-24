@@ -10,6 +10,7 @@ import { AppService } from '../backend/apps/app-service.ts'
 import { ColdClientDependencyService } from '../backend/cold-client/dependency-service.ts'
 import { ColdClientMutationMutex } from '../backend/cold-client/mutation-mutex.ts'
 import { ColdClientOperationCoordinator } from '../backend/cold-client/operation-coordinator.ts'
+import { ColdClientJobQueue } from '../backend/cold-client/job-queue.ts'
 import { ColdClientGameInspector } from '../backend/cold-client/game-inspector.ts'
 import { ColdClientGenerator } from '../backend/cold-client/generator.ts'
 import { ColdClientInterfaceGenerator } from '../backend/cold-client/interface-generator.ts'
@@ -81,10 +82,14 @@ void steam.initializeDepotKeyCache(database).catch((error) => {
 })
 const appService = new AppService(steam, database)
 const coldClientMutex = new ColdClientMutationMutex()
+const coldClientJobs = new ColdClientJobQueue(backgroundDownloads, (appId) => {
+  coldClientOperations.cancel(appId)
+})
 const coldClientOperations = new ColdClientOperationCoordinator(
   coldClientMutex,
   (snapshot) => {
     if (rpcReady) rpc.send.coldClientOperationChanged(snapshot)
+    coldClientJobs.onOperationChanged(snapshot)
   },
   (error, context) =>
     diagnostics.error({
@@ -292,16 +297,24 @@ const rpc = BrowserView.defineRPC<AppRpc>({
         return coldClient.getStatus(appId)
       },
       configureColdClient(request) {
-        return coldClient.configure(request)
+        return coldClientJobs.enqueue('setup', request.appId, () =>
+          coldClient.configure(request),
+        )
       },
       regenerateColdClientConfiguration(request) {
-        return coldClient.regenerate(request)
+        return coldClientJobs.enqueue('regenerate', request.appId, () =>
+          coldClient.regenerate(request),
+        )
       },
       updateColdClientCore({ appId }) {
-        return coldClient.updateCore(appId)
+        return coldClientJobs.enqueue('update-core', appId, () =>
+          coldClient.updateCore(appId),
+        )
       },
       removeColdClient({ appId }) {
-        return coldClient.remove(appId)
+        return coldClientJobs.enqueue('remove', appId, () =>
+          coldClient.remove(appId),
+        )
       },
       getColdClientOperation() {
         return coldClientOperations.getSnapshot()
@@ -315,11 +328,12 @@ const rpc = BrowserView.defineRPC<AppRpc>({
       removeLibraryEntry({ appId }) {
         const coldClientOperation = coldClientOperations.getSnapshot()
         if (
-          coldClientOperation.status === 'active' &&
-          coldClientOperation.appId === appId
+          (coldClientOperation.status === 'active' &&
+            coldClientOperation.appId === appId) ||
+          coldClientJobs.hasPendingForApp(appId)
         ) {
           throw new Error(
-            'Wait for the download to finish before removing this game',
+            'Wait for the job to finish before removing this game',
           )
         }
         return queue.runWhileAppIdle(appId, async () => {
