@@ -5,7 +5,9 @@ import {
   Download,
   ExternalLink,
   FolderOpen,
+  LoaderCircle,
   RefreshCw,
+  Trash2,
   X,
 } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
@@ -15,10 +17,14 @@ import {
   openExternalUrl,
   updateSettings,
 } from '@/api/settings'
-import { installApplicationUpdate } from '@/api/application-update'
+import {
+  installApplicationUpdate,
+  refreshApplicationUpdate,
+} from '@/api/application-update'
 import {
   checkColdClientDependencyUpdates,
   openColdClientLoginDirectory,
+  removeColdClientDependency,
   updateColdClientDependencies,
 } from '@/api/cold-client'
 import SettingsCheckboxRow from '@/components/forms/SettingsCheckboxRow.vue'
@@ -34,6 +40,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import {
+  applicationUpdateQueryKey,
   hubcapUsageQueryKey,
   coldClientDependenciesQueryKey,
   coldClientDependencyUpdateMutationKey,
@@ -46,6 +53,7 @@ import {
 } from '@/composables/queries'
 import { invalidateResourceAcquisitions } from '@/composables/resource-acquisition-cache'
 import { cn } from '@/lib/utils'
+import { useBackgroundDownloadsStore } from '@/stores/background-downloads'
 import type { AppSettings, DepotPlatform } from '@/types/rpc'
 import type {
   ColdClientDependencyId,
@@ -54,6 +62,7 @@ import type {
 import { depotPlatforms } from '@/utils/depots'
 
 const queryCache = useQueryCache()
+const downloads = useBackgroundDownloadsStore()
 const { data: settings, error, isPending } = useSettingsQuery()
 const {
   data: hubcapUsage,
@@ -70,6 +79,9 @@ const {
 } = useApplicationUpdateQuery()
 const installApplicationUpdateMutation = useMutation({
   mutation: installApplicationUpdate,
+})
+const refreshApplicationUpdateMutation = useMutation({
+  mutation: refreshApplicationUpdate,
 })
 const {
   data: coldClientDependencies,
@@ -92,13 +104,15 @@ const updateColdClientMutation = useMutation({
     ])
   },
 })
+const removeColdClientMutation = useMutation({
+  mutation: removeColdClientDependency,
+})
 const openLoginFolderMutation = useMutation({
   mutation: openColdClientLoginDirectory,
 })
 const mutationError = ref('')
 const coldClientMutationError = ref('')
 const applicationUpdateMutationError = ref('')
-const confirmingDependencyUpdate = ref(false)
 const hubcapApiKeyDraft = ref('')
 const hubcapKeyFocused = ref(false)
 const hubcapApiKeysUrl = 'https://hubcapmanifest.com/api-keys'
@@ -131,18 +145,25 @@ const dependencyLabels = {
   gbe: 'GBE Fork',
   gse: 'GSE Tools',
 } satisfies Record<ColdClientDependencyId, string>
-const dependencyUpdateIds = computed(
-  () =>
-    coldClientDependencies.value?.dependencies
-      .filter(
-        ({ status }) => status === 'missing' || status === 'update-available',
-      )
-      .map(({ dependencyId }) => dependencyId) ?? [],
+const applicationDownloadBusy = computed(() =>
+  downloads.jobs.some(
+    (job) =>
+      job.kind === 'application-update' &&
+      (job.status === 'queued' || job.status === 'active'),
+  ),
 )
+function dependencyDownloadBusy(dependencyId: ColdClientDependencyId) {
+  return downloads.jobs.some(
+    (job) =>
+      job.key === `dependency:${dependencyId}` &&
+      (job.status === 'queued' || job.status === 'active'),
+  )
+}
 const coldClientBusy = computed(
   () =>
     checkColdClientMutation.isLoading.value ||
     updateColdClientMutation.isLoading.value ||
+    removeColdClientMutation.isLoading.value ||
     openLoginFolderMutation.isLoading.value,
 )
 const hubcapUsageText = computed(() => {
@@ -313,14 +334,25 @@ async function checkColdClientDependencies() {
   }
 }
 
-async function confirmColdClientDependencyUpdate() {
+async function downloadColdClientDependency(
+  dependencyId: ColdClientDependencyId,
+) {
   coldClientMutationError.value = ''
   try {
-    const status = await updateColdClientMutation.mutateAsync(
-      dependencyUpdateIds.value,
-    )
+    const status = await updateColdClientMutation.mutateAsync([dependencyId])
     queryCache.setQueryData(coldClientDependenciesQueryKey, status)
-    confirmingDependencyUpdate.value = false
+  } catch (error) {
+    coldClientMutationError.value =
+      error instanceof Error ? error.message : String(error)
+  }
+}
+
+async function removeDependency(dependencyId: ColdClientDependencyId) {
+  coldClientMutationError.value = ''
+  try {
+    const status = await removeColdClientMutation.mutateAsync(dependencyId)
+    queryCache.setQueryData(coldClientDependenciesQueryKey, status)
+    await queryCache.invalidateQueries({ key: coldClientQueryKeys.all })
   } catch (error) {
     coldClientMutationError.value =
       error instanceof Error ? error.message : String(error)
@@ -341,6 +373,17 @@ async function installUpdate() {
   applicationUpdateMutationError.value = ''
   try {
     await installApplicationUpdateMutation.mutateAsync()
+  } catch (error) {
+    applicationUpdateMutationError.value =
+      error instanceof Error ? error.message : String(error)
+  }
+}
+
+async function checkApplicationUpdateAgain() {
+  applicationUpdateMutationError.value = ''
+  try {
+    const status = await refreshApplicationUpdateMutation.mutateAsync()
+    queryCache.setQueryData(applicationUpdateQueryKey, status)
   } catch (error) {
     applicationUpdateMutationError.value =
       error instanceof Error ? error.message : String(error)
@@ -546,6 +589,34 @@ async function installUpdate() {
               >
                 {{ dependencyStatusLabel(item) }}
               </Badge>
+              <LoaderCircle
+                v-if="dependencyDownloadBusy(item.dependencyId)"
+                class="size-4 animate-spin"
+                role="status"
+                :aria-label="`Downloading ${dependencyLabels[item.dependencyId]}`"
+              />
+              <Button
+                v-else-if="item.status === 'missing'"
+                variant="outline"
+                size="icon-sm"
+                :disabled="coldClientBusy"
+                :aria-label="`Download ${dependencyLabels[item.dependencyId]}`"
+                @click="downloadColdClientDependency(item.dependencyId)"
+              >
+                <Download aria-hidden="true" />
+              </Button>
+              <Button
+                v-if="item.currentAssetId !== null"
+                variant="ghost"
+                size="icon-sm"
+                :disabled="
+                  coldClientBusy || dependencyDownloadBusy(item.dependencyId)
+                "
+                :aria-label="`Remove ${dependencyLabels[item.dependencyId]}`"
+                @click="removeDependency(item.dependencyId)"
+              >
+                <Trash2 aria-hidden="true" />
+              </Button>
             </div>
           </div>
         </div>
@@ -560,45 +631,6 @@ async function installUpdate() {
               <RefreshCw aria-hidden="true" />
               Check again
             </Button>
-            <Button
-              v-if="dependencyUpdateIds.length > 0"
-              :disabled="coldClientBusy"
-              @click="confirmingDependencyUpdate = true"
-            >
-              <Download aria-hidden="true" />
-              Update dependencies
-            </Button>
-          </div>
-
-          <div
-            v-if="confirmingDependencyUpdate"
-            class="bg-muted mt-4 rounded-lg p-3"
-            role="group"
-            aria-label="Confirm dependency update"
-          >
-            <p class="text-sm">
-              Download {{ dependencyUpdateIds.length }}
-              {{
-                dependencyUpdateIds.length === 1
-                  ? 'dependency'
-                  : 'dependencies'
-              }}? Game files will not change.
-            </p>
-            <div class="mt-3 flex flex-wrap gap-2">
-              <Button
-                :disabled="coldClientBusy"
-                @click="confirmColdClientDependencyUpdate"
-              >
-                Confirm download
-              </Button>
-              <Button
-                variant="ghost"
-                :disabled="coldClientBusy"
-                @click="confirmingDependencyUpdate = false"
-              >
-                Cancel
-              </Button>
-            </div>
           </div>
         </div>
       </template>
@@ -655,22 +687,50 @@ async function installUpdate() {
         </div>
 
         <div class="ml-auto flex shrink-0 items-center gap-2">
-          <Badge :variant="applicationUpdate ? 'secondary' : 'destructive'">
+          <Badge
+            :variant="
+              applicationUpdate && !applicationUpdate.error
+                ? 'secondary'
+                : 'destructive'
+            "
+          >
             {{
-              applicationUpdate?.availableVersion
-                ? 'Update available'
-                : applicationUpdate
-                  ? 'Current'
-                  : 'Check failed'
+              applicationUpdate?.error
+                ? 'Update failed'
+                : applicationUpdate?.ready
+                  ? 'Ready to install'
+                  : applicationUpdate?.availableVersion
+                    ? 'Downloading update'
+                    : applicationUpdate?.checking
+                      ? 'Checking'
+                      : applicationUpdate
+                        ? 'Current'
+                        : 'Check failed'
             }}
           </Badge>
           <Button
-            v-if="applicationUpdate?.availableVersion"
+            v-if="applicationUpdate?.error"
+            variant="outline"
+            size="icon-sm"
+            :disabled="refreshApplicationUpdateMutation.isLoading.value"
+            aria-label="Check application update again"
+            @click="checkApplicationUpdateAgain"
+          >
+            <RefreshCw aria-hidden="true" />
+          </Button>
+          <LoaderCircle
+            v-if="applicationUpdate?.checking || applicationDownloadBusy"
+            class="size-4 animate-spin"
+            role="status"
+            aria-label="Checking or downloading application update"
+          />
+          <Button
+            v-if="applicationUpdate?.ready"
             size="sm"
             :disabled="installApplicationUpdateMutation.isLoading.value"
             @click="installUpdate"
           >
-            <Download aria-hidden="true" />
+            <RefreshCw aria-hidden="true" />
             {{
               installApplicationUpdateMutation.isLoading.value
                 ? 'Installing…'
@@ -679,6 +739,13 @@ async function installUpdate() {
           </Button>
         </div>
       </div>
+      <p
+        v-if="applicationUpdate?.error"
+        class="text-destructive px-4 pb-3 text-sm sm:px-5"
+        role="alert"
+      >
+        {{ applicationUpdate.error }}
+      </p>
     </section>
 
     <p v-if="hasError" class="text-destructive mt-3 text-sm" role="alert">

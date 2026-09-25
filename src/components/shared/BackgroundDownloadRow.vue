@@ -3,7 +3,6 @@ import { ArrowUp, X } from '@lucide/vue'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
-import { installApplicationUpdate } from '@/api/application-update'
 import BackgroundDownloadIdentity from '@/components/shared/BackgroundDownloadIdentity.vue'
 import { Button } from '@/components/ui/button'
 import { useBackgroundDownloadsStore } from '@/stores/background-downloads'
@@ -22,16 +21,21 @@ const history = computed(() =>
 const retryLabel = computed(() =>
   props.job.kind === 'dependency'
     ? 'Retry in Settings'
-    : props.job.kind === 'cold-client'
-      ? 'Retry from game'
-      : 'Retry',
+    : props.job.kind === 'application-update'
+      ? 'Retry in Settings'
+      : props.job.kind === 'cold-client'
+        ? 'Retry from game'
+        : 'Retry',
 )
 
 function retry() {
-  if (props.job.kind === 'dependency') return router.push('/settings')
+  if (
+    props.job.kind === 'dependency' ||
+    props.job.kind === 'application-update'
+  )
+    return router.push('/settings')
   if (props.job.kind === 'cold-client')
     return router.push(`/app/${props.job.appId}`)
-  if (props.job.kind === 'application-update') return installApplicationUpdate()
   return downloads.retry(props.job.id)
 }
 

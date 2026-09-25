@@ -61,6 +61,7 @@ interface DependencyServiceOptions {
   backgroundDownloads?: BackgroundDownloadCoordinator
   now?: () => number
   reportCleanupError?: (error: Error) => void
+  statusChanged?: (status: ColdClientDependencyStatus) => void
 }
 
 const definitions = {
@@ -101,7 +102,7 @@ const definitions = {
     ],
   },
 } satisfies Record<ColdClientDependencyId, DependencyDefinition>
-const automaticCheckIntervalMs = 60 * 60 * 1000
+export const automaticCheckIntervalMs = 60 * 60 * 1000
 
 export class ColdClientDependencyService {
   readonly root: string
@@ -118,6 +119,7 @@ export class ColdClientDependencyService {
   readonly #metadataMutex = new ColdClientMutationMutex()
   readonly #now: () => number
   readonly #reportCleanupError: (error: Error) => void
+  readonly #statusChanged: (status: ColdClientDependencyStatus) => void
   readonly #remote = new Map<ColdClientDependencyId, RemoteArtifact>()
   readonly #checkErrors = new Map<ColdClientDependencyId, string>()
   #metadata = emptyDependencyMetadata()
@@ -140,6 +142,7 @@ export class ColdClientDependencyService {
     this.#backgroundDownloads = options.backgroundDownloads
     this.#now = options.now ?? Date.now
     this.#reportCleanupError = options.reportCleanupError ?? (() => {})
+    this.#statusChanged = options.statusChanged ?? (() => {})
   }
 
   async initialize(referencedGbeAssetIds: ReadonlySet<number> = new Set()) {
@@ -235,7 +238,64 @@ export class ColdClientDependencyService {
       await writeDurableJson(this.#metadataPath, metadata)
       this.#metadata = metadata
     })
-    return this.buildStatus()
+    const status = await this.buildStatus()
+    this.publishStatus(status)
+    // An absent dependency requires an explicit first install (or reinstall).
+    for (const item of this.#backgroundDownloads ? status.dependencies : []) {
+      if (item.status !== 'update-available') continue
+      void this.installDependency(item.dependencyId).catch(() => {
+        // The job retains the failure for Settings and the Jobs history.
+      })
+    }
+    return status
+  }
+
+  async removeDependency(dependencyId: ColdClientDependencyId) {
+    this.assertSupported()
+    this.assertAccepting()
+    this.assertInitialized()
+    const id = coldClientDependencyIdSchema.parse(dependencyId)
+    this.assertRemovalIdle()
+    await this.#mutex.runExclusive(async () => {
+      this.assertRemovalIdle()
+      await this.#metadataMutex.runExclusive(async () => {
+        // Game installations are independent copies; only the managed cache is removed.
+        await rm(join(this.dependenciesRoot, id), {
+          recursive: true,
+          force: true,
+        })
+        const metadata = dependencyMetadataSchema.parse({
+          ...this.#metadata,
+          active: { ...this.#metadata.active, [id]: null },
+          artifacts: this.#metadata.artifacts.filter(
+            (artifact) => artifact.dependencyId !== id,
+          ),
+        })
+        await writeDurableJson(this.#metadataPath, metadata)
+        this.#metadata = metadata
+        this.#remote.delete(id)
+        this.#checkErrors.delete(id)
+      })
+    })
+    const status = await this.buildStatus()
+    this.publishStatus(status)
+    return status
+  }
+
+  private assertRemovalIdle() {
+    // Archive jobs can depend on the 7-Zip cache even when removing another ID.
+    if (
+      this.#update ||
+      this.#backgroundDownloads
+        ?.snapshot()
+        .jobs.some(
+          (job) =>
+            job.kind === 'dependency' &&
+            (job.status === 'queued' || job.status === 'active'),
+        )
+    ) {
+      throw new Error('Wait for dependency downloads to finish')
+    }
   }
 
   updateDependencies(
@@ -406,6 +466,7 @@ export class ColdClientDependencyService {
         validatedAt: this.#now(),
       })
       await this.activate(descriptor, stagingDirectory, signal, context)
+      this.publishStatus(await this.buildStatus())
     } finally {
       await rm(downloadDirectory, { recursive: true, force: true })
       await rm(stagingDirectory, { recursive: true, force: true })
@@ -657,6 +718,15 @@ export class ColdClientDependencyService {
   private assertSupported(): void {
     if (this.#platform !== 'win32') {
       throw new Error('ColdClient dependencies are available only on Windows')
+    }
+  }
+
+  private publishStatus(status: ColdClientDependencyStatus) {
+    // A detached Settings webview cannot turn a valid installation into a failed job.
+    try {
+      this.#statusChanged(status)
+    } catch {
+      /* The next RPC snapshot restores status. */
     }
   }
 

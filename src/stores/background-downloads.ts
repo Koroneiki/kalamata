@@ -10,9 +10,11 @@ import {
 import {
   getBackgroundDownloadsMessageSequence,
   subscribeToBackgroundDownloads,
+  subscribeToUpdateStatuses,
 } from '@/api/transport'
 import {
   appQueryKeys,
+  applicationUpdateQueryKey,
   coldClientDependenciesQueryKey,
   coldClientQueryKeys,
   libraryQueryKey,
@@ -26,7 +28,11 @@ export const useBackgroundDownloadsStore = defineStore(
     const queryCache = useQueryCache()
     let initialization: Promise<void> | undefined
     let unsubscribe: (() => void) | undefined
-    onScopeDispose(() => unsubscribe?.())
+    let unsubscribeUpdates: (() => void) | undefined
+    onScopeDispose(() => {
+      unsubscribe?.()
+      unsubscribeUpdates?.()
+    })
 
     function apply(snapshot: BackgroundDownloadsSnapshot) {
       const prior = new Map(jobs.value.map((job) => [job.id, job.status]))
@@ -63,6 +69,12 @@ export const useBackgroundDownloadsStore = defineStore(
       if (initialization) return initialization
       initialization = (async () => {
         unsubscribe ??= subscribeToBackgroundDownloads(apply)
+        unsubscribeUpdates ??= subscribeToUpdateStatuses(
+          (status) =>
+            queryCache.setQueryData(applicationUpdateQueryKey, status),
+          (status) =>
+            queryCache.setQueryData(coldClientDependenciesQueryKey, status),
+        )
         const sequence = getBackgroundDownloadsMessageSequence()
         try {
           const snapshot = await getBackgroundDownloads()

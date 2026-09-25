@@ -1,4 +1,7 @@
-import type { ColdClientOperationSnapshot } from './cold-client.ts'
+import type {
+  ColdClientDependencyStatus,
+  ColdClientOperationSnapshot,
+} from './cold-client.ts'
 import type { BackgroundDownloadsSnapshot } from './background-downloads.ts'
 import type { RpcRequests } from './rpc-schemas.ts'
 
@@ -22,6 +25,14 @@ export interface AppSettings {
   hideUnusedDepots: boolean
   hideUnavailableDepots: boolean
   platforms: DepotPlatform[]
+}
+
+export interface ApplicationUpdateStatus {
+  currentVersion: string
+  availableVersion: string | null
+  checking: boolean
+  ready: boolean
+  error: string | null
 }
 
 export type DepotGroup =
@@ -369,6 +380,8 @@ export type AppRpc = {
       downloadQueueChanged: DownloadQueueSnapshot
       coldClientOperationChanged: ColdClientOperationSnapshot
       backgroundDownloadsChanged: BackgroundDownloadsSnapshot
+      applicationUpdateChanged: ApplicationUpdateStatus
+      coldClientDependenciesChanged: ColdClientDependencyStatus
     }
   }
 }

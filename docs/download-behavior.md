@@ -50,9 +50,9 @@ At startup, Kalamata rolls forward each unambiguous commit-ready transaction. A 
 
 ## Background jobs
 
-The **Jobs** section on the **Downloads** page has its own in-memory queue, separate from the persistent application-operation queue above. It shows the current job, queued jobs, and completed or failed jobs with timestamps. Jobs include manifest and depot-key acquisition, ColdClient dependency downloads from Settings, per-game ColdClient work, and application updates. Only one background job runs at a time; another queued job can be moved next without interrupting the current one. Manifest acquisitions for the same game share one row with cumulative progress while retaining separate results for each manifest.
+The **Jobs** section on the **Downloads** page has its own in-memory queue, separate from the persistent application-operation queue above. It shows the current job, queued jobs, and completed or failed jobs with timestamps. Jobs include manifest and depot-key acquisition, manual first ColdClient dependency downloads and automatic dependency updates, per-game ColdClient work, and automatically staged application updates. Only one background job runs at a time; another queued job can be moved next without interrupting the current one. Manifest acquisitions for the same game share one row with cumulative progress while retaining separate results for each manifest.
 
-Failed manifest and depot-key jobs can be retried from Jobs. Dependency and application-update workflows must be retried from Settings, and per-game ColdClient work from the game. Finished jobs can be dismissed. This queue and its history are not persisted: after an application restart, incomplete jobs do not resume and their temporary workspaces are removed. This does not change the recovery guarantees of the depot-operation queue.
+Failed manifest and depot-key jobs can be retried from Jobs. Dependency and application-update checks can be retried from Settings, and per-game ColdClient work from the game. Finished jobs can be dismissed. This queue and its history are not persisted: after an application restart, incomplete jobs do not resume and their temporary workspaces are removed. This does not change the recovery guarantees of the depot-operation queue.
 
 ## Update discovery
 

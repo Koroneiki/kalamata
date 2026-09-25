@@ -93,6 +93,29 @@ test('configures a complete reviewed ColdClient installation', async () => {
   ])
 })
 
+test('a removed managed artifact does not invalidate an existing game copy', async () => {
+  const fixture = await createFixture()
+  const service = createService(fixture)
+  await service.configure(fixture.request)
+  const artifact = fixture.dependencies.artifact
+  fixture.dependencies.artifact = (id, assetId) =>
+    id === 'gbe' ? null : artifact(id, assetId)
+  fixture.removeActiveGbe()
+
+  await expect(service.getStatus(10)).resolves.toMatchObject({
+    status: 'configured',
+    installedGbeTag: null,
+  })
+  await expect(
+    access(join(fixture.installRoot, '_ColdClient')),
+  ).resolves.toBeNull()
+  await expect(service.inspectSetup(10, 'regenerate')).rejects.toThrow()
+  fixture.activateGbeV2()
+  await expect(service.inspectSetup(10, 'regenerate')).resolves.toMatchObject({
+    gbe: { assetId: 102 },
+  })
+})
+
 test('removes a configured ColdClient without deleting game files', async () => {
   const fixture = await createFixture()
   const service = createService(fixture)
@@ -489,7 +512,7 @@ async function createFixture() {
     ['gbe:102', gbeV2],
     ['gse:201', gse],
   ])
-  let activeGbe = gbe
+  let activeGbe: ArtifactDescriptor | null = gbe
   const dependencies = {
     activeArtifact: (dependencyId: 'gbe' | 'gse') =>
       dependencyId === 'gbe' ? activeGbe : gse,
@@ -562,6 +585,9 @@ async function createFixture() {
     request,
     activateGbeV2: () => {
       activeGbe = gbeV2
+    },
+    removeActiveGbe: () => {
+      activeGbe = null
     },
   }
 }

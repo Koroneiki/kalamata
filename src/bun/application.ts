@@ -7,7 +7,10 @@ import Electrobun, {
 
 import { SteamService } from '../backend/index.ts'
 import { AppService } from '../backend/apps/app-service.ts'
-import { ColdClientDependencyService } from '../backend/cold-client/dependency-service.ts'
+import {
+  ColdClientDependencyService,
+  automaticCheckIntervalMs,
+} from '../backend/cold-client/dependency-service.ts'
 import { ColdClientMutationMutex } from '../backend/cold-client/mutation-mutex.ts'
 import { ColdClientOperationCoordinator } from '../backend/cold-client/operation-coordinator.ts'
 import { ColdClientJobQueue } from '../backend/cold-client/job-queue.ts'
@@ -33,6 +36,7 @@ import type { AppRpc, AppSettings, DepotPlatform } from '../types/rpc.ts'
 import { validatedRpcHandlers } from '../types/rpc-schemas.ts'
 import packageJson from '../../package.json' with { type: 'json' }
 import { getApplicationDiagnostics } from './diagnostics.ts'
+import { ApplicationUpdatePreparer } from './application-update.ts'
 
 const DEV_SERVER_URL = 'http://localhost:5173'
 const diagnostics = getApplicationDiagnostics()
@@ -103,6 +107,9 @@ const coldClientDependencies = new ColdClientDependencyService(
   {
     mutex: coldClientMutex,
     backgroundDownloads,
+    statusChanged: (status) => {
+      if (rpcReady) rpc.send.coldClientDependenciesChanged(status)
+    },
     reportCleanupError: (error) =>
       diagnostics.error({
         event: 'cold-client-dependencies.cleanup-failed',
@@ -159,28 +166,20 @@ const defaultSettings: AppSettings = {
   platforms: [systemPlatform],
 }
 let applicationUpdateInProgress = false
-
-async function prepareApplicationUpdate(): Promise<boolean> {
-  assertApplicationUpdateCanRestart()
-  const update = await Updater.checkForUpdate()
-  if (update.error) throw new Error(update.error)
-  if (!update.updateAvailable) return false
-
-  // Keep the queue slot until the caller has decided whether to restart.
-  await backgroundDownloads.enqueue({
-    key: 'application-update',
-    kind: 'application-update',
-    title: 'Application update',
-    canCancel: false,
-    holdQueueAfterCompletion: true,
-    run: downloadApplicationUpdate,
-  })
-  if (shutdownStarted) throw new Error('Application is shutting down')
-  const prepared = Updater.updateInfo()
-  if (!prepared.updateReady)
-    throw new Error(prepared.error || 'The update could not be prepared')
-  return true
-}
+let updateTimer: ReturnType<typeof setInterval> | undefined
+const applicationUpdate = new ApplicationUpdatePreparer(
+  packageJson.version,
+  {
+    check: () => Updater.checkForUpdate(),
+    download: downloadApplicationUpdate,
+    info: () => Updater.updateInfo(),
+  },
+  backgroundDownloads,
+  (status) => {
+    if (rpcReady) rpc.send.applicationUpdateChanged(status)
+  },
+  () => shutdownStarted,
+)
 
 const rpc = BrowserView.defineRPC<AppRpc>({
   handlers: {
@@ -217,24 +216,23 @@ const rpc = BrowserView.defineRPC<AppRpc>({
       updateSettings(settings) {
         return database.updateSettings(settings)
       },
-      async checkApplicationUpdate() {
-        const [local, update] = await Promise.all([
-          Updater.getLocalInfo(),
-          Updater.checkForUpdate(),
-        ])
-        if (update.error) throw new Error(update.error)
-        return {
-          currentVersion: local.version,
-          availableVersion: update.updateAvailable ? update.version : null,
-        }
+      checkApplicationUpdate() {
+        return applicationUpdate.status()
+      },
+      async refreshApplicationUpdate() {
+        await applicationUpdate.checkAndStage()
+        return applicationUpdate.status()
       },
       async installApplicationUpdate() {
         if (applicationUpdateInProgress)
           throw new Error('An application update is already in progress')
         applicationUpdateInProgress = true
         try {
-          if (!(await prepareApplicationUpdate())) return
-
+          if (
+            !applicationUpdate.status().ready ||
+            !Updater.updateInfo().updateReady
+          )
+            throw new Error('No application update is ready to install')
           assertApplicationUpdateCanRestart()
           await shutdownApplicationServices()
           if (quitRequested) {
@@ -247,7 +245,6 @@ const rpc = BrowserView.defineRPC<AppRpc>({
           const applied = Updater.updateInfo()
           if (applied.error) throw new Error(applied.error)
         } finally {
-          backgroundDownloads.releaseQueue('application-update')
           applicationUpdateInProgress = false
         }
       },
@@ -282,6 +279,9 @@ const rpc = BrowserView.defineRPC<AppRpc>({
       },
       updateColdClientDependencies({ dependencyIds }) {
         return coldClientDependencies.updateDependencies(dependencyIds)
+      },
+      removeColdClientDependency({ dependencyId }) {
+        return coldClientDependencies.removeDependency(dependencyId)
       },
       async openColdClientLoginDirectory() {
         const directory = (await coldClientDependencies.getStatus())
@@ -434,7 +434,9 @@ function assertApplicationUpdateCanRestart() {
     backgroundDownloads
       .snapshot()
       .jobs.some(
-        (job) => job.status === 'active' && job.kind !== 'application-update',
+        (job) =>
+          (job.status === 'active' || job.status === 'queued') &&
+          job.kind !== 'application-update',
       )
   ) {
     throw new Error('Wait for the current operation to finish before updating')
@@ -444,6 +446,7 @@ function assertApplicationUpdateCanRestart() {
 function shutdownApplicationServices(): Promise<void> {
   if (shutdownPromise) return shutdownPromise
   shutdownStarted = true
+  if (updateTimer) clearInterval(updateTimer)
   backgroundDownloads.stopAccepting()
   diagnostics.info({ event: 'app.shutdown-started' })
   shutdownPromise = (async () => {
@@ -597,9 +600,14 @@ startup = (async () => {
     queue.markRepairRequired(recoveryFailure.appId, recoveryFailure.installPath)
   await queue.startPending()
   if (process.platform === 'win32' && coldClientDependenciesReady) {
-    // Release discovery updates Settings state but never downloads assets.
     void coldClientDependencies.checkForUpdatesOnStartup()
   }
+  void applicationUpdate.checkAndStage()
+  updateTimer = setInterval(() => {
+    if (process.platform === 'win32' && coldClientDependenciesReady)
+      void coldClientDependencies.checkForUpdatesOnStartup()
+    void applicationUpdate.checkAndStage()
+  }, automaticCheckIntervalMs)
 })()
 await startup
 

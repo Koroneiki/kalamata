@@ -15,16 +15,23 @@ import type { ColdClientSetupDraft } from '../src/types/cold-client.ts'
 test('validates application update status', () => {
   expect(parseRpcRequest('checkApplicationUpdate', {})).toEqual({})
   expect(parseRpcRequest('installApplicationUpdate', {})).toEqual({})
-  expect(
-    rpcResponseSchemas.checkApplicationUpdate.parse({
-      currentVersion: '1.0.5',
-      availableVersion: '1.0.7',
-    }),
-  ).toEqual({ currentVersion: '1.0.5', availableVersion: '1.0.7' })
+  const status = {
+    currentVersion: '1.0.5',
+    availableVersion: '1.0.7',
+    checking: false,
+    ready: true,
+    error: null,
+  }
+  expect(rpcResponseSchemas.checkApplicationUpdate.parse(status)).toEqual(
+    status,
+  )
   expect(() =>
     rpcResponseSchemas.checkApplicationUpdate.parse({
       currentVersion: '1.0.5',
       availableVersion: '',
+      checking: false,
+      ready: false,
+      error: null,
     }),
   ).toThrow()
 })

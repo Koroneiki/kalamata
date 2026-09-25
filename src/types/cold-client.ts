@@ -118,9 +118,9 @@ export type ColdClientStatus =
       status: 'configured'
       coreUpdateAvailable: boolean
       recommendationReasons: ColdClientRecommendationReason[]
-      installedGbeTag: string
+      installedGbeTag: string | null
       availableGbeTag: string | null
-      installedGseTag: string
+      installedGseTag: string | null
       availableGseTag: string | null
       lastConfiguredAt: number
     }

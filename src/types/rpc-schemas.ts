@@ -29,9 +29,12 @@ const externalUrlSchema = z
   )
 const idRequestSchema = strict({ appId: steamIdSchema })
 const dependencyAssetIdSchema = z.number().int().positive().safe()
-const applicationUpdateStatusSchema = strict({
+export const applicationUpdateStatusSchema = strict({
   currentVersion: z.string().min(1),
   availableVersion: z.string().min(1).nullable(),
+  checking: z.boolean(),
+  ready: z.boolean(),
+  error: z.string().nullable(),
 })
 const coldClientDependencyItemStatusSchema = strict({
   dependencyId: coldClientDependencyIdSchema,
@@ -42,7 +45,7 @@ const coldClientDependencyItemStatusSchema = strict({
   availableTag: z.string().nullable(),
   error: z.string().nullable(),
 })
-const coldClientDependencyStatusSchema = strict({
+export const coldClientDependencyStatusSchema = strict({
   supported: z.boolean(),
   dependencies: z
     .array(coldClientDependencyItemStatusSchema)
@@ -171,9 +174,9 @@ const coldClientStatusSchema = z.discriminatedUnion('status', [
         (reasons) => new Set(reasons).size === reasons.length,
         'Recommendation reasons must be unique',
       ),
-    installedGbeTag: z.string().min(1),
+    installedGbeTag: z.string().min(1).nullable(),
     availableGbeTag: z.string().min(1).nullable(),
-    installedGseTag: z.string().min(1),
+    installedGseTag: z.string().min(1).nullable(),
     availableGseTag: z.string().min(1).nullable(),
     lastConfiguredAt: z.number().int().nonnegative().safe(),
   }),
@@ -474,12 +477,16 @@ const rpcRequestSchemas = {
   getSettings: emptySchema,
   updateSettings: appSettingsSchema,
   checkApplicationUpdate: emptySchema,
+  refreshApplicationUpdate: emptySchema,
   installApplicationUpdate: emptySchema,
   getHubcapUsage: emptySchema,
   openUserDataFolder: emptySchema,
   openExternalUrl: strict({ url: externalUrlSchema }),
   getColdClientDependencies: emptySchema,
   checkColdClientDependencyUpdates: emptySchema,
+  removeColdClientDependency: strict({
+    dependencyId: coldClientDependencyIdSchema,
+  }),
   updateColdClientDependencies: strict({
     dependencyIds: z
       .array(coldClientDependencyIdSchema)
@@ -557,12 +564,14 @@ export const rpcResponseSchemas = {
   getSettings: appSettingsSchema,
   updateSettings: appSettingsSchema,
   checkApplicationUpdate: applicationUpdateStatusSchema,
+  refreshApplicationUpdate: applicationUpdateStatusSchema,
   installApplicationUpdate: z.void(),
   getHubcapUsage: hubcapUsageResultSchema,
   openUserDataFolder: z.void(),
   openExternalUrl: z.void(),
   getColdClientDependencies: coldClientDependencyStatusSchema,
   checkColdClientDependencyUpdates: coldClientDependencyStatusSchema,
+  removeColdClientDependency: coldClientDependencyStatusSchema,
   updateColdClientDependencies: coldClientDependencyStatusSchema,
   openColdClientLoginDirectory: z.void(),
   inspectColdClientSetup: coldClientSetupDraftSchema,

@@ -63,8 +63,9 @@ const emit = defineEmits<{
           v-if="coldClientStatus?.status === 'configured'"
           class="text-muted-foreground mt-1 text-sm"
         >
-          GBE {{ coldClientStatus.installedGbeTag }} · GSE Tools
-          {{ coldClientStatus.installedGseTag }}
+          GBE {{ coldClientStatus.installedGbeTag ?? 'dependency removed' }} ·
+          GSE Tools
+          {{ coldClientStatus.installedGseTag ?? 'dependency removed' }}
         </p>
         <div
           v-if="
@@ -131,7 +132,7 @@ const emit = defineEmits<{
               type="button"
               size="sm"
               class="mt-3"
-              :disabled="coldClientDisabled"
+              :disabled="coldClientDisabled || !coldClientReady"
               @click="emit('updateColdClientCore')"
             >
               <RefreshCw aria-hidden="true" />
@@ -145,7 +146,7 @@ const emit = defineEmits<{
             type="button"
             size="sm"
             class="mt-3"
-            :disabled="coldClientDisabled"
+            :disabled="coldClientDisabled || !coldClientReady"
             @click="emit('regenerateColdClient')"
           >
             <RefreshCw aria-hidden="true" />

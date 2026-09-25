@@ -1,11 +1,20 @@
 import { Electroview } from 'electrobun/view'
 
-import type { ColdClientOperationSnapshot } from '@/types/cold-client'
+import type {
+  ColdClientDependencyStatus,
+  ColdClientOperationSnapshot,
+} from '@/types/cold-client'
 import type { BackgroundDownloadsSnapshot } from '@/types/background-downloads'
-import type { AppRpc, DownloadQueueSnapshot } from '@/types/rpc'
+import type {
+  AppRpc,
+  ApplicationUpdateStatus,
+  DownloadQueueSnapshot,
+} from '@/types/rpc'
 import {
   coldClientOperationSnapshotSchema,
   backgroundDownloadsSnapshotSchema,
+  applicationUpdateStatusSchema,
+  coldClientDependencyStatusSchema,
   downloadQueueSnapshotSchema,
   rpcResponseSchemas,
 } from '@/types/rpc-schemas'
@@ -32,6 +41,12 @@ let downloadQueueMessageSequence = 0
 const coldClientOperationListeners = new Set<ColdClientOperationListener>()
 const backgroundListeners = new Set<
   (snapshot: BackgroundDownloadsSnapshot) => void
+>()
+const applicationUpdateListeners = new Set<
+  (status: ApplicationUpdateStatus) => void
+>()
+const dependencyListeners = new Set<
+  (status: ColdClientDependencyStatus) => void
 >()
 let latestBackground: BackgroundDownloadsSnapshot | undefined
 let backgroundSequence = 0
@@ -67,6 +82,16 @@ const rpc = Electroview.defineRPC<AppRpc>({
         latestBackground = result.data
         backgroundSequence += 1
         for (const listener of backgroundListeners) listener(result.data)
+      },
+      applicationUpdateChanged: (status) => {
+        const parsed = applicationUpdateStatusSchema.safeParse(status)
+        if (!parsed.success) return
+        for (const listener of applicationUpdateListeners) listener(parsed.data)
+      },
+      coldClientDependenciesChanged: (status) => {
+        const parsed = coldClientDependencyStatusSchema.safeParse(status)
+        if (!parsed.success) return
+        for (const listener of dependencyListeners) listener(parsed.data)
       },
     },
   },
@@ -121,4 +146,16 @@ export function subscribeToBackgroundDownloads(
 
 export function getBackgroundDownloadsMessageSequence() {
   return backgroundSequence
+}
+
+export function subscribeToUpdateStatuses(
+  application: (status: ApplicationUpdateStatus) => void,
+  dependencies: (status: ColdClientDependencyStatus) => void,
+) {
+  applicationUpdateListeners.add(application)
+  dependencyListeners.add(dependencies)
+  return () => {
+    applicationUpdateListeners.delete(application)
+    dependencyListeners.delete(dependencies)
+  }
 }

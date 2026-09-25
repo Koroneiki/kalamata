@@ -82,6 +82,98 @@ test('throttles automatic checks across restarts but not manual checks', async (
   expect(fixture.releaseChecks).toHaveLength(9)
 })
 
+test('automatically queues updates only after an explicit first install', async () => {
+  const fixture = await createFixture(new ColdClientMutationMutex(), true)
+  try {
+    await fixture.service.checkForUpdates()
+    expect(fixture.coordinator!.snapshot().jobs).toEqual([])
+    await fixture.service.updateDependencies(['gbe'])
+    const initialDownloads = fixture.downloads.length
+
+    fixture.setArtifact('gbe', 202, 'gbe-two', sha256('gbe-two'))
+    await fixture.service.checkForUpdates()
+    await waitForJob(fixture.coordinator!, 'dependency:gbe')
+    expect(fixture.service.activeArtifact('gbe')?.assetId).toBe(202)
+    expect(fixture.downloads.slice(initialDownloads)).toEqual([202])
+    expect(fixture.service.activeArtifact('gse')).toBeNull()
+  } finally {
+    await fixture.coordinator!.shutdown()
+  }
+})
+
+test('removing an artifact clears its managed cache and prevents automatic reinstallation', async () => {
+  const fixture = await createFixture(new ColdClientMutationMutex(), true)
+  try {
+    await fixture.service.checkForUpdates()
+    await fixture.service.updateDependencies(['gbe'])
+    const directory = fixture.service.artifactDirectory('gbe', 201)
+    const downloadsBefore = fixture.downloads.length
+
+    const status = await fixture.service.removeDependency('gbe')
+    expect(status.dependencies[1]).toMatchObject({
+      status: 'missing',
+      currentAssetId: null,
+    })
+    expect(fixture.service.activeArtifact('gbe')).toBeNull()
+    expect(await Bun.file(join(directory, gbeFiles[0]!)).exists()).toBe(false)
+
+    fixture.setArtifact('gbe', 202, 'gbe-two', sha256('gbe-two'))
+    await fixture.service.checkForUpdates()
+    expect(fixture.downloads).toHaveLength(downloadsBefore)
+    expect(
+      fixture
+        .coordinator!.snapshot()
+        .jobs.filter((job) => job.key === 'dependency:gbe'),
+    ).toHaveLength(1)
+  } finally {
+    await fixture.coordinator!.shutdown()
+  }
+})
+
+test('removal waits for queued dependency work before deleting its extractor', async () => {
+  const fixture = await createFixture(new ColdClientMutationMutex(), true)
+  const coordinator = fixture.coordinator!
+  try {
+    await fixture.service.checkForUpdates()
+    await fixture.service.updateDependencies(['7zip'])
+    let release!: () => void
+    const blocking = coordinator.enqueue({
+      key: 'blocker',
+      kind: 'manifest',
+      title: 'Blocker',
+      run: () =>
+        new Promise<void>((resolve) => {
+          release = resolve
+        }),
+    })
+    fixture.setArtifact('7zip', 102, 'MZnew', sha256('MZnew'))
+    await fixture.service.checkForUpdates()
+
+    await expect(fixture.service.removeDependency('7zip')).rejects.toThrow(
+      'Wait for dependency downloads',
+    )
+    expect(fixture.service.activeArtifact('7zip')?.assetId).toBe(101)
+    release()
+    await blocking
+    await waitForJob(coordinator, 'dependency:7zip')
+  } finally {
+    await coordinator.shutdown()
+  }
+})
+
+async function waitForJob(
+  coordinator: BackgroundDownloadCoordinator,
+  key: string,
+) {
+  while (
+    coordinator
+      .snapshot()
+      .jobs.filter((job) => job.key === key)
+      .at(-1)?.status !== 'completed'
+  )
+    await Bun.sleep(1)
+}
+
 test('bootstraps 7-Zip and preserves an active cache after digest failure', async () => {
   const fixture = await createFixture()
   await fixture.service.checkForUpdates()

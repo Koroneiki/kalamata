@@ -33,6 +33,7 @@ test('a newer Bun push wins over an older initial RPC, including after store rec
   })
   mock.module('../src/api/transport.ts', () => ({
     request: async () => null,
+    subscribeToUpdateStatuses: () => () => {},
     getBackgroundDownloadsMessageSequence: () => sequence,
     subscribeToBackgroundDownloads: (
       listener: (value: BackgroundDownloadsSnapshot) => void,

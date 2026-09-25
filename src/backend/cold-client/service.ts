@@ -171,7 +171,11 @@ export class ColdClientService {
     if (mode === 'setup') return draft
     const previous = this.database.getColdClientInstallation(appId)
     if (!previous) throw new Error('ColdClient is not configured')
-    const gbe = requireArtifact(this.dependencies, 'gbe', previous.gbeAssetId)
+    // A removed historical cache can be replaced by a newly installed active GBE.
+    const gbe =
+      this.dependencies.artifact('gbe', previous.gbeAssetId) ??
+      this.dependencies.activeArtifact('gbe')
+    if (!gbe) throw new Error('ColdClient dependency record is missing')
     return applySavedConfiguration(draft, previous, gbe)
   }
 
@@ -534,13 +538,12 @@ export class ColdClientService {
         }
       }
       await validateInstalledCore(library.installPath, installation)
-      const installedGbe = requireArtifact(
-        this.dependencies,
+      // A removed managed artifact must not mark an untouched game copy invalid.
+      const installedGbe = this.dependencies.artifact(
         'gbe',
         installation.gbeAssetId,
       )
-      const installedGse = requireArtifact(
-        this.dependencies,
+      const installedGse = this.dependencies.artifact(
         'gse',
         installation.gseAssetId,
       )
@@ -561,9 +564,9 @@ export class ColdClientService {
         coreUpdateAvailable:
           activeGbe !== null && activeGbe.assetId !== installation.gbeAssetId,
         recommendationReasons,
-        installedGbeTag: installedGbe.tag,
+        installedGbeTag: installedGbe?.tag ?? null,
         availableGbeTag: activeGbe?.tag ?? null,
-        installedGseTag: installedGse.tag,
+        installedGseTag: installedGse?.tag ?? null,
         availableGseTag: activeGse?.tag ?? null,
         lastConfiguredAt: installation.configuredAt,
       }
@@ -1019,16 +1022,6 @@ async function lstatOrNull(path: string) {
     if (filesystemErrorCode(error) === 'ENOENT') return null
     throw error
   }
-}
-
-function requireArtifact(
-  dependencies: ServiceDependencies,
-  dependencyId: 'gbe' | 'gse',
-  assetId: number,
-): ArtifactDescriptor {
-  const artifact = dependencies.artifact(dependencyId, assetId)
-  if (!artifact) throw new Error('ColdClient dependency record is missing')
-  return artifact
 }
 
 function applySavedConfiguration(

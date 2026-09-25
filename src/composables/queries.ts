@@ -24,7 +24,7 @@ export const appQueryKeys = {
 export const libraryQueryKey = ['library'] as const
 export const settingsQueryKey = ['settings'] as const
 export const hubcapUsageQueryKey = ['hubcap-usage'] as const
-const applicationUpdateQueryKey = ['application-update'] as const
+export const applicationUpdateQueryKey = ['application-update'] as const
 export const coldClientDependenciesQueryKey = [
   'cold-client-dependencies',
 ] as const

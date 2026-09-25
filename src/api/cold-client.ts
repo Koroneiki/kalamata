@@ -19,6 +19,12 @@ export function updateColdClientDependencies(
   return request('updateColdClientDependencies', { dependencyIds })
 }
 
+export function removeColdClientDependency(
+  dependencyId: ColdClientDependencyId,
+) {
+  return request('removeColdClientDependency', { dependencyId })
+}
+
 export function openColdClientLoginDirectory() {
   return request('openColdClientLoginDirectory', {})
 }

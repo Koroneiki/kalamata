@@ -2,7 +2,7 @@
 
 ## Delivery model
 
-Kalamata does not bundle or mirror Goldberg/GBE Fork, GSE Tools, or 7-Zip binaries. A user must explicitly ask the app to download the configured release assets from their upstream GitHub repositories:
+Kalamata does not bundle or mirror Goldberg/GBE Fork, GSE Tools, or 7-Zip binaries. The first download of each dependency requires an explicit user action. Once installed, newer upstream releases are checked and installed automatically in background jobs. Removing a dependency deletes its managed artifacts and disables automatic updates until another manual installation; existing game-local `_ColdClient` copies are not changed. The configured sources are:
 
 - `Detanup01/gbe_fork`: `emu-win-release-vs26.7z`
 - `alex47exe/gse_fork_tools`: `gen_emu_cfg-Windows-Release.7z`
@@ -12,13 +12,13 @@ The downloaded files stay in the app's user-data directory. A release package mu
 
 ## License review
 
-Review completed against the upstream license files on 2026-08-19.
+The upstream licenses were reviewed on 2026-08-19 for the previous manual-download model. The new automatic-update behavior needs a fresh license and redistribution review before release.
 
-| Dependency      | Upstream license                                                                                        | Distribution decision                                                   |
-| --------------- | ------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| GBE Fork        | GNU LGPL v3                                                                                             | Download from upstream on explicit user action; do not bundle or mirror |
-| GSE Tools       | GNU LGPL v3                                                                                             | Download from upstream on explicit user action; do not bundle or mirror |
-| 7-Zip `7zr.exe` | GNU LGPL v2.1 or later, with component-specific BSD terms and the unRAR restriction documented upstream | Download from upstream on explicit user action; do not bundle or mirror |
+| Dependency      | Upstream license                                                                                        | Distribution decision                                                                |
+| --------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| GBE Fork        | GNU LGPL v3                                                                                             | Manual first download, then automatic updates from upstream; do not bundle or mirror |
+| GSE Tools       | GNU LGPL v3                                                                                             | Manual first download, then automatic updates from upstream; do not bundle or mirror |
+| 7-Zip `7zr.exe` | GNU LGPL v2.1 or later, with component-specific BSD terms and the unRAR restriction documented upstream | Manual first download, then automatic updates from upstream; do not bundle or mirror |
 
 The release checklist must confirm this delivery model. If a future package conveys any dependency binary, that release must include every notice, license copy, source offer, and other material required by the exact artifact before distribution.
 
