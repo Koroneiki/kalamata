@@ -468,6 +468,9 @@ const acquiredManifestSchema = strict({
 const rpcRequestSchemas = {
   getAppSummary: idRequestSchema,
   getAppDetails: idRequestSchema,
+  getAppDetailsBatch: strict({
+    appIds: uniqueSteamIdsSchema.min(1).max(AVAILABLE_UPDATE_BATCH_SIZE),
+  }),
   checkAvailableUpdate: idRequestSchema,
   checkAvailableUpdates: strict({
     appIds: uniqueSteamIdsSchema.min(1).max(AVAILABLE_UPDATE_BATCH_SIZE),
@@ -557,6 +560,7 @@ const rpcRequestSchemas = {
 export const rpcResponseSchemas = {
   getAppSummary: appSummarySchema,
   getAppDetails: appDetailsSchema,
+  getAppDetailsBatch: z.array(appDetailsSchema),
   checkAvailableUpdate: availableUpdateResultSchema,
   checkAvailableUpdates: z.array(availableUpdateResultSchema),
   openInstallDirectory: z.void(),

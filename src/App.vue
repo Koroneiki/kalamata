@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ConfigProvider } from 'reka-ui'
-import { watch } from 'vue'
+import { computed, watch } from 'vue'
 import { RouterView } from 'vue-router'
 import 'vue-sonner/style.css'
 
@@ -14,9 +14,11 @@ import { useOperationToasts } from '@/composables/use-operation-toasts'
 import { useOperationStore } from '@/stores/operation'
 import { useAvailableUpdates } from '@/composables/use-available-updates'
 import { useSidebarResize } from '@/composables/use-sidebar-resize'
+import { useLibraryPreparation } from '@/composables/use-library-preparation'
 
 const operation = useOperationStore()
 const availableUpdates = useAvailableUpdates()
+useLibraryPreparation(computed(() => operation.initialized))
 useOperationToasts()
 const { sidebarWidth } = useSidebarResize()
 

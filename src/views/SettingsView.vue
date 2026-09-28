@@ -216,7 +216,8 @@ async function persist(next: AppSettings, optimistic = true) {
   if (optimistic) queryCache.setQueryData(settingsQueryKey, next)
   try {
     const saved = await updateMutation.mutateAsync(next)
-    queryCache.setQueryData(settingsQueryKey, saved)
+    // Publish acquisition settings only after stale resource attempts are invalidated;
+    // the library watcher can start preparing resources immediately.
     if (previous?.hubcapApiKey !== saved.hubcapApiKey) {
       invalidateResourceAcquisitions(queryCache)
     }
@@ -226,6 +227,7 @@ async function persist(next: AppSettings, optimistic = true) {
       saved.automaticManifestAcquisition
     )
       invalidateResourceAcquisitions(queryCache)
+    queryCache.setQueryData(settingsQueryKey, saved)
     return true
   } catch (error) {
     if (optimistic && previous)

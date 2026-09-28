@@ -10,9 +10,13 @@ import {
 } from './product-normalizer.ts'
 
 interface AvailableUpdateMetadata {
-  getProductInfoWithDlc(appId: number): Promise<ProductInfoResult>
+  getProductInfoWithDlc(
+    appId: number,
+    fresh?: boolean,
+  ): Promise<ProductInfoResult>
   getProductInfoWithDlcBatch(
     appIds: number[],
+    fresh?: boolean,
   ): Promise<Map<number, ProductInfoResult>>
 }
 
@@ -31,7 +35,7 @@ export class AvailableUpdateService {
     try {
       const installed = this.database.getInstalls(appId)
       if (!installed.length) return this.current(appId)
-      const products = await this.metadata.getProductInfoWithDlc(appId)
+      const products = await this.metadata.getProductInfoWithDlc(appId, true)
       return this.compare(products, installed)
     } catch {
       return this.error(appId)
@@ -55,8 +59,10 @@ export class AvailableUpdateService {
 
     let productsByApp: Map<number, ProductInfoResult>
     try {
-      productsByApp =
-        await this.metadata.getProductInfoWithDlcBatch(installedAppIds)
+      productsByApp = await this.metadata.getProductInfoWithDlcBatch(
+        installedAppIds,
+        true,
+      )
     } catch {
       return appIds.map((appId) =>
         installsByApp.has(appId) ? this.error(appId) : this.current(appId),

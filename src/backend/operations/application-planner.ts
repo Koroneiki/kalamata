@@ -41,7 +41,10 @@ export interface ApplicationPlanRequest {
 }
 
 export interface ApplicationMetadataService {
-  getProductInfoWithDlc(appId: number): Promise<ProductInfoResult>
+  getProductInfoWithDlc(
+    appId: number,
+    fresh?: boolean,
+  ): Promise<ProductInfoResult>
 }
 
 export interface ApplicationPlan {
@@ -183,7 +186,7 @@ async function getPublicDepots(
   if (canPlanLocally) return []
 
   const product = await abortable(
-    steam.getProductInfoWithDlc(request.appId).catch((error) => {
+    steam.getProductInfoWithDlc(request.appId, true).catch((error) => {
       throw new ApplicationTransactionError(
         'steam',
         'Steam product metadata is unavailable',

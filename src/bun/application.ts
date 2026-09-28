@@ -190,6 +190,9 @@ const rpc = BrowserView.defineRPC<AppRpc>({
       async getAppDetails({ appId }) {
         return appService.getAppDetails(appId)
       },
+      async getAppDetailsBatch({ appIds }) {
+        return appService.getAppDetailsBatch(appIds)
+      },
       async checkAvailableUpdate({ appId }) {
         return appService.checkAvailableUpdate(appId)
       },
@@ -341,6 +344,7 @@ const rpc = BrowserView.defineRPC<AppRpc>({
             await coldClient.remove(appId)
           }
           database.removeLibraryEntry(appId)
+          steam.clearProductInfo(appId)
         })
       },
       setDepotPinned({ appId, depotId, pinned }) {

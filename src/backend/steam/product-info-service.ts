@@ -13,11 +13,121 @@ interface PackageGrant {
 interface PackageDiscovery {
   packageIdsByApp: Map<number, number[]>
   grants: Map<number, PackageGrant>
+  failedPackageIds: Set<number>
+}
+
+// Reuse startup metadata across UI consumers, not indefinitely across a Steam session.
+const PRODUCT_REUSE_MS = 60_000
+
+class ProductBatch<T> {
+  private readonly pending = new Map<number, Promise<T>>()
+  private readonly pendingFresh = new Map<number, Promise<T>>()
+  private readonly queue = new Map<
+    number,
+    { resolve: (value: T) => void; reject: (error: Error) => void }
+  >()
+  private readonly freshQueue = new Map<
+    number,
+    { resolve: (value: T) => void; reject: (error: Error) => void }
+  >()
+
+  constructor(
+    private readonly fetch: (
+      ids: number[],
+      fresh: boolean,
+      epoch: number,
+    ) => Promise<Map<number, T>>,
+    private readonly currentEpoch: () => number,
+  ) {}
+
+  getPending(id: number): Promise<T> | undefined {
+    return this.pendingFresh.get(id) ?? this.pending.get(id)
+  }
+
+  clear(id?: number): void {
+    for (const queue of [this.queue, this.freshQueue]) {
+      for (const [queuedId, handlers] of queue) {
+        if (id !== undefined && queuedId !== id) continue
+        queue.delete(queuedId)
+        handlers.reject(new Error('Steam metadata request was invalidated'))
+      }
+    }
+    for (const pending of [this.pending, this.pendingFresh]) {
+      if (id === undefined) pending.clear()
+      else pending.delete(id)
+    }
+  }
+
+  request(id: number, fresh: boolean): Promise<T> {
+    const existing =
+      this.pendingFresh.get(id) ?? (fresh ? undefined : this.pending.get(id))
+    if (existing) return existing
+    const pending = fresh ? this.pendingFresh : this.pending
+    const queue = fresh ? this.freshQueue : this.queue
+    const request = new Promise<T>((resolve, reject) => {
+      queue.set(id, { resolve, reject })
+    })
+    pending.set(id, request)
+    if (queue.size === 1)
+      queueMicrotask(() => {
+        const waiting = [...queue]
+        queue.clear()
+        if (!waiting.length) return
+        const requests = new Map(waiting.map(([id]) => [id, pending.get(id)]))
+        const epoch = this.currentEpoch()
+        void this.fetch(
+          waiting.map(([appId]) => appId),
+          fresh,
+          epoch,
+        ).then(
+          (results) => {
+            for (const [appId, handlers] of waiting) {
+              if (pending.get(appId) === requests.get(appId))
+                pending.delete(appId)
+              const result = results.get(appId)
+              if (result) handlers.resolve(result)
+              else
+                handlers.reject(
+                  new Error(
+                    `Steam returned no product information for app ${appId}`,
+                  ),
+                )
+            }
+          },
+          (cause) => {
+            for (const [appId, handlers] of waiting) {
+              if (pending.get(appId) === requests.get(appId))
+                pending.delete(appId)
+              handlers.reject(asError(cause))
+            }
+          },
+        )
+      })
+    return request
+  }
 }
 
 export class ProductInfoService {
+  private readonly base = new Map<number, ProductInfo>()
+  private readonly enriched = new Map<number, ProductInfoResult>()
+  private readonly baseExpires = new Map<number, number>()
+  private readonly enrichedExpires = new Map<number, number>()
+  private readonly baseRequestVersion = new Map<number, number>()
+  private readonly baseBatch = new ProductBatch(
+    (ids: number[], _fresh: boolean, epoch: number) =>
+      this.fetchBaseBatch(ids, epoch),
+    () => this.epoch,
+  )
+  private readonly enrichedBatch = new ProductBatch(
+    (ids: number[], fresh: boolean, epoch: number) =>
+      this.fetchEnrichedBatch(ids, fresh, epoch),
+    () => this.epoch,
+  )
+  private epoch = 0
+
   constructor(
-    private readonly session: Pick<SteamSession, 'getClient'>,
+    private readonly session: Pick<SteamSession, 'getClient'> &
+      Partial<Pick<SteamSession, 'onDisconnect'>>,
     private readonly store: Pick<
       StoreBrowseClient,
       'getPackageIds'
@@ -27,53 +137,138 @@ export class ProductInfoService {
       countryCode: string,
       error: Error,
     ) => void = () => {},
-  ) {}
-
-  async getProductInfo(appId: number): Promise<ProductInfo> {
-    validateAppId(appId)
-    const client = await this.session.getClient()
-    const result = await client.getProductInfo([appId], [], true)
-    return requiredProductInfo(result, appId)
+  ) {
+    session.onDisconnect?.(() => this.clear())
   }
 
-  async getProductInfoWithDlc(appId: number): Promise<ProductInfoResult> {
-    validateAppId(appId)
-    const basePackageBranch = this.getPackageDiscovery([appId])
-    const baseProduct = await this.getProductInfo(appId)
-    const dlcAppIds = directDlcAppIds(baseProduct)
-    const [dlcProducts, basePackages, dlcPackages] = await Promise.all([
-      this.getDlcProducts(dlcAppIds),
-      basePackageBranch,
-      this.getPackageDiscovery(dlcAppIds),
-    ])
-    return {
-      baseProduct,
-      listedDlcAppIds: dlcAppIds,
-      dlcProducts,
-      eligibleBaseDepotIds: eligibleBaseDepotIds(appId, basePackages),
-      eligibleDlcDepotIds: eligibleDlcDepotIds(
-        baseProduct,
-        dlcAppIds,
-        dlcProducts,
-        basePackages,
-        dlcPackages,
-      ),
+  clear(appId?: number): void {
+    if (appId === undefined) {
+      this.epoch++
+      this.base.clear()
+      this.enriched.clear()
+      this.baseExpires.clear()
+      this.enrichedExpires.clear()
+      this.baseRequestVersion.clear()
+    } else {
+      // Keep other apps' in-flight work alive while invalidating this app's response.
+      this.baseRequestVersion.set(
+        appId,
+        (this.baseRequestVersion.get(appId) ?? 0) + 1,
+      )
+      this.base.delete(appId)
+      this.enriched.delete(appId)
+      this.baseExpires.delete(appId)
+      this.enrichedExpires.delete(appId)
     }
+    this.baseBatch.clear(appId)
+    this.enrichedBatch.clear(appId)
+  }
+
+  async getProductInfo(appId: number, fresh = false): Promise<ProductInfo> {
+    validateAppId(appId)
+    if (!fresh) {
+      const pending = this.baseBatch.getPending(appId)
+      if (pending) return pending
+      const cached = this.base.get(appId)
+      if (cached && (this.baseExpires.get(appId) ?? 0) > Date.now())
+        return cached
+    }
+    return this.baseBatch.request(appId, fresh)
+  }
+
+  private async fetchBaseBatch(
+    appIds: number[],
+    epoch: number,
+  ): Promise<Map<number, ProductInfo>> {
+    const versions = new Map(
+      appIds.map((id) => {
+        const version = (this.baseRequestVersion.get(id) ?? 0) + 1
+        this.baseRequestVersion.set(id, version)
+        return [id, version] as const
+      }),
+    )
+    const client = await this.session.getClient()
+    const result = await client.getProductInfo(appIds, [], true)
+    const products = new Map<number, ProductInfo>()
+    for (const id of appIds) {
+      const product = validProductInfo(result, id)
+      if (!product) continue
+      const previous = this.base.get(id)
+      if (
+        epoch === this.epoch &&
+        versions.get(id) === this.baseRequestVersion.get(id)
+      ) {
+        if (previous && previous.changenumber !== product.changenumber)
+          this.enriched.delete(id)
+        this.base.set(id, product)
+        this.baseExpires.set(id, Date.now() + PRODUCT_REUSE_MS)
+      }
+      products.set(id, product)
+    }
+    return products
+  }
+
+  getProductInfoWithDlc(
+    appId: number,
+    fresh = false,
+  ): Promise<ProductInfoResult> {
+    validateAppId(appId)
+    if (!fresh) {
+      const pending = this.enrichedBatch.getPending(appId)
+      if (pending) return pending
+      const cached = this.enriched.get(appId)
+      if (cached && (this.enrichedExpires.get(appId) ?? 0) > Date.now())
+        return Promise.resolve(cached)
+    }
+    return this.enrichedBatch.request(appId, fresh)
   }
 
   async getProductInfoWithDlcBatch(
     appIds: number[],
+    fresh = false,
   ): Promise<Map<number, ProductInfoResult>> {
     for (const appId of appIds) validateAppId(appId)
+    const results = await Promise.all(
+      appIds.map(async (appId) => {
+        try {
+          return [
+            appId,
+            await this.getProductInfoWithDlc(appId, fresh),
+          ] as const
+        } catch {
+          return null
+        }
+      }),
+    )
+    return new Map(
+      results.filter(
+        (result): result is readonly [number, ProductInfoResult] =>
+          result !== null,
+      ),
+    )
+  }
+
+  private async fetchEnrichedBatch(
+    appIds: number[],
+    fresh: boolean,
+    epoch: number,
+  ): Promise<Map<number, ProductInfoResult>> {
     const basePackageBranch = this.getPackageDiscovery(appIds)
-    const client = await this.session.getClient()
-    const baseResult = await client.getProductInfo(appIds, [], true)
+    const baseResult = await Promise.all(
+      appIds.map(async (appId) => {
+        try {
+          return await this.getProductInfo(appId, fresh)
+        } catch {
+          return null
+        }
+      }),
+    )
     const baseProducts = new Map<number, ProductInfo>()
     const directDlcIds = new Map<number, number[]>()
     const allDlcIds = new Set<number>()
 
-    for (const appId of appIds) {
-      const baseProduct = validProductInfo(baseResult, appId)
+    for (const [index, appId] of appIds.entries()) {
+      const baseProduct = baseResult[index]
       if (!baseProduct) continue
       const dlcIds = directDlcAppIds(baseProduct)
       baseProducts.set(appId, baseProduct)
@@ -82,36 +277,34 @@ export class ProductInfoService {
     }
 
     const [fetchedDlcProducts, basePackages, dlcPackages] = await Promise.all([
-      this.getDlcProducts([...allDlcIds]),
+      this.getDlcProducts([...allDlcIds], fresh),
       basePackageBranch,
       this.getPackageDiscovery([...allDlcIds]),
     ])
     const dlcProducts = new Map(
       fetchedDlcProducts.map((product) => [product.appId, product]),
     )
-    return new Map(
+    const results = new Map(
       appIds.flatMap((appId) => {
         const baseProduct = baseProducts.get(appId)
         if (!baseProduct) return []
         const dlcIds = directDlcIds.get(appId) ?? []
+        const appDlcProducts = dlcIds.flatMap((dlcId) => {
+          const product = dlcProducts.get(dlcId)
+          return product ? [product] : []
+        })
         return [
           [
             appId,
             {
               baseProduct,
               listedDlcAppIds: dlcIds,
-              dlcProducts: dlcIds.flatMap((dlcId) => {
-                const product = dlcProducts.get(dlcId)
-                return product ? [product] : []
-              }),
+              dlcProducts: appDlcProducts,
               eligibleBaseDepotIds: eligibleBaseDepotIds(appId, basePackages),
               eligibleDlcDepotIds: eligibleDlcDepotIds(
                 baseProduct,
                 dlcIds,
-                dlcIds.flatMap((dlcId) => {
-                  const product = dlcProducts.get(dlcId)
-                  return product ? [product] : []
-                }),
+                appDlcProducts,
                 basePackages,
                 dlcPackages,
               ),
@@ -120,29 +313,49 @@ export class ProductInfoService {
         ]
       }),
     )
+    for (const [appId, result] of results) {
+      // Incomplete enrichment must remain retryable, without losing valid base data.
+      if (
+        epoch === this.epoch &&
+        this.base.get(appId) === result.baseProduct &&
+        basePackages &&
+        !hasPackageFailure(appId, basePackages) &&
+        dlcPackages &&
+        result.listedDlcAppIds.every(
+          (id) => !hasPackageFailure(id, dlcPackages),
+        ) &&
+        result.listedDlcAppIds.length === result.dlcProducts.length
+      ) {
+        this.enriched.set(appId, result)
+        this.enrichedExpires.set(appId, Date.now() + PRODUCT_REUSE_MS)
+      }
+    }
+    return results
   }
 
-  private async getDlcProducts(appIds: number[]): Promise<ProductInfo[]> {
-    if (!appIds.length) return []
-    const client = await this.session.getClient()
-    let result: SteamUser.ProductInfo
-    try {
-      result = await client.getProductInfo(appIds, [], true)
-    } catch {
-      // DLC enrichment must not make otherwise valid base metadata unusable.
-      return []
-    }
-    return appIds.flatMap((appId) => {
-      const product = validProductInfo(result, appId)
-      return product ? [product] : []
-    })
+  private async getDlcProducts(
+    appIds: number[],
+    fresh: boolean,
+  ): Promise<ProductInfo[]> {
+    const products = await Promise.all(
+      appIds.map((id) => this.getProductInfo(id, fresh).catch(() => null)),
+    )
+    // DLC enrichment must not make otherwise valid base metadata unusable.
+    return products.filter(
+      (product): product is ProductInfo => product !== null,
+    )
   }
 
   private async getPackageDiscovery(
     appIds: number[],
     countryCode = 'US',
   ): Promise<PackageDiscovery | null> {
-    if (!appIds.length) return { packageIdsByApp: new Map(), grants: new Map() }
+    if (!appIds.length)
+      return {
+        packageIdsByApp: new Map(),
+        grants: new Map(),
+        failedPackageIds: new Set(),
+      }
     try {
       const packageIdsByApp = await this.store.getPackageIds(
         appIds,
@@ -151,23 +364,39 @@ export class ProductInfoService {
       const packageIds = [
         ...new Set([...packageIdsByApp.values()].flatMap((ids) => ids)),
       ]
-      if (!packageIds.length) return { packageIdsByApp, grants: new Map() }
+      if (!packageIds.length)
+        return {
+          packageIdsByApp,
+          grants: new Map(),
+          failedPackageIds: new Set(),
+        }
 
       const client = await this.session.getClient()
       const result = await client.getProductInfo([], packageIds, true)
       const grants = new Map<number, PackageGrant>()
+      const failedPackageIds = new Set<number>()
       for (const packageId of packageIds) {
         const parsed = packageInfoSchema.safeParse(result.packages[packageId])
-        if (!parsed.success || parsed.data.missingToken)
-          throw new Error(
-            `Steam returned incomplete package information for package ${packageId}`,
+        if (!parsed.success || parsed.data.missingToken) {
+          failedPackageIds.add(packageId)
+          const affected = appIds.filter((appId) =>
+            packageIdsByApp.get(appId)?.includes(packageId),
           )
+          this.reportPackageFailure(
+            affected,
+            countryCode,
+            new Error(
+              `Steam returned incomplete package information for package ${packageId}`,
+            ),
+          )
+          continue
+        }
         grants.set(packageId, {
           appIds: parsed.data.packageinfo.appids,
           depotIds: parsed.data.packageinfo.depotids,
         })
       }
-      return { packageIdsByApp, grants }
+      return { packageIdsByApp, grants, failedPackageIds }
     } catch (cause) {
       const error = cause instanceof Error ? cause : new Error(String(cause))
       this.reportPackageFailure(appIds, countryCode, error)
@@ -181,6 +410,7 @@ function eligibleBaseDepotIds(
   discovery: PackageDiscovery | null,
 ): ReadonlySet<number> | null {
   if (!discovery?.packageIdsByApp.has(appId)) return null
+  if (hasPackageFailure(appId, discovery)) return null
   const depotIds = new Set<number>()
   for (const packageId of discovery.packageIdsByApp.get(appId) ?? []) {
     const grant = discovery.grants.get(packageId)
@@ -188,6 +418,15 @@ function eligibleBaseDepotIds(
     for (const depotId of grant.depotIds) depotIds.add(depotId)
   }
   return depotIds
+}
+
+function hasPackageFailure(
+  appId: number,
+  discovery: PackageDiscovery,
+): boolean {
+  return (discovery.packageIdsByApp.get(appId) ?? []).some((id) =>
+    discovery.failedPackageIds.has(id),
+  )
 }
 
 function eligibleDlcDepotIds(
@@ -224,7 +463,12 @@ function qualifyingDlcGrants(
   dlcDiscovery: PackageDiscovery | null,
 ): PackageGrant[] | null {
   // A DLC may only be granted through a base package and have no direct package.
-  if (!baseDiscovery?.packageIdsByApp.has(baseAppId) || !dlcDiscovery)
+  if (
+    !baseDiscovery?.packageIdsByApp.has(baseAppId) ||
+    !dlcDiscovery ||
+    hasPackageFailure(baseAppId, baseDiscovery) ||
+    hasPackageFailure(dlcAppId, dlcDiscovery)
+  )
     return null
   const packageIds = new Set([
     ...(baseDiscovery?.packageIdsByApp.get(baseAppId) ?? []),
@@ -378,4 +622,8 @@ function validateAppId(appId: number): void {
   if (!steamIdSchema.safeParse(appId).success) {
     throw new Error('appId must be a positive 32-bit integer')
   }
+}
+
+function asError(cause: unknown): Error {
+  return cause instanceof Error ? cause : new Error(String(cause))
 }

@@ -31,6 +31,16 @@ export class AppService {
     )
   }
 
+  async getAppDetailsBatch(appIds: number[]): Promise<AppDetails[]> {
+    const products = await this.steam.getProductInfoWithDlcBatch(appIds)
+    return Promise.all(
+      appIds.flatMap((appId) => {
+        const product = products.get(appId)
+        return product ? [normalizeAppDetails(product, this.database)] : []
+      }),
+    )
+  }
+
   async checkAvailableUpdate(appId: number): Promise<AvailableUpdateResult> {
     return new AvailableUpdateService(this.steam, this.database).check(appId)
   }

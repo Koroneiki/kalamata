@@ -8,6 +8,10 @@ export function getAppDetails(appId: number) {
   return request('getAppDetails', { appId })
 }
 
+export function getAppDetailsBatch(appIds: number[]) {
+  return request('getAppDetailsBatch', { appIds })
+}
+
 export function checkAvailableUpdate(appId: number) {
   return request('checkAvailableUpdate', { appId })
 }

@@ -78,16 +78,24 @@ export class SteamService {
   }
 
   // fallow-ignore-next-line unused-class-member
-  getProductInfoWithDlc(appId: number): Promise<ProductInfoResult> {
-    return this.#products.getProductInfoWithDlc(appId)
+  getProductInfoWithDlc(
+    appId: number,
+    fresh = false,
+  ): Promise<ProductInfoResult> {
+    return this.#products.getProductInfoWithDlc(appId, fresh)
   }
 
   // AppService calls this method through a structural Pick that Fallow cannot trace.
   // fallow-ignore-next-line unused-class-member
   getProductInfoWithDlcBatch(
     appIds: number[],
+    fresh = false,
   ): Promise<Map<number, ProductInfoResult>> {
-    return this.#products.getProductInfoWithDlcBatch(appIds)
+    return this.#products.getProductInfoWithDlcBatch(appIds, fresh)
+  }
+
+  clearProductInfo(appId: number): void {
+    this.#products.clear(appId)
   }
 
   acquireManifest(

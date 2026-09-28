@@ -53,7 +53,7 @@ import { useOperationStore } from '@/stores/operation'
 import { useColdClientOperationStore } from '@/stores/cold-client-operation'
 import type { AppDepot } from '@/types/rpc'
 import type { ColdClientSetupMode } from '@/types/cold-client'
-import { filterDepots, matchesDepotPlatform } from '@/utils/depots'
+import { filterDepots } from '@/utils/depots'
 
 import { steamIdStringSchema } from '@/types/schemas'
 
@@ -106,8 +106,6 @@ const coldClientSetupMode = ref<ColdClientSetupMode>('setup')
 const mutationError = ref('')
 const manifestError = ref('')
 const acquiringManifests = reactive(new Set<string>())
-const attemptedManifests = new Set<string>()
-const attemptedDepotKeys = new Set<number>()
 const removeError = ref('')
 const removeColdClientError = ref('')
 const operationPanel = ref<{ focusHeading: () => void } | null>(null)
@@ -217,8 +215,6 @@ watch(
         selectedPath.value = app.installPath ?? ''
         manifestError.value = ''
         resetCustomManifests()
-        attemptedManifests.clear()
-        attemptedDepotKeys.clear()
       } else if (app.installPath) {
         selectedPath.value = app.installPath
       }
@@ -499,10 +495,8 @@ async function removeFromLibrary() {
 }
 
 interface ManifestAcquisitionOptions {
-  acquire?: (manifestId: string) => Promise<{ fetched: boolean }>
   precedingError?: string
   targetAppId?: number
-  invalidateDetails?: boolean
 }
 
 async function getManifest(
@@ -517,24 +511,16 @@ async function getManifest(
   manifestError.value = precedingError
   acquiringManifests.add(key)
   try {
-    let fetched = true
-    if (options.acquire) {
-      fetched = (await options.acquire(targetManifestId)).fetched
-    } else {
-      await resourceAcquisition.acquireManifestResource(
-        depot.ownerAppId,
-        depot.depotId,
-        targetManifestId,
-        targetAppId,
-      )
-    }
-    if (fetched && options.invalidateDetails !== false) {
-      await queryCache.invalidateQueries({
-        key: appQueryKeys.details(targetAppId),
-        exact: true,
-      })
-    }
-    return fetched
+    await resourceAcquisition.acquireManifestResource(
+      depot.ownerAppId,
+      depot.depotId,
+      targetManifestId,
+      targetAppId,
+    )
+    await queryCache.invalidateQueries({
+      key: appQueryKeys.details(targetAppId),
+      exact: true,
+    })
   } catch (error) {
     if (
       appId.value === targetAppId &&
@@ -594,87 +580,6 @@ async function getDepotResources(depot: AppDepot) {
 function manifestKey(appId: number, depot: AppDepot) {
   return `${appId}:${depot.depotId}:${depot.manifestId}`
 }
-
-async function acquireAutomaticManifests(
-  targetAppId: number,
-  pending: AppDepot[],
-) {
-  const acquisitions = pending.map((depot) => {
-    attemptedManifests.add(manifestKey(targetAppId, depot))
-    return getManifest(depot, {
-      acquire: (manifestId) =>
-        resourceAcquisition.acquireManifestAutomatically(
-          depot.ownerAppId,
-          depot.depotId,
-          manifestId,
-          targetAppId,
-        ),
-      targetAppId,
-      invalidateDetails: false,
-    })
-  })
-  if ((await Promise.all(acquisitions)).some(Boolean)) {
-    await queryCache.invalidateQueries({
-      key: appQueryKeys.details(targetAppId),
-      exact: true,
-    })
-  }
-}
-
-watch(
-  [
-    () => data.value,
-    () => settings.value?.automaticManifestAcquisition,
-    () => settings.value?.platforms,
-  ],
-  ([app, automatic, platforms]) => {
-    if (!app?.inLibrary || !automatic || !platforms) return
-    const pending = app.depots.filter(
-      (depot) =>
-        depot.eligible &&
-        depot.manifestId &&
-        depot.manifestStatus !== 'ready' &&
-        matchesDepotPlatform(depot, platforms) &&
-        !attemptedManifests.has(manifestKey(app.appId, depot)),
-    )
-    if (pending.length > 0) {
-      void acquireAutomaticManifests(app.appId, pending)
-    }
-
-    const depotIds = app.depots
-      .filter(
-        (depot) =>
-          depot.eligible &&
-          depot.keyStatus !== 'present' &&
-          matchesDepotPlatform(depot, platforms) &&
-          !attemptedDepotKeys.has(depot.depotId),
-      )
-      .map(({ depotId }) => depotId)
-    if (depotIds.length === 0) return
-
-    for (const depotId of depotIds) attemptedDepotKeys.add(depotId)
-    void resourceAcquisition
-      .acquireKeysAutomatically(app.appId, depotIds)
-      .then(({ fetched }) => {
-        if (!fetched) return
-        return queryCache.invalidateQueries({
-          key: appQueryKeys.details(app.appId),
-          exact: true,
-        })
-      })
-      .catch(async (error) => {
-        if (data.value?.appId === app.appId) {
-          manifestError.value =
-            error instanceof Error ? error.message : String(error)
-        }
-        await queryCache.invalidateQueries({
-          key: appQueryKeys.details(app.appId),
-          exact: true,
-        })
-      })
-  },
-  { immediate: true },
-)
 
 async function focusDownloadQueue() {
   await nextTick()
