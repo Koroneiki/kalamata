@@ -160,21 +160,29 @@ export function useDepotResourceAcquisition() {
     appId: number,
     depots: EligibleAppDepot[],
   ) {
-    const missingManifests = depots.filter(
-      (depot) => depot.manifestStatus !== 'ready' && depot.manifestId,
-    )
-    if (missingManifests.length) {
-      await Promise.all(
-        missingManifests.map((depot) =>
+    await Promise.all(
+      depots.flatMap((depot) => {
+        const manifestIds = [
+          ...(depot.manifestId && depot.manifestStatus !== 'ready'
+            ? [depot.manifestId]
+            : []),
+          // The preview also loads the installed version, which may no longer
+          // be cached locally even if the new manifest is ready.
+          ...(depot.installedManifestId &&
+          depot.installedManifestId !== depot.manifestId
+            ? [depot.installedManifestId]
+            : []),
+        ]
+        return manifestIds.map((manifestId) =>
           acquireManifestResource(
             depot.ownerAppId,
             depot.depotId,
-            depot.manifestId!,
+            manifestId,
             appId,
           ),
-        ),
-      )
-    }
+        )
+      }),
+    )
 
     const missingKeyIds = depots.flatMap(({ depotId, keyStatus }) =>
       keyStatus === 'present' ? [] : [depotId],
