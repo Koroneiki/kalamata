@@ -11,6 +11,7 @@ import { useMediaQuery } from '@vueuse/core'
 import { watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
+import appIcon from '../../../assets/icon.svg'
 import AddGameDialog from '@/components/forms/AddGameDialog.vue'
 import { useLibraryQuery } from '@/composables/queries'
 
@@ -82,11 +83,12 @@ watch(
 <template>
   <Sidebar collapsible="icon">
     <SidebarHeader class="pb-0">
-      <SidebarGroupLabel
-        class="text-sidebar-foreground text-sm font-semibold tracking-tight group-data-[collapsible=icon]:mt-0!"
+      <div
+        class="text-sidebar-foreground flex h-8 items-center gap-2 px-2 text-sm font-semibold tracking-tight"
       >
-        Kalamata
-      </SidebarGroupLabel>
+        <img :src="appIcon" alt="" class="size-6 shrink-0" />
+        <span class="group-data-[collapsible=icon]:hidden">Kalamata</span>
+      </div>
       <SidebarSeparator class="-translate-y-px" />
       <SidebarMenu>
         <SidebarMenuItem>
