@@ -196,6 +196,68 @@ test('startup pauses a download interrupted while running until resumed', async 
   await waitForTerminal(queue)
 })
 
+test('shutdown preserves a downloading journal even when the transfer rejects with AbortError', async () => {
+  const fixture = await setup()
+  const downloading = deferred<void>()
+  const events: OperationLifecycleEvent[] = []
+  const queue = new DownloadQueueCoordinator(
+    {
+      getProductInfoWithDlc: async () => products(),
+      reconcileApplication: async (options) => {
+        await writeQueueStagingJournal(options)
+        options.onEvent?.({ type: 'phase', phase: 'downloading' })
+        downloading.resolve()
+        return new Promise<never>((_, reject) =>
+          options.signal!.addEventListener(
+            'abort',
+            () => reject(new DOMException('Transfer aborted', 'AbortError')),
+            { once: true },
+          ),
+        )
+      },
+    },
+    fixture.database,
+    () => {},
+    () => {},
+    (event) => events.push(event),
+  )
+
+  await queue.start({
+    appId: APP_ID,
+    installPath: fixture.installPath,
+    depotIds: [DEPOTS[0].depotId],
+  })
+  await downloading.promise
+  await queue.shutdown()
+
+  expect(queue.getOperationState().status).toBe('resumable')
+  expect(
+    events.some((event) => event.event === 'operation.cancelled'),
+  ).toBeFalse()
+  expect(
+    await getResumableApplicationTransaction(
+      await realpath(fixture.installPath),
+      APP_ID,
+    ),
+  ).not.toBeNull()
+
+  const restarted = new DownloadQueueCoordinator(
+    {
+      getProductInfoWithDlc: async () => products(),
+      reconcileApplication: successfulReconciliation,
+    },
+    fixture.database,
+  )
+  await restarted.restoreInterrupted()
+  expect(restarted.getOperationState()).toMatchObject({
+    status: 'paused',
+    appId: APP_ID,
+  })
+  expect(restarted.resume()).toEqual({ accepted: true })
+  await waitForTerminal(restarted)
+  expect(restarted.getOperationState().status).toBe('completed')
+})
+
 test('startup leaves a queued paused journal under queue ownership', async () => {
   const fixture = await setup()
   fixture.database.reserveInstallPath(APP_ID, fixture.installPath)

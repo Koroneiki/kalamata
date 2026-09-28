@@ -50,17 +50,11 @@ export function isOperationCancellation(error: Error): boolean {
   )
 }
 
-export function isOperationShutdown(
-  error: Error,
-  signal: AbortSignal,
-): boolean {
+export function isOperationShutdown(signal: AbortSignal): boolean {
   return (
     signal.aborted &&
     signal.reason instanceof Error &&
-    signal.reason.name === 'ShutdownError' &&
-    (error instanceof ApplicationTransactionError
-      ? error.kind === 'cancellation'
-      : error === signal.reason)
+    signal.reason.name === 'ShutdownError'
   )
 }
 

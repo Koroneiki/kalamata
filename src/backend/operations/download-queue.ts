@@ -869,7 +869,9 @@ export class DownloadQueueCoordinator {
     failure: Error,
   ): Promise<OperationFailureDisposition> {
     const serialized = serializeOperationError(failure)
-    const shuttingDown = isOperationShutdown(failure, signal)
+    // The abort reason belongs to this queue; lower layers may surface a
+    // different error while unwinding an interrupted transfer.
+    const shuttingDown = isOperationShutdown(signal)
     const resumable = await getResumableApplicationTransaction(
       request.installPath,
       request.appId,
