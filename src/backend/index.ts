@@ -123,7 +123,8 @@ export class SteamService {
     const service = this.getDepotKeyAcquisitionService(database)
     if (!this.backgroundDownloads) return service.acquire(request)
     return this.backgroundDownloads.enqueue({
-      key: `depot-keys:${request.appId}:${[...request.depotIds].sort((a, b) => a - b).join(',')}:${!!request.approveLowQuotaHubcap}`,
+      // Result arrays follow the caller's order, so only coalesce identical requests.
+      key: `depot-keys:${request.appId}:${request.depotIds.join(',')}:${!!request.approveLowQuotaHubcap}`,
       kind: 'depot-keys',
       title: `Depot keys for ${request.appId}`,
       appId: request.appId,

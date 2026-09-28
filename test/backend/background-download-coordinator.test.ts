@@ -405,39 +405,6 @@ test('shutdown does not wait for an unabortable provider or admit its late resul
   }
 })
 
-test('keeps the queue reserved until the updater makes its restart decision', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'background-jobs-'))
-  const coordinator = new BackgroundDownloadCoordinator(root, () => {})
-  try {
-    await coordinator.initialize()
-    const update = coordinator.enqueue({
-      key: 'application-update',
-      kind: 'application-update',
-      title: 'Update',
-      holdQueueAfterCompletion: true,
-      run: async () => 'downloaded',
-    })
-    let started = false
-    const next = coordinator.enqueue({
-      key: 'manifest:1:2',
-      kind: 'manifest',
-      title: 'Manifest',
-      run: async () => {
-        started = true
-      },
-    })
-    expect(await update).toBe('downloaded')
-    expect(started).toBe(false)
-    expect(coordinator.snapshot().jobs[1]?.status).toBe('queued')
-    coordinator.releaseQueue('application-update')
-    await next
-    expect(started).toBe(true)
-  } finally {
-    await coordinator.shutdown()
-    await rm(root, { recursive: true, force: true })
-  }
-})
-
 test('does not replay a failed step of an updater or dependency workflow', async () => {
   const root = await mkdtemp(join(tmpdir(), 'background-jobs-'))
   const coordinator = new BackgroundDownloadCoordinator(root, () => {})

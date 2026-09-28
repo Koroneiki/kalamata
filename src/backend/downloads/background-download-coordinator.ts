@@ -38,7 +38,6 @@ export interface JobDefinition<T extends JobResult> {
   appId?: number
   depotId?: number
   canCancel?: boolean
-  holdQueueAfterCompletion?: boolean
   run: (context: JobContext) => Promise<T>
 }
 
@@ -76,7 +75,6 @@ export class BackgroundDownloadCoordinator {
   readonly #groups = new Map<string, JobRecord>()
   #running: JobRecord | undefined
   #priorityId: string | undefined
-  #heldKey: string | undefined
   #accepting = false
 
   constructor(
@@ -177,12 +175,6 @@ export class BackgroundDownloadCoordinator {
     this.#priorityId = id
     this.notify()
     return true
-  }
-
-  releaseQueue(key: string): void {
-    if (this.#heldKey !== key) return
-    this.#heldKey = undefined
-    this.startNext()
   }
 
   dismiss(id: string): boolean {
@@ -525,18 +517,11 @@ export class BackgroundDownloadCoordinator {
       : null
     this.notify()
     record.complete()
-    if (
-      record.state.status === 'completed' &&
-      record.tasks[0]?.definition.holdQueueAfterCompletion
-    ) {
-      this.#heldKey = record.state.key
-      return
-    }
     this.startNext()
   }
 
   private startNext() {
-    if (this.#running || this.#heldKey || !this.#accepting) return
+    if (this.#running || !this.#accepting) return
     const priority = this.#priorityId
       ? this.#jobs.get(this.#priorityId)
       : undefined
