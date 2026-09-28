@@ -91,3 +91,27 @@ test('prepares eligible missing resources only when enabled and avoids duplicate
   expect(await prepare.prepare(changed, settings)).toBe(true)
   expect(keys).toHaveBeenCalledTimes(2)
 })
+
+test('waits for the manifest before attempting to acquire its key', async () => {
+  let finishManifest!: () => void
+  const manifestReady = new Promise<void>((resolve) => {
+    finishManifest = resolve
+  })
+  const keys = mock(async () => ({ fetched: true }))
+  const prepare = new LibraryResourcePreparation(
+    {
+      acquireKeysAutomatically: keys,
+      acquireManifestAutomatically: async () => {
+        await manifestReady
+        return { fetched: true }
+      },
+    },
+    () => {},
+  )
+
+  const result = prepare.prepare(app, settings)
+  expect(keys).not.toHaveBeenCalled()
+  finishManifest()
+  expect(await result).toBe(true)
+  expect(keys).toHaveBeenCalledWith(440, [441])
+})

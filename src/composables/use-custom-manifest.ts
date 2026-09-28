@@ -58,6 +58,12 @@ export function useCustomManifest(options: {
     depot: EligibleAppDepot,
     manifestId: string,
   ) {
+    await options.acquireManifest(
+      depot.ownerAppId,
+      depot.depotId,
+      manifestId,
+      targetAppId,
+    )
     if (depot.keyStatus !== 'present') {
       const missingDepotIds = await options.acquireDepotKeys(targetAppId, [
         depot.depotId,
@@ -65,12 +71,6 @@ export function useCustomManifest(options: {
       if (missingDepotIds.includes(depot.depotId))
         throw new Error(`Depot key ${depot.depotId} is unavailable.`)
     }
-    await options.acquireManifest(
-      depot.ownerAppId,
-      depot.depotId,
-      manifestId,
-      targetAppId,
-    )
   }
 
   async function pinInstalledManifest(

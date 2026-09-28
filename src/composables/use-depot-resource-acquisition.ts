@@ -160,18 +160,6 @@ export function useDepotResourceAcquisition() {
     appId: number,
     depots: EligibleAppDepot[],
   ) {
-    const missingKeyIds = depots.flatMap(({ depotId, keyStatus }) =>
-      keyStatus === 'present' ? [] : [depotId],
-    )
-    if (missingKeyIds.length) {
-      const result = await acquireKeys(appId, missingKeyIds)
-      if (result.missingDepotIds.length) {
-        throw new Error(
-          `Depot key ${result.missingDepotIds.join(', ')} is unavailable.`,
-        )
-      }
-    }
-
     const missingManifests = depots.filter(
       (depot) => depot.manifestStatus !== 'ready' && depot.manifestId,
     )
@@ -186,6 +174,18 @@ export function useDepotResourceAcquisition() {
           ),
         ),
       )
+    }
+
+    const missingKeyIds = depots.flatMap(({ depotId, keyStatus }) =>
+      keyStatus === 'present' ? [] : [depotId],
+    )
+    if (missingKeyIds.length) {
+      const result = await acquireKeys(appId, missingKeyIds)
+      if (result.missingDepotIds.length) {
+        throw new Error(
+          `Depot key ${result.missingDepotIds.join(', ')} is unavailable.`,
+        )
+      }
     }
 
     await queryCache.invalidateQueries({

@@ -62,28 +62,28 @@ export class LibraryResourcePreparation {
         `${app.appId}:${depot.depotId}:${depot.manifestId}`,
       )
 
-    // Manifest downloads do not require depot keys; a failed key request must
-    // not prevent the manifest from being prepared.
-    const jobs = manifests.map((depot) =>
-      this.run(() =>
-        this.acquisition.acquireManifestAutomatically(
-          depot.ownerAppId,
-          depot.depotId,
-          depot.manifestId!,
-          app.appId,
+    // Key acquisition checks the saved manifest, so finish manifest jobs first.
+    const manifestResults = await Promise.all(
+      manifests.map((depot) =>
+        this.run(() =>
+          this.acquisition.acquireManifestAutomatically(
+            depot.ownerAppId,
+            depot.depotId,
+            depot.manifestId!,
+            app.appId,
+          ),
         ),
       ),
     )
-    if (keys.length)
-      jobs.push(
-        this.run(() =>
+    const keyFetched = keys.length
+      ? await this.run(() =>
           this.acquisition.acquireKeysAutomatically(
             app.appId,
             keys.map(({ depotId }) => depotId),
           ),
-        ),
-      )
-    return (await Promise.all(jobs)).some(Boolean)
+        )
+      : false
+    return manifestResults.some(Boolean) || keyFetched
   }
 
   private async run(

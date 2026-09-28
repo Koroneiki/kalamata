@@ -2,10 +2,23 @@ import { afterEach, describe, expect, mock, test } from 'bun:test'
 import { mkdtemp, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { DepotKeyAcquisitionService } from '../src/backend/depot/keys/depot-key-acquisition-service.ts'
+import { DepotKeyAcquisitionService as BaseDepotKeyAcquisitionService } from '../src/backend/depot/keys/depot-key-acquisition-service.ts'
 import { BackgroundDownloadCoordinator } from '../src/backend/downloads/background-download-coordinator.ts'
 import { KalamataDatabase } from '../src/db/database.ts'
 import { removeTemporaryDirectory } from './helpers/filesystem.ts'
+
+// Source-precedence tests supply a successful probe; verification itself is tested below.
+class DepotKeyAcquisitionService extends BaseDepotKeyAcquisitionService {
+  constructor(
+    db: KalamataDatabase,
+    fetcher: NonNullable<
+      ConstructorParameters<typeof BaseDepotKeyAcquisitionService>[1]
+    >,
+    coordinator?: BackgroundDownloadCoordinator,
+  ) {
+    super(db, fetcher, coordinator, async () => true)
+  }
+}
 
 const LUA_KEY = 'a'.repeat(64)
 const JSON_KEY = 'b'.repeat(64)
@@ -44,6 +57,53 @@ afterEach(async () => {
 })
 
 describe('DepotKeyAcquisitionService', () => {
+  test('publishes only verified candidates and falls back to the next source', async () => {
+    const db = await openDatabase()
+    const verify = mock(
+      async (_appId: number, _depotId: number, key: Buffer) =>
+        key.toString('hex') === JSON_KEY,
+    )
+    const fetcher = mock(async (input: string | URL | Request) =>
+      String(input).endsWith('/100/100.lua')
+        ? new Response(`addappid(10, 0, "${LUA_KEY}")`)
+        : Response.json({ 10: JSON_KEY }),
+    )
+    const service = new BaseDepotKeyAcquisitionService(
+      db,
+      fetcher,
+      undefined,
+      verify,
+    )
+
+    expect(await service.acquire({ appId: 100, depotIds: [10] })).toEqual({
+      acquiredDepotIds: [10],
+      missingDepotIds: [],
+    })
+    expect(verify).toHaveBeenCalledTimes(2)
+    expect(db.getDepotKey(10)).toBe(JSON_KEY)
+  })
+
+  test('does not store a key when its probe cannot succeed', async () => {
+    const db = await openDatabase()
+    const service = new BaseDepotKeyAcquisitionService(
+      db,
+      async (input) =>
+        String(input).endsWith('/100/100.lua')
+          ? new Response(`addappid(10, 0, "${LUA_KEY}")`)
+          : Response.json({ 10: JSON_KEY }),
+      undefined,
+      async () => false,
+    )
+
+    expect(await service.acquire({ appId: 100, depotIds: [10] })).toMatchObject(
+      {
+        acquiredDepotIds: [],
+        missingDepotIds: [10],
+      },
+    )
+    expect(db.getDepotKey(10)).toBeNull()
+  })
+
   test('cancels a shared Lua source without publishing keys', async () => {
     const db = await openDatabase()
     const coordinator = new BackgroundDownloadCoordinator(root!, () => {})

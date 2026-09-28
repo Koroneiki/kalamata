@@ -5,6 +5,7 @@ import { join } from 'node:path'
 
 import { extractPublicDepots } from '../src/backend/apps/product-normalizer.ts'
 import { DepotKeyAcquisitionService } from '../src/backend/depot/keys/depot-key-acquisition-service.ts'
+import { verifyDepotKey } from '../src/backend/depot/keys/verify-depot-key.ts'
 import { parseManifest } from '../src/backend/depot/manifests/manifest-codec.ts'
 import { ManifestAcquisitionService } from '../src/backend/depot/manifests/manifest-acquisition-service.ts'
 import { DIRECTORY } from '../src/backend/depot/manifests/manifest-utils.ts'
@@ -12,6 +13,7 @@ import { ProductInfoService } from '../src/backend/steam/product-info-service.ts
 import { SteamSession } from '../src/backend/steam/steam-session.ts'
 import { KalamataDatabase } from '../src/db/database.ts'
 import { depotKeyFromHex } from '../src/db/validation.ts'
+import { validateManagedManifest } from '../src/db/manifest-files.ts'
 import { downloadManifestFile } from './helpers/download-manifest-file.integration.ts'
 
 const APP_ID = 2379780
@@ -26,8 +28,31 @@ test.skipIf(process.env.BALATRO_LIVE_INTEGRATION !== '1')(
       join(import.meta.dir, '..', 'src', 'db', 'migrations'),
     )
     const session = new SteamSession()
-    const keys = new DepotKeyAcquisitionService(database)
     const manifests = new ManifestAcquisitionService(session, database)
+    const keys = new DepotKeyAcquisitionService(
+      database,
+      fetch,
+      undefined,
+      async (appId, depotId, key, signal) => {
+        const row = database.getManifestRows(depotId)[0]
+        if (!row) return false
+        const path = await validateManagedManifest(
+          database.dataRoot,
+          depotId,
+          row.manifestId,
+          row.relativePath,
+        )
+        return verifyDepotKey(
+          session,
+          appId,
+          depotId,
+          row.manifestId,
+          await readFile(path, { signal }),
+          key,
+          signal,
+        )
+      },
+    )
 
     try {
       const product = await new ProductInfoService(
@@ -41,6 +66,15 @@ test.skipIf(process.env.BALATRO_LIVE_INTEGRATION !== '1')(
         throw new Error('Balatro depot has no current public manifest')
       const manifestId = depot.manifestId
 
+      const acquisition = await manifests.acquire({
+        appId: depot.ownerAppId,
+        depotId: DEPOT_ID,
+        manifestId,
+      })
+      const acquiredManifest = acquisition.manifest
+      if (!acquiredManifest) throw new Error('Balatro manifest is unavailable')
+      expect(acquiredManifest.manifestId).toBe(manifestId)
+
       const acquiredKeys = await keys.acquire({
         appId: APP_ID,
         depotIds: [DEPOT_ID],
@@ -50,14 +84,6 @@ test.skipIf(process.env.BALATRO_LIVE_INTEGRATION !== '1')(
         missingDepotIds: [],
       })
       const depotKey = depotKeyFromHex(database.getDepotKey(DEPOT_ID) ?? '')
-      const acquisition = await manifests.acquire({
-        appId: depot.ownerAppId,
-        depotId: DEPOT_ID,
-        manifestId,
-      })
-      const acquiredManifest = acquisition.manifest
-      if (!acquiredManifest) throw new Error('Balatro manifest is unavailable')
-      expect(acquiredManifest.manifestId).toBe(manifestId)
 
       const manifest = parseManifest(
         await readFile(join(database.dataRoot, acquiredManifest.relativePath)),

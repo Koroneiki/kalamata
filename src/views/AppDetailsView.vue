@@ -494,22 +494,10 @@ async function removeFromLibrary() {
   }
 }
 
-interface ManifestAcquisitionOptions {
-  precedingError?: string
-  targetAppId?: number
-}
-
-async function getManifest(
-  depot: AppDepot,
-  options: ManifestAcquisitionOptions = {},
-) {
+async function getManifest(depot: AppDepot, targetAppId: number) {
   if (!depot.manifestId) return
   const targetManifestId = depot.manifestId
-  const targetAppId = options.targetAppId ?? appId.value
-  const precedingError = options.precedingError ?? ''
-  const key = manifestKey(targetAppId, depot)
-  manifestError.value = precedingError
-  acquiringManifests.add(key)
+  manifestError.value = ''
   try {
     await resourceAcquisition.acquireManifestResource(
       depot.ownerAppId,
@@ -517,10 +505,6 @@ async function getManifest(
       targetManifestId,
       targetAppId,
     )
-    await queryCache.invalidateQueries({
-      key: appQueryKeys.details(targetAppId),
-      exact: true,
-    })
   } catch (error) {
     if (
       appId.value === targetAppId &&
@@ -531,12 +515,8 @@ async function getManifest(
       )
     ) {
       const message = error instanceof Error ? error.message : String(error)
-      manifestError.value = precedingError
-        ? `${precedingError} Manifest acquisition failed: ${message}`
-        : message
+      manifestError.value = message
     }
-  } finally {
-    acquiringManifests.delete(key)
   }
 }
 
@@ -547,6 +527,10 @@ async function getDepotResources(depot: AppDepot) {
   let keyError = ''
   acquiringManifests.add(key)
   try {
+    // A saved manifest is required to verify newly acquired depot keys.
+    if (depot.manifestStatus !== 'ready') await getManifest(depot, targetAppId)
+    else if (appId.value === targetAppId) manifestError.value = ''
+
     if (depot.keyStatus !== 'present') {
       try {
         const result = await resourceAcquisition.acquireKeys(targetAppId, [
@@ -560,18 +544,14 @@ async function getDepotResources(depot: AppDepot) {
         keyError = `Depot key acquisition failed: ${message}`
       }
     }
-
-    if (depot.manifestStatus !== 'ready') {
-      // Manifest acquisition does not require a key. Encrypted filenames can
-      // be validated after the key becomes available.
-      await getManifest(depot, { precedingError: keyError, targetAppId })
-    } else {
-      if (appId.value === targetAppId) manifestError.value = keyError
-      await queryCache.invalidateQueries({
-        key: appQueryKeys.details(targetAppId),
-        exact: true,
-      })
-    }
+    if (appId.value === targetAppId && keyError)
+      manifestError.value = [manifestError.value, keyError]
+        .filter(Boolean)
+        .join(' ')
+    await queryCache.invalidateQueries({
+      key: appQueryKeys.details(targetAppId),
+      exact: true,
+    })
   } finally {
     acquiringManifests.delete(key)
   }

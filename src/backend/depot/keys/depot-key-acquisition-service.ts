@@ -44,6 +44,12 @@ export class DepotKeyAcquisitionService {
     private readonly database: KalamataDatabase,
     private readonly fetcher: Fetcher = fetch,
     private readonly backgroundDownloads?: BackgroundDownloadCoordinator,
+    private readonly verifyCandidate: (
+      appId: number,
+      depotId: number,
+      key: Buffer,
+      signal: AbortSignal,
+    ) => Promise<boolean> = async () => false,
   ) {
     this.#cache = new DepotKeyCache(
       database.dataRoot,
@@ -103,11 +109,13 @@ export class DepotKeyAcquisitionService {
       const lua = await this.getLuaSource(request.appId, signal)
       signal.throwIfAborted()
       const luaKeys = lua ? parseDepotKeysLua(lua, requested) : new Map()
-      for (const [depotId, key] of luaKeys) {
-        this.database.setDepotKey(depotId, key)
-        acquiredDepotIds.push(depotId)
-        requested.delete(depotId)
-      }
+      await this.publishVerifiedKeys(
+        request.appId,
+        luaKeys,
+        requested,
+        acquiredDepotIds,
+        signal,
+      )
 
       if (requested.size > 0) {
         context?.setSource('GitHub: dvahana2424-web/sojogamesdatabase1')
@@ -116,11 +124,13 @@ export class DepotKeyAcquisitionService {
           signal,
         )
         signal.throwIfAborted()
-        for (const [depotId, key] of cachedKeys) {
-          this.database.setDepotKey(depotId, key)
-          acquiredDepotIds.push(depotId)
-          requested.delete(depotId)
-        }
+        await this.publishVerifiedKeys(
+          request.appId,
+          cachedKeys,
+          requested,
+          acquiredDepotIds,
+          signal,
+        )
       }
 
       if (requested.size > 0) {
@@ -132,15 +142,61 @@ export class DepotKeyAcquisitionService {
         )
         signal.throwIfAborted()
         hubcap = hubcapResult.outcome
-        for (const [depotId, key] of hubcapResult.keys) {
-          this.database.setDepotKey(depotId, key)
-          acquiredDepotIds.push(depotId)
-          requested.delete(depotId)
+        await this.publishVerifiedKeys(
+          request.appId,
+          hubcapResult.keys,
+          requested,
+          acquiredDepotIds,
+          signal,
+        )
+        if (hubcap?.status === 'fetched') {
+          hubcap = {
+            ...hubcap,
+            acquiredDepotIds: hubcap.acquiredDepotIds.filter((id) =>
+              acquiredDepotIds.includes(id),
+            ),
+          }
         }
       }
     }
 
     return acquiredDepotKeysResult(depotIds, acquiredDepotIds, hubcap)
+  }
+
+  private async publishVerifiedKeys(
+    appId: number,
+    keys: Map<number, string>,
+    requested: Set<number>,
+    acquiredDepotIds: number[],
+    signal: AbortSignal,
+  ): Promise<void> {
+    for (const [depotId, key] of keys) {
+      if (!(await this.isVerified(appId, depotId, key, signal))) continue
+      this.database.setDepotKey(depotId, key)
+      acquiredDepotIds.push(depotId)
+      requested.delete(depotId)
+    }
+  }
+
+  private async isVerified(
+    appId: number,
+    depotId: number,
+    key: string,
+    signal: AbortSignal,
+  ): Promise<boolean> {
+    try {
+      const verified = await this.verifyCandidate(
+        appId,
+        depotId,
+        depotKeyFromHex(key),
+        signal,
+      )
+      signal.throwIfAborted()
+      return verified
+    } catch {
+      signal.throwIfAborted()
+      return false
+    }
   }
 
   async shutdown(): Promise<void> {

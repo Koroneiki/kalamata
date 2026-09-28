@@ -2,6 +2,9 @@ import { DepotDownloadService } from './depot/depot-download-service.ts'
 import type { ReconcileApplicationOptions } from './depot/depot-download-service.ts'
 import type { ApplicationTransactionResult } from './depot/install/transaction/types.ts'
 import { DepotKeyAcquisitionService } from './depot/keys/depot-key-acquisition-service.ts'
+import { verifyDepotKey } from './depot/keys/verify-depot-key.ts'
+import { validateManagedManifest } from '../db/manifest-files.ts'
+import { readFile } from 'node:fs/promises'
 import { ManifestAcquisitionService } from './depot/manifests/manifest-acquisition-service.ts'
 import { previewApplicationOperation } from './operations/application-preview.ts'
 import type { ApplicationPlan } from './operations/application-planner.ts'
@@ -169,6 +172,29 @@ export class SteamService {
         database,
         fetch,
         this.backgroundDownloads,
+        async (appId, depotId, key, signal) => {
+          const row = database.sqlite
+            .query<{ manifestId: string; relativePath: string }, [number]>(
+              'SELECT manifest_id AS manifestId, relative_path AS relativePath FROM manifest_files WHERE depot_id = ? ORDER BY created_at DESC LIMIT 1',
+            )
+            .get(depotId)
+          if (!row) return false
+          const path = await validateManagedManifest(
+            database.dataRoot,
+            depotId,
+            row.manifestId,
+            row.relativePath,
+          )
+          return verifyDepotKey(
+            this.#session,
+            appId,
+            depotId,
+            row.manifestId,
+            await readFile(path, { signal }),
+            key,
+            signal,
+          )
+        },
       )
       this.#depotKeyAcquisitions.set(database, service)
     }
