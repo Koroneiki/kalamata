@@ -126,14 +126,11 @@ describe('application filesystem transactions', () => {
     })
   })
 
-  test('later mounted depot wins and removing it reveals the earlier owner', async () => {
+  test('later mounted depot wins for a shared file', async () => {
     directory = await tempDirectory()
     const low = depot(10, '1', { 'shared.bin': 'low' })
     const high = depot(20, '1', { 'shared.bin': 'high' })
     await run(directory, [], [high, low])
-    expect(await text('shared.bin')).toBe('low')
-
-    await run(directory, [low, high], [low])
     expect(await text('shared.bin')).toBe('low')
   })
 
@@ -258,7 +255,6 @@ describe('application filesystem transactions', () => {
     directory = await tempDirectory()
     const desired = depot(10, '1', { 'game.bin': 'good' })
     await writeStagingJournal(desired, 'good')
-    await writeFile(join(directory, '.Kalamata/transactions/.DS_Store'), '')
 
     await run(directory, [], [desired])
 

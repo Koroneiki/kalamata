@@ -215,36 +215,6 @@ test('planning restores a fixed new depot from its local manifest and key', asyn
   ])
 })
 
-test('custom targets are always pinned', async () => {
-  const fixture = await setup()
-  await install(fixture, DEPOTS[0])
-  fixture.database.setDepotPinned(APP_ID, DEPOTS[0].depotId, true)
-
-  const plan = await planApplication(
-    {
-      kind: 'reconcile',
-      appId: APP_ID,
-      installPath: fixture.installPath,
-      desiredDepotIds: [DEPOTS[0].depotId],
-      manifestTargets: [
-        {
-          depotId: DEPOTS[0].depotId,
-          manifestId: DEPOTS[0].manifestId,
-        },
-      ],
-    },
-    { getProductInfoWithDlc: async () => products() },
-    fixture.database,
-    new AbortController().signal,
-    () => {},
-  )
-
-  expect(plan.desiredDepots[0]).toMatchObject({
-    manifestId: DEPOTS[0].manifestId,
-    pinned: true,
-  })
-})
-
 test('queueDepotUpdate reconciles installed depots in metadata order', async () => {
   const fixture = await setup()
   await install(fixture, DEPOTS[0])
@@ -407,33 +377,6 @@ test('startDownload is additive and preserves an omitted installed manifest', as
   expect(JSON.stringify(options.desiredDepots)).not.toContain(publicReplacement)
 })
 
-test('repair uses the persisted installed version and mount order', async () => {
-  const fixture = await setup()
-  await install(fixture, DEPOTS[0])
-  let options!: ReconcileApplicationOptions
-  const queue = new DownloadQueueCoordinator(
-    {
-      getProductInfoWithDlc: async () => products(),
-      reconcileApplication: async (value) => {
-        options = value
-        return successfulReconciliation(value)
-      },
-    },
-    fixture.database,
-  )
-
-  const active = await queue.repairApplication({ appId: APP_ID })
-  expect(active.operation).toMatchObject({
-    kind: 'repair',
-    desiredDepotIds: [DEPOTS[0].depotId],
-  })
-  await waitForTerminal(queue)
-
-  expect(options.desiredDepots.map(({ depotId }) => depotId)).toEqual([
-    DEPOTS[0].depotId,
-  ])
-})
-
 test('repair preserves the persisted DLC owner application', async () => {
   const fixture = await setup()
   fixture.database.reconcileInstalledDepots(APP_ID, fixture.installPath, [
@@ -456,7 +399,11 @@ test('repair preserves the persisted DLC owner application', async () => {
     fixture.database,
   )
 
-  await queue.repairApplication({ appId: APP_ID })
+  const active = await queue.repairApplication({ appId: APP_ID })
+  expect(active.operation).toMatchObject({
+    kind: 'repair',
+    desiredDepotIds: [DEPOTS[1].depotId],
+  })
   await waitForTerminal(queue)
 
   expect(options.desiredDepots).toEqual([

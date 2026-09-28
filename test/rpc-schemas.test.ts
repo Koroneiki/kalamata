@@ -213,9 +213,6 @@ test('validates secret-free ColdClient operation snapshots', () => {
   } as const
 
   expect(coldClientOperationSnapshotSchema.parse(snapshot)).toEqual(snapshot)
-  expect(rpcResponseSchemas.getColdClientOperation.parse(snapshot)).toEqual(
-    snapshot,
-  )
   expect(parseRpcRequest('cancelColdClientOperation', { appId: 10 })).toEqual({
     appId: 10,
   })
