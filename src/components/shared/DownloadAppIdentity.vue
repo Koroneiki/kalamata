@@ -4,13 +4,14 @@ import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 
 import type { AppSummary } from '@/types/rpc'
+import { useFallbackImage } from '@/composables/use-fallback-image'
 
 const props = withDefaults(
   defineProps<{
     appId: number
     app?: AppSummary | null
     pending?: boolean
-    artwork?: 'wide' | 'compact'
+    artwork?: 'wide' | 'compact' | 'icon'
   }>(),
   {
     app: null,
@@ -21,11 +22,18 @@ const props = withDefaults(
 
 const artworkFailed = ref(false)
 const name = computed(() => props.app?.name ?? `App ${props.appId}`)
-const artworkUrl = computed(() => props.app?.artworkUrl ?? null)
+const { imageUrl: iconUrl, handleImageError } = useFallbackImage(
+  () => props.app?.iconUrls,
+)
+const artworkUrl = computed(() =>
+  props.artwork === 'icon' ? iconUrl.value : (props.app?.artworkUrl ?? null),
+)
 const artworkSize = computed(() =>
-  props.artwork === 'wide'
-    ? 'aspect-[46/21] w-32 sm:w-44'
-    : 'aspect-[46/21] w-24 sm:w-32',
+  props.artwork === 'icon'
+    ? 'size-8'
+    : props.artwork === 'wide'
+      ? 'aspect-[46/21] w-32 sm:w-44'
+      : 'aspect-[46/21] w-24 sm:w-32',
 )
 const artworkFallbackLabel = computed(() =>
   props.pending ? 'Loading artwork' : 'Artwork unavailable',
@@ -57,7 +65,9 @@ watch(artworkUrl, () => {
         class="size-full object-cover"
         :src="artworkUrl ?? undefined"
         :alt="`${name} artwork`"
-        @error="artworkFailed = true"
+        @error="
+          artwork === 'icon' ? handleImageError() : (artworkFailed = true)
+        "
       />
       <span
         v-else
@@ -77,7 +87,8 @@ watch(artworkUrl, () => {
       />
       <span
         v-else
-        class="block min-w-0 text-base font-semibold group-hover:underline group-hover:underline-offset-4"
+        class="block min-w-0 font-semibold group-hover:underline group-hover:underline-offset-4"
+        :class="artwork === 'icon' ? 'text-sm' : 'text-base'"
       >
         {{ name }}
       </span>

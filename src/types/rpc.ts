@@ -4,6 +4,7 @@ import type {
 } from './cold-client.ts'
 import type { BackgroundDownloadsSnapshot } from './background-downloads.ts'
 import type { RpcRequests } from './rpc-schemas.ts'
+import type { DownloadHistoryEntry } from './download-history.ts'
 
 export interface AppSummary {
   appId: number
@@ -254,6 +255,7 @@ export interface PendingDownload {
   installPath: string
   desiredDepotIds: number[]
   createdAt: number
+  error?: string
 }
 
 export type OperationPhase =
@@ -349,7 +351,13 @@ export interface DownloadQueueSnapshot {
   operation: OperationState
   pending: PendingDownload[]
   repairRequiredAppIds: number[]
+  issues: DownloadIssue[]
 }
+
+export type DownloadIssue = Extract<
+  OperationState,
+  { status: 'failed' | 'repair-required' }
+>
 
 export type CancelOperationResult =
   | { accepted: true }
@@ -380,6 +388,7 @@ export type AppRpc = {
       downloadQueueChanged: DownloadQueueSnapshot
       coldClientOperationChanged: ColdClientOperationSnapshot
       backgroundDownloadsChanged: BackgroundDownloadsSnapshot
+      downloadHistoryChanged: DownloadHistoryEntry[]
       applicationUpdateChanged: ApplicationUpdateStatus
       coldClientDependenciesChanged: ColdClientDependencyStatus
     }

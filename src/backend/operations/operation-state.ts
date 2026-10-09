@@ -73,7 +73,7 @@ export function isRecoverableOperationError(kind: OperationErrorKind): boolean {
 export function repairRequiredState(
   appId: number,
   installPath: string,
-): OperationState {
+): Extract<OperationState, { status: 'repair-required' }> {
   return {
     status: 'repair-required',
     appId,

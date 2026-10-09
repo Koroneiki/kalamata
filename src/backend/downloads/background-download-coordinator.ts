@@ -80,6 +80,7 @@ export class BackgroundDownloadCoordinator {
   constructor(
     userDataRoot: string,
     private readonly changed: (snapshot: BackgroundDownloadsSnapshot) => void,
+    private readonly finished: (job: BackgroundDownloadJob) => void = () => {},
   ) {
     this.#root = join(userDataRoot, 'background-downloads')
   }
@@ -515,6 +516,7 @@ export class BackgroundDownloadCoordinator {
           .map(({ error }) => error?.message ?? 'Background task failed')
           .join('\n')
       : null
+    this.finished({ ...record.state })
     this.notify()
     record.complete()
     this.startNext()

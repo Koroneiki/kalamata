@@ -5,6 +5,10 @@ import type {
   ColdClientOperationSnapshot,
 } from '@/types/cold-client'
 import type { BackgroundDownloadsSnapshot } from '@/types/background-downloads'
+import {
+  downloadHistorySchema,
+  type DownloadHistoryEntry,
+} from '@/types/download-history'
 import type {
   AppRpc,
   ApplicationUpdateStatus,
@@ -36,6 +40,7 @@ type ColdClientOperationListener = (
 ) => void
 
 const downloadQueueListeners = new Set<DownloadQueueListener>()
+const historyListeners = new Set<(entries: DownloadHistoryEntry[]) => void>()
 let latestDownloadQueue: DownloadQueueSnapshot | undefined
 let downloadQueueMessageSequence = 0
 const coldClientOperationListeners = new Set<ColdClientOperationListener>()
@@ -60,6 +65,11 @@ const rpc = Electroview.defineRPC<AppRpc>({
   handlers: {
     requests: {},
     messages: {
+      downloadHistoryChanged: (entries) => {
+        const result = downloadHistorySchema.safeParse(entries)
+        if (!result.success) return
+        for (const listener of historyListeners) listener(result.data)
+      },
       downloadQueueChanged: (snapshot) => {
         const result = downloadQueueSnapshotSchema.safeParse(snapshot)
         if (!result.success) return
@@ -121,6 +131,13 @@ export function subscribeToDownloadQueue(
 
 export function getDownloadQueueMessageSequence() {
   return downloadQueueMessageSequence
+}
+
+export function subscribeToDownloadHistory(
+  listener: (entries: DownloadHistoryEntry[]) => void,
+) {
+  historyListeners.add(listener)
+  return () => historyListeners.delete(listener)
 }
 
 export function subscribeToColdClientOperation(

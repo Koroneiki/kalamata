@@ -2,10 +2,8 @@ import { useQueryCache } from '@pinia/colada'
 import { defineStore } from 'pinia'
 import { onScopeDispose, shallowRef } from 'vue'
 import {
-  dismissBackgroundDownload,
   getBackgroundDownloads,
   prioritizeBackgroundDownload,
-  retryBackgroundDownload,
 } from '@/api/background-downloads'
 import {
   getBackgroundDownloadsMessageSequence,
@@ -91,8 +89,6 @@ export const useBackgroundDownloadsStore = defineStore(
       jobs,
       initialize,
       prioritize: prioritizeBackgroundDownload,
-      retry: retryBackgroundDownload,
-      dismiss: dismissBackgroundDownload,
     }
   },
 )

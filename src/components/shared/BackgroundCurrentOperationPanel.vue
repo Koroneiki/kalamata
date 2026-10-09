@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import { Download } from '@lucide/vue'
 
-import BackgroundDownloadIdentity from '@/components/shared/BackgroundDownloadIdentity.vue'
+import DownloadAppSummaryIdentity from '@/components/shared/DownloadAppSummaryIdentity.vue'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { useColdClientOperationStore } from '@/stores/cold-client-operation'
@@ -91,11 +91,18 @@ const percentage = computed(() => {
 
 <template>
   <div
-    class="bg-muted/60 grid min-w-0 gap-5 border-b px-4 py-5 sm:px-5 lg:grid-cols-[minmax(15rem,0.8fr)_minmax(20rem,1.2fr)] lg:items-center"
+    class="bg-muted/60 grid min-w-0 gap-3 border-b px-4 py-3 sm:px-5 lg:grid-cols-[minmax(15rem,0.8fr)_minmax(20rem,1.2fr)] lg:items-center"
   >
     <div class="min-w-0">
-      <BackgroundDownloadIdentity v-if="job.appId !== null" :job="job" />
-      <p v-else class="text-base font-semibold">{{ job.title }}</p>
+      <DownloadAppSummaryIdentity
+        v-if="job.appId !== null"
+        :app-id="job.appId"
+      />
+      <p v-else class="flex items-center gap-4 text-sm font-semibold">
+        <Download class="size-8 shrink-0 p-1.5" aria-hidden="true" />{{
+          job.title
+        }}
+      </p>
     </div>
     <div class="min-w-0">
       <div

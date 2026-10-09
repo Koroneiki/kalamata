@@ -180,6 +180,7 @@ test('accepted queue and repair intent identify only matching drafts to clear', 
       },
     ],
     repairRequiredAppIds: [],
+    issues: [],
   })
   for (const appId of accepted) drafts.clear(appId)
 

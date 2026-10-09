@@ -11,17 +11,11 @@ const active = computed(() =>
 const queued = computed(() =>
   downloads.jobs.filter((job) => job.status === 'queued'),
 )
-const history = computed(() =>
-  downloads.jobs
-    .filter((job) => job.status === 'completed' || job.status === 'failed')
-    .toReversed()
-    .sort((left, right) => (right.finishedAt ?? 0) - (left.finishedAt ?? 0)),
-)
 </script>
 
 <template>
   <section
-    v-if="downloads.jobs.length"
+    v-if="active || queued.length"
     class="mt-10"
     aria-labelledby="background-downloads-heading"
   >
@@ -52,25 +46,6 @@ const history = computed(() =>
       <ol class="divide-border divide-y">
         <BackgroundDownloadRow v-for="job in queued" :key="job.id" :job="job" />
       </ol>
-    </section>
-    <section
-      v-if="history.length"
-      class="mt-8"
-      aria-labelledby="background-history-heading"
-    >
-      <h3
-        id="background-history-heading"
-        class="border-b pb-3 text-lg font-semibold"
-      >
-        History
-      </h3>
-      <ul class="divide-border divide-y">
-        <BackgroundDownloadRow
-          v-for="job in history"
-          :key="job.id"
-          :job="job"
-        />
-      </ul>
     </section>
   </section>
 </template>

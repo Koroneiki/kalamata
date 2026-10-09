@@ -95,6 +95,46 @@ async function waitForCompletedApp(
   }
 }
 
+test('retains failures from multiple games until their existing retry path accepts new work', async () => {
+  const fixture = await setup()
+  const secondAppId = 30
+  const secondPath = join(fixture.root, 'second-failed-install')
+  await mkdir(secondPath)
+  fixture.database.addLibraryEntry(secondAppId)
+  fixture.database.reserveInstallPath(secondAppId, secondPath)
+  let fail = true
+  const queue = new DownloadQueueCoordinator(
+    {
+      getProductInfoWithDlc: async () => products(),
+      reconcileApplication: async (options) => {
+        if (fail) throw new Error('Download failed')
+        return successfulReconciliation(options)
+      },
+    },
+    fixture.database,
+  )
+  const request = {
+    appId: APP_ID,
+    installPath: fixture.installPath,
+    depotIds: [DEPOTS[0].depotId],
+  }
+  await queue.start(request)
+  await waitForTerminal(queue)
+  await queue.queueDepotUpdate({ appId: secondAppId, desiredDepotIds: [] })
+  await waitForTerminal(queue)
+  expect(queue.getDownloadQueue().issues?.map(({ appId }) => appId)).toEqual([
+    APP_ID,
+    secondAppId,
+  ])
+
+  fail = false
+  await queue.start(request)
+  await waitForTerminal(queue)
+  expect(queue.getDownloadQueue().issues?.map(({ appId }) => appId)).toEqual([
+    secondAppId,
+  ])
+})
+
 test('blocks new queue acceptance while an app is being removed', async () => {
   const fixture = await setup()
   const releaseRemoval = deferred<void>()

@@ -229,6 +229,7 @@ test('validates complete download queue snapshots', () => {
     downloadQueueSnapshotSchema.parse({
       operation: { status: 'idle' },
       repairRequiredAppIds: [20],
+      issues: [],
       pending: [
         {
           id: 'queue-item',
@@ -245,6 +246,7 @@ test('validates complete download queue snapshots', () => {
     downloadQueueSnapshotSchema.parse({
       operation: { status: 'idle' },
       repairRequiredAppIds: [],
+      issues: [],
       pending: [{ id: '', unexpected: true }],
     }),
   ).toThrow()
@@ -252,6 +254,7 @@ test('validates complete download queue snapshots', () => {
     downloadQueueSnapshotSchema.parse({
       operation: { status: 'idle' },
       repairRequiredAppIds: [20, 20],
+      issues: [],
       pending: [],
     }),
   ).toThrow()

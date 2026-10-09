@@ -1,4 +1,4 @@
-import type { BackgroundDownloadJob } from '@/types/background-downloads'
+import type { BackgroundDownloadJob } from '../types/background-downloads'
 
 const labels: Record<BackgroundDownloadJob['kind'], string> = {
   'application-update': 'Application update',

@@ -29,6 +29,7 @@ type InfoDiagnostic =
   | OperationLifecycleEvent
 
 type ErrorDiagnostic =
+  | { event: 'download-history.persistence-failed'; error: Error }
   | { event: 'depot-key-cache.initialization-failed'; error: Error }
   | { event: 'cold-client-dependencies.initialization-failed'; error: Error }
   | { event: 'cold-client-dependencies.cleanup-failed'; error: Error }

@@ -6,6 +6,7 @@ import {
   uniqueSteamIdsSchema,
 } from './schemas.ts'
 import { AVAILABLE_UPDATE_BATCH_SIZE } from './available-updates.ts'
+import { downloadHistorySchema } from './download-history.ts'
 import {
   coldClientConfigurationWarnings,
   coldClientDependencyIdSchema,
@@ -237,6 +238,22 @@ const operationErrorSchema = strict({
   kind: operationErrorKindSchema,
   message: z.string(),
 })
+const downloadIssueSchema = z.discriminatedUnion('status', [
+  strict({
+    status: z.literal('failed'),
+    kind: operationKindSchema,
+    appId: steamIdSchema,
+    installPath: z.string(),
+    desiredDepotIds: z.array(steamIdSchema),
+    error: operationErrorSchema,
+  }),
+  strict({
+    status: z.literal('repair-required'),
+    appId: steamIdSchema,
+    installPath: z.string(),
+    error: strict({ kind: z.literal('recovery'), message: z.string() }),
+  }),
+])
 export const operationStateSchema = z.discriminatedUnion('status', [
   strict({ status: z.literal('idle') }),
   activeOperationStateSchema,
@@ -265,20 +282,7 @@ export const operationStateSchema = z.discriminatedUnion('status', [
     desiredDepotIds: z.array(steamIdSchema),
     error: strict({ kind: z.literal('cancellation'), message: z.string() }),
   }),
-  strict({
-    status: z.literal('failed'),
-    kind: operationKindSchema,
-    appId: steamIdSchema,
-    installPath: z.string(),
-    desiredDepotIds: z.array(steamIdSchema),
-    error: operationErrorSchema,
-  }),
-  strict({
-    status: z.literal('repair-required'),
-    appId: steamIdSchema,
-    installPath: z.string(),
-    error: strict({ kind: z.literal('recovery'), message: z.string() }),
-  }),
+  ...downloadIssueSchema.options,
 ])
 const pendingDownloadSchema = strict({
   id: z.string().min(1),
@@ -287,11 +291,13 @@ const pendingDownloadSchema = strict({
   installPath: z.string().min(1),
   desiredDepotIds: uniqueSteamIdsSchema,
   createdAt: z.number().int().nonnegative(),
+  error: z.string().optional(),
 })
 export const downloadQueueSnapshotSchema = strict({
   operation: operationStateSchema,
   pending: z.array(pendingDownloadSchema),
   repairRequiredAppIds: uniqueSteamIdsSchema,
+  issues: z.array(downloadIssueSchema),
 })
 export const backgroundDownloadsSnapshotSchema = strict({
   jobs: z.array(
@@ -550,6 +556,9 @@ const rpcRequestSchemas = {
   resumeOperation: emptySchema,
   getDownloadQueue: emptySchema,
   getBackgroundDownloads: emptySchema,
+  getDownloadHistory: emptySchema,
+  clearDownloadHistory: emptySchema,
+  dismissDownloadHistory: strict({ id: z.string().min(1) }),
   prioritizeBackgroundDownload: strict({ id: z.string().uuid() }),
   retryBackgroundDownload: strict({ id: z.string().uuid() }),
   dismissBackgroundDownload: strict({ id: z.string().uuid() }),
@@ -666,6 +675,9 @@ export const rpcResponseSchemas = {
   ]),
   getDownloadQueue: downloadQueueSnapshotSchema,
   getBackgroundDownloads: backgroundDownloadsSnapshotSchema,
+  getDownloadHistory: downloadHistorySchema,
+  clearDownloadHistory: z.void(),
+  dismissDownloadHistory: z.void(),
   prioritizeBackgroundDownload: z.boolean(),
   retryBackgroundDownload: z.string().uuid(),
   dismissBackgroundDownload: z.boolean(),

@@ -32,8 +32,12 @@ const busy = computed(() => props.removing || props.prioritizing)
         :pending="isPending"
         artwork="wide"
       />
-      <p v-if="error" class="text-destructive mt-2 text-sm" role="alert">
-        {{ error }}
+      <p
+        v-if="error || item.error"
+        class="text-destructive mt-2 text-sm"
+        role="alert"
+      >
+        {{ error || item.error }}
       </p>
     </div>
     <div class="flex items-center justify-end gap-2">
@@ -45,7 +49,7 @@ const busy = computed(() => props.removing || props.prioritizing)
         @click="$emit('download')"
       >
         <Download aria-hidden="true" />
-        {{ prioritizing ? 'Starting...' : 'Download' }}
+        {{ prioritizing ? 'Starting...' : item.error ? 'Retry' : 'Download' }}
       </Button>
       <Button
         type="button"

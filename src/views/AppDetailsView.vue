@@ -276,7 +276,7 @@ const releaseDate = computed(() => {
 
 const { operationForApp, operationFinished } = useAppOperationDisplay({
   appId,
-  operationState: () => operation.state,
+  operationState: () => operation.stateForApp(appId.value),
   selectedPath,
 })
 const hasDepotAdditionsOrRemovals = computed(() =>

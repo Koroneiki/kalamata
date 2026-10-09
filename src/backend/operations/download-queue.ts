@@ -123,6 +123,17 @@ export type OperationLifecycleEvent =
       reusedLocalBytes: string
     }
   | {
+      event: 'operation.failed'
+      operationId: string
+      transactionId?: string
+      appId: number
+      kind: ApplicationPlanRequest['kind']
+      phase: ActiveOperationState['phase']
+      networkBytes: string
+      reusedLocalBytes: string
+      error: string
+    }
+  | {
       event: 'operation.suspended'
       operationId: string
       transactionId?: string
@@ -152,7 +163,12 @@ export class DownloadQueueCoordinator {
   #pausing = false
   #cancelRequested = false
   readonly #repairRequirements = new Map<number, string>()
-  readonly #queuePreparationFailures = new Set<string>()
+  // Keep failures visible on their game page and in Next up after another game starts.
+  readonly #failedOperations = new Map<
+    number,
+    Extract<OperationState, { status: 'failed' }>
+  >()
+  readonly #queuePreparationFailures = new Map<string, string>()
   readonly #removingQueueItems = new Set<string>()
 
   constructor(
@@ -181,8 +197,23 @@ export class DownloadQueueCoordinator {
         .getApplicationQueueItems()
         // The displaced row mirrors current work until pause transfers ownership.
         .filter(({ id }) => id !== this.#displacedQueueItemId)
-        .map(queueItemSnapshot),
+        .map((item) => ({
+          ...queueItemSnapshot(item),
+          error: this.#queuePreparationFailures.get(item.id),
+        })),
       repairRequiredAppIds: [...this.#repairRequirements.keys()],
+      issues: [
+        ...this.#failedOperations.values(),
+        ...[...this.#repairRequirements].map(([appId, path]) =>
+          repairRequiredState(appId, path),
+        ),
+      ].filter(
+        (state) =>
+          !this.database.hasQueuedApplication(state.appId) &&
+          !(
+            this.#state.status === 'active' && this.#state.appId === state.appId
+          ),
+      ),
     }
   }
 
@@ -206,7 +237,10 @@ export class DownloadQueueCoordinator {
     validateId(appId, 'appId')
     return this.serializeAcceptance(async () => {
       this.assertAppAvailable(appId)
-      return action()
+      const result = await action()
+      this.#failedOperations.delete(appId)
+      this.emitState()
+      return result
     })
   }
 
@@ -345,7 +379,7 @@ export class DownloadQueueCoordinator {
         const removed = this.database.removeApplicationQueueItem(id)
         if (!removed) throw new Error('Queued operation was not found')
       } catch (error) {
-        this.#queuePreparationFailures.add(id)
+        this.#queuePreparationFailures.set(id, operationError(error).message)
         this.emitState()
         throw error
       } finally {
@@ -598,6 +632,7 @@ export class DownloadQueueCoordinator {
     reserveInstallPath = false,
   ): Promise<DownloadQueueSnapshot> {
     this.database.appendApplicationQueueItem(item, reserveInstallPath)
+    this.#failedOperations.delete(item.appId)
     this.emitState()
     const failure = await this.pump()
     if (failure?.itemId === item.id) throw failure.error
@@ -608,6 +643,7 @@ export class DownloadQueueCoordinator {
     item: ApplicationQueueItem,
   ): Promise<DownloadQueueSnapshot> {
     this.database.appendApplicationQueueItem(item)
+    this.#failedOperations.delete(item.appId)
     return this.prioritizeQueueItem(item.id)
   }
 
@@ -812,11 +848,17 @@ export class DownloadQueueCoordinator {
         disposition.paused,
         disposition.shuttingDown,
       ].includes(true)
-    )
+    ) {
       this.reportError(
         diagnosticOperationError(failure),
         this.failureContext(request),
       )
+      this.reportLifecycle({
+        event: 'operation.failed',
+        ...this.failureContext(request),
+        error: disposition.serialized.message,
+      })
+    }
     if (disposition.cancelled && !disposition.commitReady) {
       await discardPrecommitApplicationTransaction(request.installPath)
       this.#currentRequest = undefined
@@ -830,8 +872,10 @@ export class DownloadQueueCoordinator {
       activeState,
       disposition,
     )
-    if (disposition.commitReady)
+    if (disposition.commitReady) {
+      this.#failedOperations.delete(request.appId)
       this.#repairRequirements.set(request.appId, request.installPath)
+    }
     if (
       ![
         disposition.cancelled,
@@ -925,7 +969,7 @@ export class DownloadQueueCoordinator {
         status: 'resumable',
         error: disposition.serialized,
       }
-    return {
+    const failed: Extract<OperationState, { status: 'failed' }> = {
       status: 'failed',
       kind: request.kind,
       appId: request.appId,
@@ -933,6 +977,8 @@ export class DownloadQueueCoordinator {
       desiredDepotIds: activeState.desiredDepotIds,
       error: disposition.serialized,
     }
+    this.#failedOperations.set(request.appId, failed)
+    return failed
   }
 
   private async runSafely(
@@ -942,13 +988,19 @@ export class DownloadQueueCoordinator {
     try {
       await this.run(request, signal)
     } catch (error) {
-      this.reportError(
-        diagnosticOperationError(operationError(error)),
-        this.failureContext(request),
-      )
+      const failure = operationError(error)
+      const context = this.failureContext(request)
+      this.reportError(diagnosticOperationError(failure), context)
+      if (!isOperationShutdown(signal))
+        this.reportLifecycle({
+          event: 'operation.failed',
+          ...context,
+          error: serializeOperationError(failure).message,
+        })
       this.#lifecycleOperationId = undefined
       this.#currentRequest = undefined
       this.#repairRequirements.set(request.appId, request.installPath)
+      this.#failedOperations.delete(request.appId)
       this.#state = repairRequiredState(request.appId, request.installPath)
       this.#progressQueued = false
       this.emitState()
@@ -1063,7 +1115,7 @@ export class DownloadQueueCoordinator {
         const item = this.database.claimFirstApplicationQueueItem(
           new Set(this.#repairRequirements.keys()),
           new Set([
-            ...this.#queuePreparationFailures,
+            ...this.#queuePreparationFailures.keys(),
             ...this.#removingQueueItems,
             ...(this.#displacedQueueItemId ? [this.#displacedQueueItemId] : []),
           ]),
@@ -1082,7 +1134,7 @@ export class DownloadQueueCoordinator {
         } catch (error) {
           const operationFailure = operationError(error)
           this.database.restoreApplicationQueueItemAtFront(item)
-          this.#queuePreparationFailures.add(item.id)
+          this.#queuePreparationFailures.set(item.id, operationFailure.message)
           firstFailure ??= { itemId: item.id, error: operationFailure }
           this.emitState()
           this.reportError(diagnosticOperationError(operationFailure), {
@@ -1093,6 +1145,17 @@ export class DownloadQueueCoordinator {
             networkBytes: '0',
             reusedLocalBytes: '0',
           })
+          if (!this.#shuttingDown)
+            this.reportLifecycle({
+              event: 'operation.failed',
+              operationId: item.id,
+              appId: item.appId,
+              kind: item.kind,
+              phase: 'planning',
+              networkBytes: '0',
+              reusedLocalBytes: '0',
+              error: serializeOperationError(operationFailure).message,
+            })
           this.#lifecycleOperationId = undefined
         }
       }

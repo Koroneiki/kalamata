@@ -25,6 +25,7 @@ import {
 import { useDepotOperationDraftStore } from '@/stores/depot-operation-drafts'
 import type {
   DownloadQueueSnapshot,
+  DownloadIssue,
   OperationState,
   PendingDownload,
   QueueDepotUpdateRequest,
@@ -49,6 +50,7 @@ export const useOperationStore = defineStore('operation', () => {
   const depotDrafts = useDepotOperationDraftStore()
   const state = shallowRef<OperationState>({ status: 'idle' })
   const pending = shallowRef<PendingDownload[]>([])
+  const issues = shallowRef<DownloadIssue[]>([])
   const repairRequiredAppIds = shallowRef<number[]>([])
   const initialized = ref(false)
   const initializationError = ref<string | null>(null)
@@ -78,6 +80,7 @@ export const useOperationStore = defineStore('operation', () => {
     const previous = state.value
     state.value = next
     pending.value = snapshot.pending
+    issues.value = snapshot.issues
     repairRequiredAppIds.value = snapshot.repairRequiredAppIds
     for (const appId of acceptedIntentAppIds(snapshot)) depotDrafts.clear(appId)
     if (
@@ -179,6 +182,14 @@ export const useOperationStore = defineStore('operation', () => {
     return repairRequiredAppIds.value.includes(appId)
   }
 
+  function stateForApp(appId: number): OperationState {
+    if (state.value.status !== 'idle' && state.value.appId === appId)
+      return state.value
+    return (
+      issues.value.find((issue) => issue.appId === appId) ?? { status: 'idle' }
+    )
+  }
+
   async function removePending(id: string) {
     const sequence = getDownloadQueueMessageSequence()
     const result = await removeQueuedOperation(id)
@@ -196,6 +207,8 @@ export const useOperationStore = defineStore('operation', () => {
   return {
     state,
     pending,
+    issues,
+    stateForApp,
     initialized,
     initializationError,
     initialize,

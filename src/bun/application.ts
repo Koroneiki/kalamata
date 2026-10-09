@@ -20,6 +20,7 @@ import { ColdClientInterfaceGenerator } from '../backend/cold-client/interface-g
 import { ColdClientReplacementService } from '../backend/cold-client/replacement.ts'
 import { ColdClientService } from '../backend/cold-client/service.ts'
 import { DownloadQueueCoordinator } from '../backend/operations/download-queue.ts'
+import { DownloadHistory } from '../backend/downloads/download-history.ts'
 import {
   BackgroundDownloadCoordinator,
   type JobContext,
@@ -62,11 +63,21 @@ async function getMainViewUrl(): Promise<string> {
 
 const database = await openKalamataDatabase(Utils.paths.userData)
 let rpcReady = false
+const downloadHistory = new DownloadHistory(
+  Utils.paths.userData,
+  (entries) => {
+    if (rpcReady) rpc.send.downloadHistoryChanged(entries)
+  },
+  (error) =>
+    diagnostics.error({ event: 'download-history.persistence-failed', error }),
+)
+await downloadHistory.initialize()
 const backgroundDownloads = new BackgroundDownloadCoordinator(
   Utils.paths.userData,
   (snapshot) => {
     if (rpcReady) rpc.send.backgroundDownloadsChanged(snapshot)
   },
+  (job) => downloadHistory.recordJob(job),
 )
 await backgroundDownloads.initialize()
 const steam = new SteamService((appIds, countryCode, error) => {
@@ -268,6 +279,15 @@ const rpc = BrowserView.defineRPC<AppRpc>({
       getBackgroundDownloads() {
         return backgroundDownloads.snapshot()
       },
+      getDownloadHistory() {
+        return downloadHistory.snapshot()
+      },
+      clearDownloadHistory() {
+        return downloadHistory.clear()
+      },
+      dismissDownloadHistory({ id }) {
+        return downloadHistory.dismiss(id)
+      },
       prioritizeBackgroundDownload({ id }) {
         return backgroundDownloads.prioritize(id)
       },
@@ -408,7 +428,10 @@ queue = new DownloadQueueCoordinator(
   },
   (error, context) =>
     diagnostics.error({ event: 'operation.failed', error, ...context }),
-  (event) => diagnostics.info(event),
+  (event) => {
+    if (event.event !== 'operation.failed') diagnostics.info(event)
+    downloadHistory.recordOperation(event)
+  },
 )
 
 let shutdownStarted = false
@@ -467,6 +490,7 @@ function shutdownApplicationServices(): Promise<void> {
       const failures = results
         .filter((result) => result.status === 'rejected')
         .map((result) => result.reason)
+      await downloadHistory.flush()
       if (failures.length > 0)
         throw new AggregateError(failures, 'Service shutdown failed')
     } finally {
