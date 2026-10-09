@@ -50,9 +50,11 @@ At startup, Kalamata rolls forward each unambiguous commit-ready transaction. A 
 
 ## Background jobs
 
-The **Jobs** section on the **Downloads** page has its own in-memory queue, separate from the persistent application-operation queue above. It shows the current job, queued jobs, and completed or failed jobs with timestamps. Jobs include manifest and depot-key acquisition, manual first ColdClient dependency downloads and automatic dependency updates, per-game ColdClient work, and automatically staged application updates. Only one background job runs at a time; another queued job can be moved next without interrupting the current one. Manifest acquisitions for the same game share one row with cumulative progress while retaining separate results for each manifest.
+The **Jobs** section on the **Downloads** page shows active and queued work from its own in-memory queue, separate from the persistent application-operation queue above. Jobs include manifest and depot-key acquisition, manual first ColdClient dependency downloads and automatic dependency updates, per-game ColdClient work, and automatically staged application updates. Only one background job runs at a time. Jobs is read-only; retry work from the relevant game or Settings control. Manifest acquisitions for the same game share one row with cumulative progress while retaining separate results for each manifest.
 
-Failed manifest and depot-key jobs can be retried from Jobs. Dependency and application-update checks can be retried from Settings, and per-game ColdClient work from the game. Finished jobs can be dismissed. This queue and its history are not persisted: after an application restart, incomplete jobs do not resume and their temporary workspaces are removed. This does not change the recovery guarantees of the depot-operation queue.
+The **History** section combines finished background jobs with completed, cancelled, and failed game operations. It shows timestamps, transferred bytes, operation details, and errors, newest first. Entries can be dismissed individually or cleared together. History is persisted in `history/activity-history.json` inside the application data directory. Cached manifest reads do not create new download entries. Unresolved game failures remain visible in **Next up** independently of history.
+
+The background queue itself is not persisted: after an application restart, incomplete jobs do not resume and their temporary workspaces are removed. Dependency and application-update checks can be retried from Settings, and resource acquisition or per-game ColdClient work from the game. This does not change the recovery guarantees of the depot-operation queue.
 
 ## Update discovery
 
