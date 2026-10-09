@@ -14,6 +14,8 @@ function completedOperation(appId: number): OperationLifecycleEvent {
     transactionId: null,
     appId,
     kind: 'download',
+    desiredDepotIds: [1, 2, 3],
+    depotCount: 3,
     filesAdded: 1,
     filesModified: 0,
     filesDeleted: 0,
@@ -63,6 +65,8 @@ test('persists mixed job and game history, retaining only the newest 100 entries
       appId: 100,
       compact: false,
       transferredBytes: '1024',
+      operation: 'install',
+      depotCount: 3,
     })
     expect(restored.snapshot().at(-1)?.appId).toBe(2)
   } finally {
@@ -120,7 +124,7 @@ test('dismissing one entry persists without deleting other entries or subsequent
   }
 })
 
-test('history saved before job details were retained stays readable and dismissible', async () => {
+test('history saved before job and operation details stays readable and dismissible', async () => {
   const root = await mkdtemp(join(tmpdir(), 'kalamata-history-legacy-'))
   const history = new DownloadHistory(root)
   try {
@@ -134,13 +138,15 @@ test('history saved before job details were retained stays readable and dismissi
       error: null,
       finishedAt: 1,
     } as const
+    const gameEntry = { ...entry, id: 'legacy-game', compact: false }
     await writeFile(
       join(root, 'activity-history.json'),
-      JSON.stringify([entry]),
+      JSON.stringify([entry, gameEntry]),
     )
     await history.initialize()
-    expect(history.snapshot()).toEqual([entry])
+    expect(history.snapshot()).toEqual([entry, gameEntry])
     await history.dismiss(entry.id)
+    await history.dismiss(gameEntry.id)
     const restored = new DownloadHistory(root)
     await restored.initialize()
     expect(restored.snapshot()).toEqual([])
@@ -202,6 +208,8 @@ test('damaged cosmetic history does not block new entries; pauses are not finish
       operationId: '1',
       appId: 1,
       kind: 'download',
+      desiredDepotIds: [1, 2, 3],
+      depotCount: 3,
       phase: 'downloading',
       networkBytes: '3',
       reusedLocalBytes: '0',
@@ -215,6 +223,11 @@ test('damaged cosmetic history does not block new entries; pauses are not finish
       'completed',
       'failed',
     ])
+    expect(restored.snapshot()[1]).toMatchObject({
+      operation: 'install',
+      depotCount: 3,
+      status: 'failed',
+    })
   } finally {
     await history.flush()
     await removeTemporaryDirectory(root)

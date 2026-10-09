@@ -74,7 +74,6 @@ export class BackgroundDownloadCoordinator {
   readonly #pending = new Map<string, JobTask>()
   readonly #groups = new Map<string, JobRecord>()
   #running: JobRecord | undefined
-  #priorityId: string | undefined
   #accepting = false
 
   constructor(
@@ -99,10 +98,6 @@ export class BackgroundDownloadCoordinator {
         manifestProgress: { ...state.manifestProgress },
       }),
     }))
-    const priority = jobs.findIndex(({ id }) => id === this.#priorityId)
-    const firstQueued = jobs.findIndex(({ status }) => status === 'queued')
-    if (priority > firstQueued && firstQueued !== -1)
-      jobs.splice(firstQueued, 0, jobs.splice(priority, 1)[0]!)
     return { jobs }
   }
 
@@ -168,14 +163,6 @@ export class BackgroundDownloadCoordinator {
         : undefined
     if (!retry) throw new Error('Download cannot be retried')
     return retry.state.id
-  }
-
-  prioritize(id: string): boolean {
-    const record = this.#jobs.get(id)
-    if (!record || record.state.status !== 'queued') return false
-    this.#priorityId = id
-    this.notify()
-    return true
   }
 
   dismiss(id: string): boolean {
@@ -524,14 +511,10 @@ export class BackgroundDownloadCoordinator {
 
   private startNext() {
     if (this.#running || !this.#accepting) return
-    const priority = this.#priorityId
-      ? this.#jobs.get(this.#priorityId)
-      : undefined
-    const next =
-      (priority?.state.status === 'queued' ? priority : undefined) ??
-      [...this.#jobs.values()].find(({ state }) => state.status === 'queued')
+    const next = [...this.#jobs.values()].find(
+      ({ state }) => state.status === 'queued',
+    )
     if (!next) return
-    this.#priorityId = undefined
     this.#running = next
     next.state.status = 'active'
     this.notify()

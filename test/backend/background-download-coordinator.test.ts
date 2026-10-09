@@ -66,7 +66,6 @@ test('shares a semantic job, runs queued downloads in order, and retries failure
       },
     })
     const id = coordinator.snapshot().jobs[0]!.id
-    const thirdId = coordinator.snapshot().jobs[2]!.id
     expect(coordinator.snapshot().jobs.map(({ status }) => status)).toEqual([
       'active',
       'queued',
@@ -77,9 +76,6 @@ test('shares a semantic job, runs queued downloads in order, and retries failure
         .snapshot()
         .jobs.every(({ finishedAt }) => finishedAt === null),
     ).toBe(true)
-    expect(coordinator.prioritize(thirdId)).toBe(true)
-    expect(coordinator.snapshot().jobs[1]?.id).toBe(thirdId)
-    expect(coordinator.snapshot().jobs[0]?.status).toBe('active')
     while (coordinator.snapshot().jobs[0]?.source !== 'Hubcap API')
       await Bun.sleep(1)
     expect(coordinator.snapshot().jobs[0]).toMatchObject({
@@ -91,7 +87,7 @@ test('shares a semantic job, runs queued downloads in order, and retries failure
     await expect(first).rejects.toThrow('Network unavailable')
     expect(await second).toBe('installed')
     expect(await third).toBe('installed')
-    expect(order).toEqual(['third', 'second'])
+    expect(order).toEqual(['second', 'third'])
     expect(coordinator.snapshot().jobs[0]!.status).toBe('failed')
     expect(coordinator.snapshot().jobs[0]!.finishedAt).toBeGreaterThanOrEqual(
       beforeFinish,

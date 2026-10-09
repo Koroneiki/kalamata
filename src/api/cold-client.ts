@@ -61,7 +61,3 @@ export function removeColdClient(appId: number) {
 export function getColdClientOperation() {
   return request('getColdClientOperation', {})
 }
-
-export function cancelColdClientOperation(appId: number) {
-  return request('cancelColdClientOperation', { appId })
-}

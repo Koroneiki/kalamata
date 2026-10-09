@@ -288,9 +288,6 @@ const rpc = BrowserView.defineRPC<AppRpc>({
       dismissDownloadHistory({ id }) {
         return downloadHistory.dismiss(id)
       },
-      prioritizeBackgroundDownload({ id }) {
-        return backgroundDownloads.prioritize(id)
-      },
       retryBackgroundDownload({ id }) {
         return backgroundDownloads.retry(id)
       },

@@ -83,6 +83,8 @@ export interface OperationFailureContext {
   phase: ActiveOperationState['phase']
   networkBytes: string
   reusedLocalBytes: string
+  desiredDepotIds?: number[]
+  depotCount?: number
 }
 
 export type OperationLifecycleEvent =
@@ -111,6 +113,8 @@ export type OperationLifecycleEvent =
       filesDeleted: number
       networkBytes: string
       reusedLocalBytes: string
+      desiredDepotIds?: number[]
+      depotCount?: number
     }
   | {
       event: 'operation.cancelled'
@@ -121,6 +125,8 @@ export type OperationLifecycleEvent =
       phase: ActiveOperationState['phase']
       networkBytes: string
       reusedLocalBytes: string
+      desiredDepotIds?: number[]
+      depotCount?: number
     }
   | {
       event: 'operation.failed'
@@ -132,6 +138,8 @@ export type OperationLifecycleEvent =
       networkBytes: string
       reusedLocalBytes: string
       error: string
+      desiredDepotIds?: number[]
+      depotCount?: number
     }
   | {
       event: 'operation.suspended'
@@ -159,6 +167,7 @@ export class DownloadQueueCoordinator {
   #lifecycleOperationId: string | undefined
   #progressQueued = false
   #currentRequest: ApplicationPlanRequest | undefined
+  #historyDepotCount: number | undefined
   #displacedQueueItemId: string | undefined
   #pausing = false
   #cancelRequested = false
@@ -436,6 +445,8 @@ export class DownloadQueueCoordinator {
           phase: state.phase,
           networkBytes: state.networkBytes,
           reusedLocalBytes: state.reusedLocalBytes,
+          desiredDepotIds: [...state.desiredDepotIds],
+          depotCount: this.#historyDepotCount,
         })
         this.#lifecycleOperationId = undefined
         this.emitState()
@@ -579,6 +590,7 @@ export class DownloadQueueCoordinator {
     this.#cancelRequested = false
     this.#currentRequest = request
     this.#transactionId = undefined
+    this.#historyDepotCount = undefined
     const runGeneration = ++this.#runGeneration
     this.#progressQueued = false
     this.reportOperationStarted(request)
@@ -781,6 +793,20 @@ export class DownloadQueueCoordinator {
           this.#state = { ...this.#state, desiredDepotIds: depotIds }
       },
     )
+    // Count changed, added and removed depots, not unchanged depots retained in
+    // the final installation. Repair verifies every desired depot instead.
+    const installedById = new Map(
+      installedDepots.map((depot) => [depot.depotId, depot.manifestId]),
+    )
+    const desiredIds = new Set(desiredDepots.map(({ depotId }) => depotId))
+    this.#historyDepotCount =
+      request.kind === 'repair'
+        ? desiredDepots.length
+        : desiredDepots.filter(
+            (depot) => installedById.get(depot.depotId) !== depot.manifestId,
+          ).length +
+          installedDepots.filter(({ depotId }) => !desiredIds.has(depotId))
+            .length
     const result = await this.steam.reconcileApplication({
       kind: request.kind,
       appId: request.appId,
@@ -828,6 +854,8 @@ export class DownloadQueueCoordinator {
       filesDeleted: result.filesDeleted,
       networkBytes: result.networkBytes,
       reusedLocalBytes: result.reusedLocalBytes,
+      desiredDepotIds: completedState.desiredDepotIds,
+      depotCount: this.#historyDepotCount,
     })
     this.#lifecycleOperationId = undefined
   }
@@ -1154,6 +1182,7 @@ export class DownloadQueueCoordinator {
               phase: 'planning',
               networkBytes: '0',
               reusedLocalBytes: '0',
+              desiredDepotIds: [...item.depotIds],
               error: serializeOperationError(operationFailure).message,
             })
           this.#lifecycleOperationId = undefined
@@ -1236,6 +1265,8 @@ export class DownloadQueueCoordinator {
       phase: state.phase,
       networkBytes: state.networkBytes,
       reusedLocalBytes: state.reusedLocalBytes,
+      desiredDepotIds: [...state.desiredDepotIds],
+      depotCount: this.#historyDepotCount,
     }
   }
 
@@ -1263,6 +1294,9 @@ export class DownloadQueueCoordinator {
         phase: 'planning',
         networkBytes: '0',
         reusedLocalBytes: '0',
+        desiredDepotIds: [
+          ...(request.desiredDepotIds ?? request.requestedDepotIds ?? []),
+        ],
       }
     return this.lifecycleContext(request, state)
   }

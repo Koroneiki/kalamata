@@ -1,12 +1,28 @@
 <script setup lang="ts">
 import { Download, X } from '@lucide/vue'
+import { computed } from 'vue'
 import DownloadAppSummaryIdentity from '@/components/shared/DownloadAppSummaryIdentity.vue'
 import { Button } from '@/components/ui/button'
 import type { DownloadHistoryEntry } from '@/types/download-history'
 import { formatBytes } from '@/utils/bytes'
 
-defineProps<{ entry: DownloadHistoryEntry; dismissing: boolean }>()
+const props = defineProps<{
+  entry: DownloadHistoryEntry
+  dismissing: boolean
+}>()
 defineEmits<{ dismiss: [] }>()
+const operationLabels = {
+  install: { completed: 'Installed', action: 'Install' },
+  update: { completed: 'Updated', action: 'Update' },
+  uninstall: { completed: 'Uninstalled', action: 'Uninstall' },
+  repair: { completed: 'Verified', action: 'Verification' },
+}
+const statusLabel = computed(() => {
+  const { operation, status } = props.entry
+  if (!operation) return status
+  const label = operationLabels[operation]
+  return status === 'completed' ? label.completed : `${label.action} ${status}`
+})
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
   timeStyle: 'short',
@@ -41,7 +57,11 @@ const dateFormatter = new Intl.DateTimeFormat(undefined, {
           <template v-if="entry.description"
             >{{ entry.description }} ·
           </template>
-          <span class="capitalize">{{ entry.status }}</span>
+          <span class="capitalize">{{ statusLabel }}</span>
+          <template v-if="entry.depotCount != null">
+            · {{ entry.depotCount }}
+            {{ entry.depotCount === 1 ? 'Depot' : 'Depots' }}</template
+          >
           <template
             v-if="entry.transferredBytes !== '0' || entry.totalBytes != null"
           >

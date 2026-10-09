@@ -11,6 +11,17 @@ import type { OperationLifecycleEvent } from '../operations/download-queue.ts'
 import { writeDurableJson } from '../filesystem/durable-json.ts'
 import { backgroundDownloadLabel } from '../../utils/background-downloads.ts'
 
+const operationStatuses = {
+  'operation.completed': 'completed',
+  'operation.cancelled': 'cancelled',
+  'operation.failed': 'failed',
+} as const
+const historyOperations = {
+  download: 'install',
+  reconcile: 'update',
+  repair: 'repair',
+} as const
+
 export class DownloadHistory {
   readonly #path: string
   #entries: DownloadHistoryEntry[] = []
@@ -79,12 +90,12 @@ export class DownloadHistory {
       appId: event.appId,
       title: `App ${event.appId}`,
       compact: false,
-      status:
-        event.event === 'operation.completed'
-          ? 'completed'
-          : event.event === 'operation.cancelled'
-            ? 'cancelled'
-            : 'failed',
+      operation:
+        event.kind === 'reconcile' && event.desiredDepotIds?.length === 0
+          ? 'uninstall'
+          : historyOperations[event.kind],
+      depotCount: event.depotCount,
+      status: operationStatuses[event.event],
       transferredBytes: event.networkBytes,
       error: event.event === 'operation.failed' ? event.error : null,
       finishedAt: Date.now(),

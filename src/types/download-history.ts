@@ -7,9 +7,11 @@ const downloadHistoryEntrySchema = z.strictObject({
   id: z.string().min(1),
   appId: steamIdSchema.nullable(),
   title: z.string(),
-  // Older history files did not retain job details; keep those entries readable.
+  // Optional details keep history saved before these fields were added readable.
   description: z.string().optional(),
   totalBytes: z.string().regex(/^\d+$/u).nullable().optional(),
+  operation: z.enum(['install', 'update', 'uninstall', 'repair']).optional(),
+  depotCount: z.number().int().nonnegative().safe().optional(),
   compact: z.boolean(),
   status: z.enum(['completed', 'failed', 'cancelled']),
   transferredBytes: z.string().regex(/^\d+$/u),

@@ -3,6 +3,7 @@ import { mkdir, realpath, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ProductInfoResult } from '../../../src/backend/steam/types.ts'
 import { getResumableApplicationTransaction } from '../../../src/backend/depot/install/transaction/recovery.ts'
+import { DownloadHistory } from '../../../src/backend/downloads/download-history.ts'
 import {
   DownloadQueueCoordinator,
   type OperationLifecycleEvent,
@@ -81,7 +82,61 @@ test('reports correlated operation lifecycle totals', async () => {
     filesDeleted: 3,
     networkBytes: '10',
     reusedLocalBytes: '20',
+    desiredDepotIds: [DEPOTS[0].depotId],
+    depotCount: 1,
   })
+})
+
+test('history retains operation outcomes and only counts affected depots', async () => {
+  const fixture = await setup()
+  const history = new DownloadHistory(fixture.root)
+  await history.initialize()
+  const queue = new DownloadQueueCoordinator(
+    {
+      getProductInfoWithDlc: async () => products(),
+      reconcileApplication: successfulReconciliation,
+    },
+    fixture.database,
+    () => {},
+    () => {},
+    (event) => history.recordOperation(event),
+  )
+  try {
+    await queue.start({
+      appId: APP_ID,
+      installPath: fixture.installPath,
+      depotIds: DEPOTS.map(({ depotId }) => depotId),
+    })
+    await waitForTerminal(queue)
+    await queue.queueDepotUpdate({
+      appId: APP_ID,
+      desiredDepotIds: [DEPOTS[0].depotId],
+    })
+    await waitForTerminal(queue)
+    await queue.repairApplication({ appId: APP_ID })
+    await waitForTerminal(queue)
+    await queue.queueDepotUpdate({ appId: APP_ID, desiredDepotIds: [] })
+    await waitForTerminal(queue)
+    await history.flush()
+
+    const restored = new DownloadHistory(fixture.root)
+    await restored.initialize()
+    expect(
+      restored.snapshot().map(({ operation, depotCount, status }) => ({
+        operation,
+        depotCount,
+        status,
+      })),
+    ).toEqual([
+      { operation: 'uninstall', depotCount: 1, status: 'completed' },
+      { operation: 'repair', depotCount: 1, status: 'completed' },
+      { operation: 'update', depotCount: 1, status: 'completed' },
+      { operation: 'install', depotCount: 2, status: 'completed' },
+    ])
+  } finally {
+    await queue.shutdown()
+    await history.flush()
+  }
 })
 
 async function waitForCompletedApp(

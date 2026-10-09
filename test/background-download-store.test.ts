@@ -45,7 +45,6 @@ test('a newer Bun push wins over an older initial RPC, including after store rec
   }))
   mock.module('../src/api/background-downloads.ts', () => ({
     getBackgroundDownloads: () => snapshot,
-    prioritizeBackgroundDownload: async () => true,
     cancelBackgroundDownload: async () => true,
     retryBackgroundDownload: async () => '',
     dismissBackgroundDownload: async () => true,

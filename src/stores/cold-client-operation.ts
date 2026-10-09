@@ -2,10 +2,7 @@ import { useQueryCache } from '@pinia/colada'
 import { defineStore } from 'pinia'
 import { shallowRef } from 'vue'
 
-import {
-  cancelColdClientOperation,
-  getColdClientOperation,
-} from '@/api/cold-client'
+import { getColdClientOperation } from '@/api/cold-client'
 import {
   getColdClientOperationMessageSequence,
   subscribeToColdClientOperation,
@@ -50,20 +47,6 @@ export const useColdClientOperationStore = defineStore(
       return initializePromise
     }
 
-    async function cancel(appId: number) {
-      const sequence = getColdClientOperationMessageSequence()
-      const result = await cancelColdClientOperation(appId)
-      if (
-        result.accepted &&
-        getColdClientOperationMessageSequence() === sequence
-      ) {
-        const snapshot = await getColdClientOperation()
-        if (getColdClientOperationMessageSequence() === sequence)
-          applySnapshot(snapshot)
-      }
-      return result
-    }
-
-    return { state, initialize, cancel }
+    return { state, initialize }
   },
 )
