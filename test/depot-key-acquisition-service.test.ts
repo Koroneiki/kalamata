@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test'
-import { mkdtemp, readFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createRequire } from 'node:module'
 import { DepotKeyAcquisitionService as BaseDepotKeyAcquisitionService } from '../src/backend/depot/keys/depot-key-acquisition-service.ts'
 import { BackgroundDownloadCoordinator } from '../src/backend/downloads/background-download-coordinator.ts'
 import { KalamataDatabase } from '../src/db/database.ts'
@@ -23,6 +24,17 @@ class DepotKeyAcquisitionService extends BaseDepotKeyAcquisitionService {
 const LUA_KEY = 'a'.repeat(64)
 const JSON_KEY = 'b'.repeat(64)
 const HUBCAP_KEY = 'c'.repeat(64)
+const require = createRequire(import.meta.url)
+// SAFETY: adm-zip exports the archive constructor used by the ZIP fixture.
+const AdmZip = require('adm-zip') as new () => {
+  addFile(name: string, contents: Buffer): void
+  toBuffer(): Buffer
+}
+function hubcapZip(lua: string): Response {
+  const zip = new AdmZip()
+  zip.addFile('100.lua', Buffer.from(lua))
+  return new Response(Uint8Array.from(zip.toBuffer()).buffer)
+}
 const SETTINGS = {
   automaticManifestAcquisition: true,
   hubcapApiKey: '',
@@ -57,6 +69,90 @@ afterEach(async () => {
 })
 
 describe('DepotKeyAcquisitionService', () => {
+  test('keeps depot keys in the database when library entries are removed', async () => {
+    const db = await openDatabase()
+    db.addLibraryEntry(100)
+    db.addLibraryEntry(101)
+    db.setDepotKey(10, LUA_KEY)
+    db.setDepotKey(11, JSON_KEY)
+    for (const [appId, depotId] of [
+      [100, 10],
+      [101, 10],
+      [100, 11],
+    ]) {
+      db.sqlite
+        .query(
+          'INSERT INTO library_depot_installs (app_id, depot_id, installed_manifest_id, mount_index, updated_at) VALUES (?, ?, ?, ?, ?)',
+        )
+        .run(appId, depotId, '1', depotId, Date.now())
+    }
+    db.removeLibraryEntry(100)
+    expect(db.getDepotKey(10)).toBe(LUA_KEY)
+    expect(db.getDepotKey(11)).toBe(JSON_KEY)
+    db.removeLibraryEntry(101)
+    expect(db.getDepotKey(10)).toBe(LUA_KEY)
+  })
+  test('tries Lua after an invalid 993 key without exporting it to JSON', async () => {
+    const db = await openDatabase()
+    const fetcher = mock(async (input: string | URL | Request) => {
+      const url = String(input)
+      if (url.includes('api.993499094.xyz'))
+        return Response.json({ 10: JSON_KEY })
+      if (url.includes('/sojogamesdatabase1/100/100.lua'))
+        return new Response(
+          `addappid(10, 0, "${LUA_KEY}")\naddappid(11, 0, "${LUA_KEY}")`,
+        )
+      return new Response(null, { status: 404 })
+    })
+    const verify = mock(
+      async (_app: number, _depot: number, key: Buffer) =>
+        key.toString('hex') === LUA_KEY,
+    )
+    const service = new BaseDepotKeyAcquisitionService(
+      db,
+      fetcher,
+      undefined,
+      verify,
+    )
+
+    expect(await service.acquire({ appId: 100, depotIds: [10] })).toMatchObject(
+      { acquiredDepotIds: [10] },
+    )
+    expect(verify.mock.calls.map(([, , key]) => key.toString('hex'))).toEqual([
+      JSON_KEY,
+      LUA_KEY,
+    ])
+    expect(db.getDepotKey(10)).toBe(LUA_KEY)
+    expect(
+      JSON.parse(
+        await readFile(join(root!, 'depot-keys', '993499094.json'), 'utf8'),
+      ),
+    ).toEqual({ 10: JSON_KEY })
+  })
+
+  test('uses the second repository only when the first has no matching key', async () => {
+    const db = await openDatabase()
+    const visited: string[] = []
+    const service = new DepotKeyAcquisitionService(db, async (input) => {
+      const url = String(input)
+      visited.push(url)
+      if (url.endsWith('/depotkeys.json')) return Response.json({})
+      if (url.includes('/sojogames2/100/100.lua'))
+        return new Response(`addappid(10, 1, "${LUA_KEY}")`)
+      return new Response(null, { status: 404 })
+    })
+    expect(await service.acquire({ appId: 100, depotIds: [10] })).toMatchObject(
+      { acquiredDepotIds: [10] },
+    )
+    expect(
+      visited
+        .filter((url) => url.endsWith('/100/100.lua'))
+        .map((url) => new URL(url).pathname),
+    ).toEqual([
+      '/dvahana2424-web/sojogamesdatabase1/100/100.lua',
+      '/hammerwebsite12/sojogames2/100/100.lua',
+    ])
+  })
   test('publishes only verified candidates and falls back to the next source', async () => {
     const db = await openDatabase()
     const verify = mock(
@@ -79,7 +175,7 @@ describe('DepotKeyAcquisitionService', () => {
       acquiredDepotIds: [10],
       missingDepotIds: [],
     })
-    expect(verify).toHaveBeenCalledTimes(2)
+    expect(verify).toHaveBeenCalledTimes(1)
     expect(db.getDepotKey(10)).toBe(JSON_KEY)
   })
 
@@ -148,15 +244,15 @@ describe('DepotKeyAcquisitionService', () => {
     }
   })
 
-  test('prefers Lua and resolves remaining requested depots from the shared cache', async () => {
+  test('prefers 993 keys and resolves remaining requested depots from Lua', async () => {
     const fetcher = mock(async (input: string | URL | Request) => {
       const url = String(input)
       if (url.endsWith('/100/100.lua')) {
-        return new Response(`addappid(10, 0, "${LUA_KEY}")`)
+        return new Response(
+          `addappid(10, 0, "${LUA_KEY}")\naddappid(11, 0, "${LUA_KEY}")`,
+        )
       }
-      return new Response(
-        JSON.stringify({ 10: JSON_KEY, 11: JSON_KEY, 12: JSON_KEY }),
-      )
+      return new Response(JSON.stringify({ 10: JSON_KEY, 12: JSON_KEY }))
     })
     const db = await openDatabase()
     const service = new DepotKeyAcquisitionService(db, fetcher)
@@ -167,14 +263,14 @@ describe('DepotKeyAcquisitionService', () => {
       acquiredDepotIds: [10, 11],
       missingDepotIds: [],
     })
-    expect(db.getDepotKey(10)).toBe(LUA_KEY)
-    expect(db.getDepotKey(11)).toBe(JSON_KEY)
+    expect(db.getDepotKey(10)).toBe(JSON_KEY)
+    expect(db.getDepotKey(11)).toBe(LUA_KEY)
     expect(db.getDepotKey(12)).toBeNull()
     expect(
       JSON.parse(
-        await readFile(join(root!, 'depot-keys', 'depotkeys.json'), 'utf8'),
+        await readFile(join(root!, 'depot-keys', '993499094.json'), 'utf8'),
       ),
-    ).toEqual({ 10: JSON_KEY, 11: JSON_KEY, 12: JSON_KEY })
+    ).toEqual({ 10: JSON_KEY, 12: JSON_KEY })
   })
 
   test('uses valid requested cache keys without rejecting malformed entries', async () => {
@@ -202,6 +298,8 @@ describe('DepotKeyAcquisitionService', () => {
   test('retries a transiently unavailable Lua source', async () => {
     let attempts = 0
     const fetcher = mock(async (input: string | URL | Request) => {
+      if (String(input).includes('/sojogames2/'))
+        return new Response(null, { status: 404 })
       if (String(input).endsWith('/100/100.lua')) {
         attempts++
         return attempts === 1
@@ -270,7 +368,7 @@ describe('DepotKeyAcquisitionService', () => {
         expect(new Headers(init?.headers).get('Authorization')).toBe(
           'Bearer secret',
         )
-        return new Response(
+        return hubcapZip(
           `addappid(10, 0, "${HUBCAP_KEY}")\naddappid(99, 0, "${LUA_KEY}")`,
         )
       },
@@ -318,7 +416,7 @@ describe('DepotKeyAcquisitionService', () => {
     expect(statsCalls).toBe(3)
   })
 
-  test('proceeds at eleven remaining and reuses successful Hubcap Lua', async () => {
+  test('proceeds at eleven remaining and reuses the Hubcap ZIP for a second key', async () => {
     const db = await openDatabase()
     db.updateSettings({
       ...SETTINGS,
@@ -342,7 +440,7 @@ describe('DepotKeyAcquisitionService', () => {
         })
       }
       hubcapLuaCalls++
-      return new Response(
+      return hubcapZip(
         `addappid(10, 0, "${HUBCAP_KEY}")\naddappid(11, 0, "${LUA_KEY}")`,
       )
     })
@@ -358,7 +456,7 @@ describe('DepotKeyAcquisitionService', () => {
       service.acquire({ appId: 100, depotIds: [11] }),
     ).resolves.toMatchObject({
       acquiredDepotIds: [11],
-      hubcap: { status: 'fetched', acquiredDepotIds: [11] },
+      missingDepotIds: [],
     })
     expect(hubcapLuaCalls).toBe(1)
     expect(statsCalls).toBe(2)
@@ -465,7 +563,7 @@ describe('DepotKeyAcquisitionService', () => {
     await luaStarted
     expect(hubcapLuaCalls).toBe(1)
     resolveLua(
-      new Response(
+      hubcapZip(
         `addappid(10, 0, "${HUBCAP_KEY}")\naddappid(11, 0, "${LUA_KEY}")`,
       ),
     )
@@ -551,7 +649,7 @@ describe('DepotKeyAcquisitionService', () => {
       }),
     )
     resolveLua(
-      new Response(
+      hubcapZip(
         `addappid(10, 0, "${HUBCAP_KEY}")\naddappid(11, 0, "${LUA_KEY}")`,
       ),
     )
@@ -608,7 +706,7 @@ describe('DepotKeyAcquisitionService', () => {
           daily_limit: 100,
           can_make_requests: true,
         })
-      return new Response(
+      return hubcapZip(
         `addappid(10, 0, "${HUBCAP_KEY}")\naddappid(11, 0, "${LUA_KEY}")`,
       )
     })
@@ -649,7 +747,53 @@ describe('DepotKeyAcquisitionService', () => {
       acquiredDepotIds: [10],
       missingDepotIds: [],
     })
-    expect(fetcher).toHaveBeenCalledTimes(2)
+    expect(
+      fetcher.mock.calls.some(([input]) =>
+        String(input).endsWith('/depotkeys.json'),
+      ),
+    ).toBe(true)
+  })
+
+  test('cancels a job waiting for the independently started key cache', async () => {
+    const db = await openDatabase()
+    let resolveCache!: (response: Response) => void
+    const cacheResponse = new Promise<Response>((resolve) => {
+      resolveCache = resolve
+    })
+    const service = new DepotKeyAcquisitionService(
+      db,
+      async () => cacheResponse,
+    )
+    const initialization = service.initializeCache()
+    const coordinator = new BackgroundDownloadCoordinator(root!, () => {})
+    await coordinator.initialize()
+    let markStarted!: () => void
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve
+    })
+    const operation = coordinator.enqueue({
+      key: 'depot-keys:100:10',
+      kind: 'depot-keys',
+      title: 'Depot keys',
+      run: (context) => {
+        markStarted()
+        return service.acquireWithContext(
+          { appId: 100, depotIds: [10] },
+          context,
+        )
+      },
+    })
+    try {
+      await started
+      await coordinator.shutdown()
+      await expect(operation).rejects.toThrow()
+      expect(db.getDepotKey(10)).toBeNull()
+    } finally {
+      resolveCache(Response.json({ 10: JSON_KEY }))
+      await initialization
+      await coordinator.shutdown()
+      await service.shutdown()
+    }
   })
 
   test('does not publish malformed cache contents', async () => {
@@ -660,24 +804,45 @@ describe('DepotKeyAcquisitionService', () => {
 
     await expect(service.initializeCache()).rejects.toThrow()
     expect(
-      await Bun.file(join(root!, 'depot-keys', 'depotkeys.json')).exists(),
+      await Bun.file(join(root!, 'depot-keys', '993499094.json')).exists(),
     ).toBe(false)
   })
 
-  test('conditionally refreshes an existing shared cache', async () => {
-    const fetcher = mock(
-      async (_input: string | URL | Request, init?: RequestInit) => {
-        const headers = new Headers(init?.headers)
-        if (headers.get('If-None-Match') === 'v1') {
-          return new Response(JSON.stringify({ 10: LUA_KEY }), {
-            headers: { etag: 'v2' },
-          })
-        }
-        return new Response(JSON.stringify({ 10: JSON_KEY }), {
-          headers: { etag: 'v1' },
-        })
+  test('repairs a malformed local snapshot from a fresh download', async () => {
+    const db = await openDatabase()
+    const directory = join(root!, 'depot-keys')
+    await mkdir(directory)
+    await writeFile(join(directory, '993499094.json'), 'not json')
+    const service = new DepotKeyAcquisitionService(db, async () =>
+      Response.json({ 10: JSON_KEY }),
+    )
+
+    expect(await service.acquire({ appId: 100, depotIds: [10] })).toMatchObject(
+      {
+        acquiredDepotIds: [10],
+        missingDepotIds: [],
       },
     )
+    expect(db.getDepotKey(10)).toBe(JSON_KEY)
+    expect(
+      JSON.parse(await readFile(join(directory, '993499094.json'), 'utf8')),
+    ).toEqual({
+      10: JSON_KEY,
+    })
+  })
+
+  test('conditionally refreshes an existing shared cache', async () => {
+    let calls = 0
+    const fetcher = mock(async (_input: string | URL | Request) => {
+      if (++calls === 2) {
+        return new Response(JSON.stringify({ 11: LUA_KEY }), {
+          headers: { etag: 'v2' },
+        })
+      }
+      return new Response(JSON.stringify({ 10: JSON_KEY }), {
+        headers: { etag: 'v1' },
+      })
+    })
     const db = await openDatabase()
 
     await new DepotKeyAcquisitionService(db, fetcher).initializeCache()
@@ -686,9 +851,26 @@ describe('DepotKeyAcquisitionService', () => {
     expect(fetcher).toHaveBeenCalledTimes(2)
     expect(
       JSON.parse(
-        await readFile(join(root!, 'depot-keys', 'depotkeys.json'), 'utf8'),
+        await readFile(join(root!, 'depot-keys', '993499094.json'), 'utf8'),
       ),
-    ).toEqual({ 10: LUA_KEY })
+    ).toEqual({ 11: LUA_KEY })
+  })
+
+  test('keeps an existing 993 snapshot if a refresh contains no valid keys', async () => {
+    const db = await openDatabase()
+    await new DepotKeyAcquisitionService(db, async () =>
+      Response.json({ 10: JSON_KEY }),
+    ).initializeCache()
+
+    await new DepotKeyAcquisitionService(db, async () =>
+      Response.json({ error: 'unavailable' }),
+    ).initializeCache()
+
+    expect(
+      JSON.parse(
+        await readFile(join(root!, 'depot-keys', '993499094.json'), 'utf8'),
+      ),
+    ).toEqual({ 10: JSON_KEY })
   })
 
   test('retains an existing shared cache when refresh fails', async () => {

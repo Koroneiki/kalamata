@@ -166,29 +166,6 @@ export class HubcapClient {
         }
   }
 
-  async getLua(
-    appId: number,
-    apiKey: string,
-    signal?: AbortSignal,
-  ): Promise<string> {
-    let response: Response
-    try {
-      response = await this.fetcher(`${HUBCAP_ORIGIN}/api/v1/lua/${appId}`, {
-        headers: { Authorization: `Bearer ${apiKey}` },
-        signal,
-      })
-    } catch (error) {
-      if (signal?.aborted) throw error
-      throw new Error('Hubcap Lua request failed')
-    }
-    if (!response.ok) throw new Error('Hubcap Lua request failed')
-    try {
-      return await response.text()
-    } catch {
-      throw new Error('Hubcap Lua response could not be read')
-    }
-  }
-
   private async get(
     path: string,
     apiKey: string,

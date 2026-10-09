@@ -3,6 +3,7 @@ import type { ReconcileApplicationOptions } from './depot/depot-download-service
 import type { ApplicationTransactionResult } from './depot/install/transaction/types.ts'
 import { DepotKeyAcquisitionService } from './depot/keys/depot-key-acquisition-service.ts'
 import { verifyDepotKey } from './depot/keys/verify-depot-key.ts'
+import { HubcapArchive } from './depot/keys/hubcap-archive.ts'
 import { validateManagedManifest } from '../db/manifest-files.ts'
 import { readFile } from 'node:fs/promises'
 import { ManifestAcquisitionService } from './depot/manifests/manifest-acquisition-service.ts'
@@ -36,6 +37,16 @@ export class SteamService {
     KalamataDatabase,
     ManifestAcquisitionService
   >()
+  readonly #hubcapArchives = new Map<KalamataDatabase, HubcapArchive>()
+
+  private getHubcapArchive(database: KalamataDatabase): HubcapArchive {
+    let archive = this.#hubcapArchives.get(database)
+    if (!archive) {
+      archive = new HubcapArchive()
+      this.#hubcapArchives.set(database, archive)
+    }
+    return archive
+  }
 
   constructor(
     reportPackageFailure?: (
@@ -107,7 +118,13 @@ export class SteamService {
   ): Promise<ManifestAcquisitionResult> {
     let service = this.#manifestAcquisitions.get(database)
     if (!service) {
-      service = new ManifestAcquisitionService(this.#session, database)
+      service = new ManifestAcquisitionService(
+        this.#session,
+        database,
+        fetch,
+        undefined,
+        this.getHubcapArchive(database),
+      )
       this.#manifestAcquisitions.set(database, service)
     }
     if (!this.backgroundDownloads) return service.acquire(request)
@@ -195,6 +212,7 @@ export class SteamService {
             signal,
           )
         },
+        this.getHubcapArchive(database),
       )
       this.#depotKeyAcquisitions.set(database, service)
     }

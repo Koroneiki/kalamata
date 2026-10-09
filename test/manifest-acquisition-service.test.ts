@@ -4,6 +4,8 @@ import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ManifestAcquisitionService } from '../src/backend/depot/manifests/manifest-acquisition-service.ts'
+import { DepotKeyAcquisitionService } from '../src/backend/depot/keys/depot-key-acquisition-service.ts'
+import { HubcapArchive } from '../src/backend/depot/keys/hubcap-archive.ts'
 import { BackgroundDownloadCoordinator } from '../src/backend/downloads/background-download-coordinator.ts'
 import type { SteamContentUser } from '../src/backend/steam/types.ts'
 import { KalamataDatabase } from '../src/db/database.ts'
@@ -51,6 +53,156 @@ afterEach(async () => {
 })
 
 describe('ManifestAcquisitionService', () => {
+  fixtureTest(
+    'shares a single quota-counted Hubcap ZIP across keys and manifests',
+    async () => {
+      const request = MANIFESTS[0]
+      const db = await openDatabase()
+      db.updateSettings({ ...SETTINGS, platforms: [...SETTINGS.platforms] })
+      const zip = new AdmZip()
+      zip.addFile(
+        `${request.appId}.lua`,
+        Buffer.from(`addappid(${request.depotId}, 1, "${'a'.repeat(64)}")`),
+      )
+      zip.addFile(
+        `${request.depotId}_${request.manifestId}.manifest`,
+        await fixtureContents(request),
+      )
+      const calls: string[] = []
+      const fetcher = async (input: string | URL | Request) => {
+        const url = String(input)
+        calls.push(url)
+        if (url.endsWith('/depotkeys.json')) return Response.json({})
+        if (url.includes('raw.githubusercontent.com'))
+          return new Response(null, { status: 404 })
+        if (url.endsWith('/api/v1/depot-keys'))
+          return Response.json({
+            status: 'success',
+            depot_ids: [String(request.depotId)],
+          })
+        if (url.endsWith('/contents')) return manifestContents(request)
+        if (url.endsWith('/user/stats')) return hubcapUsage(1)
+        if (url.endsWith(`/api/v1/manifest/${request.appId}`))
+          return new Response(Uint8Array.from(zip.toBuffer()).buffer)
+        return new Response(null, { status: 404 })
+      }
+      const archive = new HubcapArchive(fetcher)
+      const keys = new DepotKeyAcquisitionService(
+        db,
+        fetcher,
+        undefined,
+        async () => true,
+        archive,
+      )
+      const manifests = new ManifestAcquisitionService(
+        {
+          getClient: async () => {
+            throw new Error('CDN must not run')
+          },
+        },
+        db,
+        fetcher,
+        async () => {
+          throw new Error('CDN must not run')
+        },
+        archive,
+      )
+
+      expect(
+        (
+          await keys.acquire({
+            appId: request.appId,
+            depotIds: [request.depotId],
+          })
+        ).acquiredDepotIds,
+      ).toEqual([request.depotId])
+      expect((await manifests.acquire(request)).manifest?.depotId).toBe(
+        request.depotId,
+      )
+      expect(
+        calls.filter((url) =>
+          url.endsWith(`/api/v1/manifest/${request.appId}`),
+        ),
+      ).toHaveLength(1)
+      expect(calls.filter((url) => url.endsWith('/user/stats'))).toHaveLength(2)
+    },
+  )
+  fixtureTest(
+    'retries the next code after an invalid streamed CDN manifest',
+    async () => {
+      const request = MANIFESTS[0]
+      const fixture = await fixtureContents(request)
+      const calls: string[] = []
+      const service = createService(
+        await openDatabase(),
+        async (input) => {
+          const url = String(input)
+          calls.push(url)
+          if (url.startsWith('https://20770407.xyz/'))
+            return new Response('111')
+          if (url.startsWith('https://manifest.manifestdex.com/'))
+            return new Response('222')
+          if (url.includes('/5/111')) return new Response('invalid')
+          if (url.includes('/5/222')) return new Response('compressed')
+          throw new Error('No file fallback should be used')
+        },
+        async (data) => (data.toString() === 'invalid' ? data : fixture),
+      )
+      const coordinator = new BackgroundDownloadCoordinator(root!, () => {})
+      await coordinator.initialize()
+      try {
+        const result = await coordinator.enqueue({
+          key: `manifest:${request.depotId}:${request.manifestId}`,
+          kind: 'manifest',
+          title: 'Manifest',
+          run: (context) => service.acquireWithContext(request, context),
+        })
+        expect(result.manifest?.depotId).toBe(request.depotId)
+        expect(
+          calls
+            .filter((url) => url.includes('/5/'))
+            .map((url) => url.split('/').at(-1)),
+        ).toEqual(['111', '222'])
+      } finally {
+        await coordinator.shutdown()
+        await service.shutdown()
+      }
+    },
+  )
+
+  fixtureTest(
+    'uses the parent-app GitHub branch only after code sources fail',
+    async () => {
+      const request = { ...MANIFESTS[0], parentAppId: 12345 }
+      const fixture = await fixtureContents(request)
+      const visited: string[] = []
+      const service = createService(
+        await openDatabase(),
+        async (input) => {
+          const url = String(input)
+          visited.push(url)
+          if (url.includes('/12345/') && url.includes('sojogamesdatabase1'))
+            return new Response(Uint8Array.from(fixture).buffer)
+          return new Response(null, { status: 404 })
+        },
+        async () => {
+          throw new Error('CDN must not run')
+        },
+      )
+
+      expect((await service.acquire(request)).manifest?.depotId).toBe(
+        request.depotId,
+      )
+      expect(
+        visited
+          .filter((url) => url.includes('raw.githubusercontent.com'))
+          .map((url) => new URL(url).pathname),
+      ).toEqual([
+        `/dvahana2424-web/sojogamesdatabase1/${request.appId}/${request.depotId}_${request.manifestId}.manifest`,
+        `/dvahana2424-web/sojogamesdatabase1/${request.parentAppId}/${request.depotId}_${request.manifestId}.manifest`,
+      ])
+    },
+  )
   fixtureTest(
     'returns a valid managed manifest before network access',
     async () => {
@@ -204,7 +356,12 @@ describe('ManifestAcquisitionService', () => {
         },
       })
       expect(calls.map((url) => new URL(url).pathname)).toEqual([
+        `/manifest/${request.depotId}/${request.manifestId}`,
         `/${request.manifestId}`,
+        `/manifest/${request.manifestId}`,
+        `/api/manifest/${request.manifestId}`,
+        `/dvahana2424-web/sojogamesdatabase1/${request.appId}/${request.depotId}_${request.manifestId}.manifest`,
+        `/hammerwebsite12/sojogames2/${request.appId}/${request.depotId}_${request.manifestId}.manifest`,
         `/api/v1/manifest/${request.appId}/contents`,
         '/api/v1/user/stats',
         `/api/v1/manifest/${request.appId}`,
@@ -255,9 +412,11 @@ describe('ManifestAcquisitionService', () => {
     db.updateSettings({ ...SETTINGS, platforms: [...SETTINGS.platforms] })
     const fetcher = mock(async (input: string | URL | Request) => {
       const url = String(input)
-      if (url.startsWith('https://manifest.manifestdex.com/')) {
+      if (url.includes('/manifest/') && !url.includes('/api/v1/')) {
         return new Response('blocked')
       }
+      if (url.includes('raw.githubusercontent.com'))
+        return new Response(null, { status: 404 })
       if (url.endsWith('/contents')) {
         return manifestContents({ ...request, manifestId: '1' })
       }
@@ -265,10 +424,12 @@ describe('ManifestAcquisitionService', () => {
     })
     const service = createService(db, fetcher, async () => Buffer.alloc(0))
 
-    await expect(service.acquire(request)).rejects.toThrow(
-      'Manifest request code lookup failed',
-    )
-    expect(fetcher).toHaveBeenCalledTimes(2)
+    await expect(service.acquire(request)).rejects.toThrow()
+    expect(
+      fetcher.mock.calls.some(([input]) =>
+        String(input).endsWith('/user/stats'),
+      ),
+    ).toBe(false)
   })
 
   fixtureTest(
@@ -431,7 +592,7 @@ describe('ManifestAcquisitionService', () => {
         }),
       ),
     )
-    expect(fetcher).toHaveBeenCalledTimes(1)
+    expect(fetcher).toHaveBeenCalledTimes(6)
   })
 
   test('serializes request-code lookups for independent manifests', async () => {
@@ -462,7 +623,7 @@ describe('ManifestAcquisitionService', () => {
     )
 
     expect(maximumActiveLookups).toBe(1)
-    expect(fetcher).toHaveBeenCalledTimes(MANIFESTS.length)
+    expect(fetcher).toHaveBeenCalledTimes(MANIFESTS.length * 6)
   })
 
   test('cancels pending acquisition during shutdown', async () => {
