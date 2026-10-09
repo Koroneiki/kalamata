@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { mkdtemp, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DownloadHistory } from '../../src/backend/downloads/download-history.ts'
@@ -49,6 +49,15 @@ test('persists mixed job and game history, retaining only the newest 100 entries
       },
     })
     await history.flush()
+
+    expect(
+      JSON.parse(
+        await readFile(join(root, 'history', 'activity-history.json'), 'utf8'),
+      ),
+    ).toEqual(history.snapshot())
+    expect(await Bun.file(join(root, 'activity-history.json')).exists()).toBe(
+      false,
+    )
 
     const restored = new DownloadHistory(root)
     await restored.initialize()
@@ -139,8 +148,9 @@ test('history saved before job and operation details stays readable and dismissi
       finishedAt: 1,
     } as const
     const gameEntry = { ...entry, id: 'legacy-game', compact: false }
+    await mkdir(join(root, 'history'))
     await writeFile(
-      join(root, 'activity-history.json'),
+      join(root, 'history', 'activity-history.json'),
       JSON.stringify([entry, gameEntry]),
     )
     await history.initialize()
@@ -188,7 +198,8 @@ test('damaged cosmetic history does not block new entries; pauses are not finish
     (error) => errors.push(error),
   )
   try {
-    await writeFile(join(root, 'activity-history.json'), '{damaged')
+    await mkdir(join(root, 'history'))
+    await writeFile(join(root, 'history', 'activity-history.json'), '{damaged')
     await history.initialize()
     expect(errors).toHaveLength(1)
     expect(history.snapshot()).toEqual([])

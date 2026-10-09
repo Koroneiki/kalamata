@@ -34,7 +34,7 @@ export class DownloadHistory {
     ) => void = () => {},
     private readonly reportError: (error: Error) => void = () => {},
   ) {
-    this.#path = join(userDataRoot, 'activity-history.json')
+    this.#path = join(userDataRoot, 'history', 'activity-history.json')
   }
 
   async initialize(): Promise<void> {
