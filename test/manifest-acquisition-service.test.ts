@@ -7,6 +7,8 @@ import { ManifestAcquisitionService } from '../src/backend/depot/manifests/manif
 import { DepotKeyAcquisitionService } from '../src/backend/depot/keys/depot-key-acquisition-service.ts'
 import { HubcapArchive } from '../src/backend/depot/keys/hubcap-archive.ts'
 import { BackgroundDownloadCoordinator } from '../src/backend/downloads/background-download-coordinator.ts'
+import { DownloadHistory } from '../src/backend/downloads/download-history.ts'
+import { SteamService } from '../src/backend/index.ts'
 import type { SteamContentUser } from '../src/backend/steam/types.ts'
 import { KalamataDatabase } from '../src/db/database.ts'
 import { removeTemporaryDirectory } from './helpers/filesystem.ts'
@@ -53,6 +55,50 @@ afterEach(async () => {
 })
 
 describe('ManifestAcquisitionService', () => {
+  fixtureTest(
+    'repeated preview preparation reuses cached manifests without adding completion history',
+    async () => {
+      const request = MANIFESTS[0]
+      const db = await openDatabase()
+      const path = db.addManifest(request.depotId, request.manifestId)
+      await writeFile(join(root!, path), await fixtureContents(request))
+      const history = new DownloadHistory(root!)
+      const jobs = new BackgroundDownloadCoordinator(
+        root!,
+        () => {},
+        (job) => history.recordJob(job),
+      )
+      const steam = new SteamService(undefined, jobs)
+      try {
+        await history.initialize()
+        await jobs.initialize()
+        const expected = {
+          manifest: {
+            depotId: request.depotId,
+            manifestId: request.manifestId,
+            relativePath: path,
+          },
+        }
+        // Update previews request the installed version on every opening, even
+        // though the manifest is already registered and valid on disk.
+        expect(await steam.acquireManifest(db, request)).toEqual(expected)
+        expect(await steam.acquireManifest(db, request)).toEqual(expected)
+        const concurrent = await Promise.all([
+          steam.acquireManifest(db, request),
+          steam.acquireManifest(db, request),
+        ])
+        expect(concurrent).toEqual([expected, expected])
+        expect(jobs.snapshot().jobs).toEqual([])
+        await history.flush()
+        expect(history.snapshot()).toEqual([])
+      } finally {
+        await steam.shutdownManifestAcquisitions()
+        await jobs.shutdown()
+        await history.flush()
+      }
+    },
+  )
+
   fixtureTest(
     'shares a single quota-counted Hubcap ZIP across keys and manifests',
     async () => {

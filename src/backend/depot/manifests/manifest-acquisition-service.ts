@@ -146,6 +146,29 @@ export class ManifestAcquisitionService {
   ): Promise<ManifestAcquisitionResult> {
     const signal = context?.signal ?? this.#abortController.signal
     signal.throwIfAborted()
+    const existing = await this.getCachedManifest(request)
+    if (existing) return { manifest: existing }
+
+    const steam = await this.acquireFromSteamCodes(request, signal, context)
+    if (steam.manifest) return { manifest: steam.manifest }
+    const github = await this.acquireFromGitHub(request, signal, context)
+    if (github) return { manifest: github }
+    const result = await this.acquireFromHubcap(
+      request,
+      steam.invalidManifest ?? steam.failure,
+      signal,
+      context,
+    )
+    if (steam.invalidManifest && result.hubcap?.status === 'missing-key')
+      throw steam.invalidManifest
+    return result
+  }
+
+  async getCachedManifest(
+    request: AcquireManifestRequest,
+  ): Promise<AcquiredManifest | null> {
+    if (!this.#accepting)
+      throw new Error('Manifest acquisition is shutting down')
     validateId(request.appId, 'appId')
     validateId(request.depotId, 'depotId')
     validateManifestId(request.manifestId)
@@ -171,23 +194,11 @@ export class ManifestAcquisitionService {
           existing.relativePath,
           key,
         )
-        return { manifest: existing }
+        return existing
       } catch {}
     }
 
-    const steam = await this.acquireFromSteamCodes(request, signal, context)
-    if (steam.manifest) return { manifest: steam.manifest }
-    const github = await this.acquireFromGitHub(request, signal, context)
-    if (github) return { manifest: github }
-    const result = await this.acquireFromHubcap(
-      request,
-      steam.invalidManifest ?? steam.failure,
-      signal,
-      context,
-    )
-    if (steam.invalidManifest && result.hubcap?.status === 'missing-key')
-      throw steam.invalidManifest
-    return result
+    return null
   }
 
   private async acquireFromSteamCodes(

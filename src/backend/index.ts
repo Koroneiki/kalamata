@@ -112,7 +112,7 @@ export class SteamService {
     this.#products.clear(appId)
   }
 
-  acquireManifest(
+  async acquireManifest(
     database: KalamataDatabase,
     request: AcquireManifestRequest,
   ): Promise<ManifestAcquisitionResult> {
@@ -128,6 +128,10 @@ export class SteamService {
       this.#manifestAcquisitions.set(database, service)
     }
     if (!this.backgroundDownloads) return service.acquire(request)
+    // Preview preparation also requests installed manifests. A validated local
+    // read is not a download and must not create jobs or completion history.
+    const cached = await service.getCachedManifest(request)
+    if (cached) return { manifest: cached }
     const parentAppId = request.parentAppId ?? request.appId
     return this.backgroundDownloads.enqueue({
       key: `manifest:${request.depotId}:${request.manifestId}`,
