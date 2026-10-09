@@ -1,6 +1,12 @@
 import { once } from 'node:events'
+import { randomUUID } from 'node:crypto'
 import type SteamUser from 'steam-user'
 import type { SteamContentUser } from './types.ts'
+import {
+  reportNetworkDiagnostic,
+  type NetworkReporter,
+  type SteamEndpoint,
+} from '../shared/network-diagnostics.ts'
 
 export type { SteamContentUser } from './types.ts'
 
@@ -10,12 +16,16 @@ export class SteamSession {
   #client: SteamContentUser | undefined
   #connecting: Promise<void> | undefined
   #onDisconnect: ((error: Error) => void) | undefined
+  #finishDiagnostics:
+    | ((outcome: 'disconnected' | 'disposed') => void)
+    | undefined
   readonly #disconnectListeners = new Set<(error: Error) => void>()
   readonly #disposeController = new AbortController()
   #disposed = false
 
   constructor(
     private readonly createUser: SteamUserFactory = createSteamUser,
+    private readonly reportNetwork: NetworkReporter = reportNetworkDiagnostic,
   ) {}
 
   get connected(): boolean {
@@ -60,36 +70,75 @@ export class SteamSession {
   }
 
   async #connect(): Promise<void> {
-    const client = await this.createUser()
-    if (this.#disposed) {
-      client.logOff()
-      throw new Error('Steam session is disposed')
+    const connectionId = randomUUID()
+    const started = performance.now()
+    const endpoint: SteamEndpoint = {}
+    const report: NetworkReporter = (event) =>
+      reportNetworkDiagnostic(event, this.reportNetwork)
+    report({ event: 'steam.session.started', connectionId })
+    let client: SteamContentUser | undefined
+    const onDebug = (message: string) => {
+      // steam-user 5.3 exposes the chosen CM only in debug strings. Extract
+      // just the endpoint; raw debug messages can contain credentials.
+      const match =
+        /^\[[TW]\d+\] Connecting to (TCP CM: |WebSocket CM )([a-zA-Z0-9.-]+):(\d+)$/u.exec(
+          message,
+        )
+      if (!match) return
+      endpoint.host = match[2]
+      endpoint.port = match[3]
+      endpoint.protocol = match[1] === 'TCP CM: ' ? 'tcp' : 'websocket'
+      report({ event: 'steam.server-selected', connectionId, ...endpoint })
     }
-
     try {
+      client = await this.createUser()
+      if (this.#disposed) throw new Error('Steam session is disposed')
+      client.on('debug', onDebug)
       await logOnAnonymously(client, this.#disposeController.signal)
       if (this.#disposed) throw new Error('Steam session is disposed')
 
+      const connectedClient = client
       const onDisconnect = (error: Error) => {
-        if (this.#client !== client) return
-        this.#clearClient()
+        if (this.#client !== connectedClient) return
+        this.#clearClient('disconnected')
         for (const listener of this.#disconnectListeners) listener(error)
       }
       client.on('error', onDisconnect)
       this.#client = client
       this.#onDisconnect = onDisconnect
+      this.#finishDiagnostics = (outcome) => {
+        connectedClient.off('debug', onDebug)
+        report({
+          event: 'steam.session.finished',
+          connectionId,
+          ...endpoint,
+          durationMs: performance.now() - started,
+          outcome,
+        })
+      }
+      report({ event: 'steam.session.connected', connectionId, ...endpoint })
     } catch (error) {
-      client.logOff()
+      client?.off('debug', onDebug)
+      report({
+        event: 'steam.session.finished',
+        connectionId,
+        ...endpoint,
+        durationMs: performance.now() - started,
+        outcome: this.#disposed ? 'cancelled' : 'failed',
+      })
+      client?.logOff()
       throw error
     }
   }
 
-  #clearClient(): void {
+  #clearClient(outcome: 'disconnected' | 'disposed' = 'disposed'): void {
     const client = this.#client
     if (!client) return
     if (this.#onDisconnect) client.off('error', this.#onDisconnect)
     this.#client = undefined
     this.#onDisconnect = undefined
+    this.#finishDiagnostics?.(outcome)
+    this.#finishDiagnostics = undefined
     client.logOff()
   }
 }

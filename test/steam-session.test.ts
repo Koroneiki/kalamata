@@ -1,11 +1,66 @@
 import { describe, expect, test } from 'bun:test'
 import { EventEmitter } from 'node:events'
+import type { NetworkDiagnostic } from '../src/backend/shared/network-diagnostics.ts'
 import {
   SteamSession,
   type SteamContentUser,
 } from '../src/backend/steam/steam-session.ts'
 
 describe('SteamSession', () => {
+  test('correlates session lifetimes across disconnect and reconnect without leaking errors', async () => {
+    const events: NetworkDiagnostic[] = []
+    const users: FakeSteamUser[] = []
+    const session = new SteamSession(
+      async () => {
+        const user = new FakeSteamUser()
+        users.push(user)
+        return user as unknown as SteamContentUser
+      },
+      (event) => events.push(event),
+    )
+
+    await Promise.all([session.connect(), session.connect()])
+    users[0]!.emit('error', new Error('connection lost: SECRET'))
+    await session.connect()
+    session.dispose()
+
+    expect(events.map((event) => event.event)).toEqual([
+      'steam.session.started',
+      'steam.session.connected',
+      'steam.session.finished',
+      'steam.session.started',
+      'steam.session.connected',
+      'steam.session.finished',
+    ])
+    const sessions = events.filter(
+      (event): event is Extract<NetworkDiagnostic, { connectionId: string }> =>
+        event.event === 'steam.session.finished',
+    )
+    expect(sessions.map((event) => event.outcome)).toEqual([
+      'disconnected',
+      'disposed',
+    ])
+    expect(sessions[0]!.connectionId).not.toBe(sessions[1]!.connectionId)
+    expect(events[0]).toMatchObject({ connectionId: sessions[0]!.connectionId })
+    expect(JSON.stringify(events)).not.toContain('SECRET')
+  })
+
+  test('logs failed connection attempts even if client creation fails', async () => {
+    const events: NetworkDiagnostic[] = []
+    const session = new SteamSession(
+      async () => {
+        throw new Error('client unavailable')
+      },
+      (event) => events.push(event),
+    )
+    await expect(session.connect()).rejects.toThrow('client unavailable')
+    expect(events.map((event) => event.event)).toEqual([
+      'steam.session.started',
+      'steam.session.finished',
+    ])
+    expect(events[1]).toMatchObject({ outcome: 'failed' })
+  })
+
   test('shares one login across concurrent connect calls', async () => {
     const user = new FakeSteamUser()
     let created = 0

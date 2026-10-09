@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { open } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 
-export async function writeHttpTransfer(options: {
+interface HttpTransferOptions {
   response: Response
   workspace: string
   filename: string
@@ -10,7 +10,22 @@ export async function writeHttpTransfer(options: {
   maxBytes?: number
   hash?: 'sha256'
   progress?: (transferred: number, total: number | null) => void
-}): Promise<{ path: string; bytes: number; digest: string | null }> {
+}
+
+export async function writeHttpTransfer(options: HttpTransferOptions) {
+  try {
+    return await writeTransfer(options)
+  } catch (error) {
+    // Opening/validating the destination can fail before the stream reader exists.
+    // Discard that unused body too, preserving the original transfer error.
+    await options.response.body?.cancel().catch(() => {})
+    throw error
+  }
+}
+
+async function writeTransfer(
+  options: HttpTransferOptions,
+): Promise<{ path: string; bytes: number; digest: string | null }> {
   const { response, signal } = options
   if (!response.ok || !response.body)
     throw new Error(`Download failed (${response.status})`)

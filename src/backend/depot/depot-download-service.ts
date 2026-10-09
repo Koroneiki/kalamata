@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { abortable } from '../shared/abortable.ts'
+import { ChunkNetworkDiagnostics } from '../shared/chunk-network-diagnostics.ts'
 import {
   ApplicationTransactionError,
   type ApplicationDepotRecord,
@@ -88,6 +89,7 @@ export class DepotDownloadService {
       throwIfAborted(options.signal)
 
       const clients: LazySteamContentClient[] = []
+      const network = new ChunkNetworkDiagnostics(options.appId)
       const controller = new AbortController()
       const onAbort = () =>
         controller.abort(
@@ -112,6 +114,7 @@ export class DepotDownloadService {
               this.session,
               options.desiredDepots[index]!.depotKey,
               controller.signal,
+              network,
             )
             clients.push(client)
             return { ...depot, client }
@@ -145,6 +148,7 @@ class LazySteamContentClient implements ChunkClient {
     private readonly session: SteamSession,
     private readonly depotKey: Buffer,
     private readonly operationSignal: AbortSignal,
+    private readonly network: ChunkNetworkDiagnostics,
   ) {}
 
   async getContentServers(appId: number) {
@@ -180,7 +184,7 @@ class LazySteamContentClient implements ChunkClient {
 
   private getClient(): Promise<SteamContentClient> {
     this.#client ??= abortable(this.session.getClient(), this.operationSignal)
-      .then((user) => new SteamContentClient(user, this.depotKey))
+      .then((user) => new SteamContentClient(user, this.depotKey, this.network))
       .catch((error) => {
         if (this.operationSignal.aborted) throw this.operationSignal.reason
         throw new ApplicationTransactionError(

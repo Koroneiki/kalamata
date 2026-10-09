@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { networkFetch } from '../../shared/network-diagnostics.ts'
 
 import type { HubcapUsage, HubcapUsageResult } from '../../../types/rpc.ts'
 import {
@@ -59,7 +60,7 @@ type Fetcher = (
 ) => Promise<Response>
 
 export class HubcapClient {
-  constructor(private readonly fetcher: Fetcher = fetch) {}
+  constructor(private readonly fetcher: Fetcher = networkFetch) {}
 
   async getDepotIds(
     apiKey: string,
@@ -147,7 +148,10 @@ export class HubcapClient {
       if (signal?.aborted) throw error
       throw new Error('Hubcap manifest request failed')
     }
-    if (!response.ok) throw new Error('Hubcap manifest request failed')
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => {})
+      throw new Error('Hubcap manifest request failed')
+    }
     return readBoundedBody(response, MAX_HUBCAP_MANIFEST_ZIP_BYTES, signal)
   }
 
@@ -181,6 +185,7 @@ export class HubcapClient {
       if (signal?.aborted) throw error
       return { status: 'unavailable' }
     }
+    if (!response.ok) await response.body?.cancel().catch(() => {})
     if (response.status === 401 || response.status === 403)
       return { status: 'invalid-key' }
     return response.ok
@@ -199,6 +204,7 @@ async function readBoundedBody(
     declaredLength !== null &&
     (!/^\d+$/u.test(declaredLength) || Number(declaredLength) > maximumBytes)
   ) {
+    await response.body?.cancel().catch(() => {})
     throw new Error('Hubcap manifest ZIP is too large')
   }
 
@@ -206,6 +212,7 @@ async function readBoundedBody(
   const reader = response.body.getReader()
   const chunks: Uint8Array[] = []
   let total = 0
+  let completed = false
   try {
     while (true) {
       signal?.throwIfAborted()
@@ -214,15 +221,18 @@ async function readBoundedBody(
         throw new Error('Hubcap manifest response could not be read')
       })
       const { done, value } = part
-      if (done) break
+      if (done) {
+        completed = true
+        break
+      }
       total += value.byteLength
       if (total > maximumBytes) {
-        void reader.cancel()
         throw new Error('Hubcap manifest ZIP is too large')
       }
       chunks.push(value)
     }
   } finally {
+    if (!completed) await reader.cancel().catch(() => {})
     reader.releaseLock()
   }
   return Buffer.concat(chunks, total)

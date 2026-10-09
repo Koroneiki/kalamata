@@ -8,6 +8,7 @@ import {
 import type { JobContext } from '../../downloads/background-download-coordinator.ts'
 import { writeHttpTransfer } from '../../downloads/http-transfer.ts'
 import { abortable } from '../../shared/abortable.ts'
+import { networkFetch } from '../../shared/network-diagnostics.ts'
 
 const SOURCE_URL = 'https://api.993499094.xyz/depotkeys.json'
 type Fetcher = (
@@ -22,7 +23,7 @@ export class DepotKeyCache {
 
   constructor(
     dataRoot: string,
-    private readonly fetcher: Fetcher = fetch,
+    private readonly fetcher: Fetcher = networkFetch,
     private readonly signal?: AbortSignal,
   ) {
     this.#path = join(dataRoot, 'depot-keys', '993499094.json')
@@ -62,8 +63,10 @@ export class DepotKeyCache {
     try {
       signal?.throwIfAborted()
       const response = await this.fetcher(SOURCE_URL, { signal })
-      if (!response.ok)
+      if (!response.ok) {
+        await response.body?.cancel().catch(() => {})
         throw new Error(`993499094 download failed (${response.status})`)
+      }
       const text =
         context && signal
           ? await writeHttpTransfer({

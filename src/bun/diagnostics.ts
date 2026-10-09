@@ -1,5 +1,9 @@
 import { appendFileSync, mkdirSync, renameSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import {
+  initializeNetworkDiagnostics,
+  type NetworkDiagnostic,
+} from '../backend/shared/network-diagnostics.ts'
 import type {
   OperationFailureContext,
   OperationLifecycleEvent,
@@ -59,16 +63,31 @@ type ErrorDiagnostic =
 
 export class Diagnostics {
   readonly path: string
-  private readonly archivePath: string
+  readonly networkPath: string
+  private readonly applicationLog: RotatingLog
+  private readonly networkLog: RotatingLog
 
   constructor(userDataDirectory: string) {
-    mkdirSync(userDataDirectory, { recursive: true })
-    this.path = join(userDataDirectory, 'kalamata.log')
-    this.archivePath = join(userDataDirectory, 'kalamata.old.log')
+    const directory = join(userDataDirectory, 'log')
+    mkdirSync(directory, { recursive: true })
+    this.applicationLog = new RotatingLog(directory, 'kalamata')
+    this.networkLog = new RotatingLog(directory, 'network')
+    this.path = this.applicationLog.path
+    this.networkPath = this.networkLog.path
   }
 
   info(diagnostic: InfoDiagnostic): void {
-    this.append(
+    this.applicationLog.append(
+      JSON.stringify({
+        timestamp: new Date().toISOString(),
+        level: 'info',
+        ...diagnostic,
+      }),
+    )
+  }
+
+  network(diagnostic: NetworkDiagnostic): void {
+    this.networkLog.append(
       JSON.stringify({
         timestamp: new Date().toISOString(),
         level: 'info',
@@ -79,7 +98,7 @@ export class Diagnostics {
 
   error(diagnostic: ErrorDiagnostic): void {
     try {
-      this.append(
+      this.applicationLog.append(
         JSON.stringify({
           timestamp: new Date().toISOString(),
           ...diagnostic,
@@ -88,21 +107,27 @@ export class Diagnostics {
         }),
       )
     } catch (error) {
-      this.reportFailure(
-        error instanceof Error ? error : new Error(String(error)),
-      )
+      reportFailure(error instanceof Error ? error : new Error(String(error)))
     }
   }
+}
 
-  private append(line: string): void {
+class RotatingLog {
+  readonly path: string
+  private readonly archivePath: string
+
+  constructor(directory: string, name: string) {
+    this.path = join(directory, `${name}.log`)
+    this.archivePath = join(directory, `${name}.old.log`)
+  }
+
+  append(line: string): void {
     const entry = `${line}\n`
     this.rotateIfNeeded(Buffer.byteLength(entry))
     try {
       appendFileSync(this.path, entry)
     } catch (error) {
-      this.reportFailure(
-        error instanceof Error ? error : new Error(String(error)),
-      )
+      reportFailure(error instanceof Error ? error : new Error(String(error)))
     }
   }
 
@@ -117,16 +142,14 @@ export class Diagnostics {
         return
       renameSync(this.path, this.archivePath)
     } catch (error) {
-      this.reportFailure(
-        error instanceof Error ? error : new Error(String(error)),
-      )
+      reportFailure(error instanceof Error ? error : new Error(String(error)))
     }
   }
+}
 
-  private reportFailure(error: Error): void {
-    // Diagnostics must never prevent the application from running.
-    console.error('Could not write Kalamata diagnostics', error)
-  }
+function reportFailure(error: Error): void {
+  // Diagnostics must never prevent the application from running.
+  console.error('Could not write Kalamata diagnostics', error)
 }
 
 let applicationDiagnostics: Diagnostics | undefined
@@ -137,6 +160,7 @@ export function initializeApplicationDiagnostics(
   const diagnostics = new Diagnostics(userDataDirectory)
   registerProcessDiagnostics(diagnostics)
   applicationDiagnostics = diagnostics
+  initializeNetworkDiagnostics((event) => diagnostics.network(event))
   return diagnostics
 }
 

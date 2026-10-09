@@ -2,6 +2,7 @@ import { createRequire } from 'node:module'
 import type { HubcapUsage } from '../../../types/rpc.ts'
 import { abortable } from '../../shared/abortable.ts'
 import { HubcapClient } from './hubcap-client.ts'
+import { networkFetch } from '../../shared/network-diagnostics.ts'
 
 type Fetcher = (
   input: string | URL | Request,
@@ -29,7 +30,7 @@ export class HubcapArchive {
   readonly #sources = new Map<string, Source>()
   #recent: { key: string; result: ArchiveResult } | undefined
 
-  constructor(fetcher: Fetcher = fetch) {
+  constructor(fetcher: Fetcher = networkFetch) {
     this.#client = new HubcapClient(fetcher)
   }
 

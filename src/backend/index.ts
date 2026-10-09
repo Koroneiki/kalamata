@@ -19,6 +19,7 @@ import type {
 } from '../types/rpc.ts'
 import { ProductInfoService } from './steam/product-info-service.ts'
 import { SteamSession } from './steam/steam-session.ts'
+import { networkFetch } from './shared/network-diagnostics.ts'
 import type { BackgroundDownloadCoordinator } from './downloads/background-download-coordinator.ts'
 import type { ProductInfo, ProductInfoResult } from './steam/types.ts'
 import type { KalamataDatabase } from '../db/database.ts'
@@ -121,7 +122,7 @@ export class SteamService {
       service = new ManifestAcquisitionService(
         this.#session,
         database,
-        fetch,
+        networkFetch,
         undefined,
         this.getHubcapArchive(database),
       )
@@ -191,7 +192,7 @@ export class SteamService {
     if (!service) {
       service = new DepotKeyAcquisitionService(
         database,
-        fetch,
+        networkFetch,
         this.backgroundDownloads,
         async (appId, depotId, key, signal) => {
           const row = database.sqlite

@@ -1,4 +1,5 @@
 import type { ContentServer } from '../../steam/types.ts'
+import type { Fetcher } from '../../shared/network-diagnostics.ts'
 import { MAX_CHUNK_BYTES } from '../manifests/manifest-utils.ts'
 
 const USER_AGENT = 'Valve/Steam HTTP Client 1.0'
@@ -23,7 +24,8 @@ export function downloadChunkData(
   url: string,
   vhost: string,
   signal?: AbortSignal,
-  fetcher: typeof fetch = fetch,
+  // The owning SteamContentClient supplies a download-scoped summary sink.
+  fetcher: Fetcher = fetch,
 ): Promise<Buffer> {
   return fetchChunkData(url, vhost, signal, fetcher)
 }
@@ -32,7 +34,7 @@ async function fetchChunkData(
   url: string,
   vhost: string,
   signal: AbortSignal | undefined,
-  fetcher: typeof fetch,
+  fetcher: Fetcher,
 ): Promise<Buffer> {
   const controller = new AbortController()
   const onAbort = () =>
@@ -48,7 +50,10 @@ async function fetchChunkData(
     timeout = setTimeout(
       () =>
         controller.abort(
-          new Error(`HTTP request timed out after ${REQUEST_TIMEOUT_MS}ms`),
+          new DOMException(
+            `HTTP request timed out after ${REQUEST_TIMEOUT_MS}ms`,
+            'TimeoutError',
+          ),
         ),
       REQUEST_TIMEOUT_MS,
     )

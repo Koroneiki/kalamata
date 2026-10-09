@@ -40,6 +40,7 @@ import type {
 } from '../downloads/background-download-coordinator.ts'
 import { writeHttpTransfer } from '../downloads/http-transfer.ts'
 import { abortable } from '../shared/abortable.ts'
+import { networkFetch } from '../shared/network-diagnostics.ts'
 
 interface DependencyDefinition {
   dependencyId: ColdClientDependencyId
@@ -136,7 +137,7 @@ export class ColdClientDependencyService {
     this.#downloadsRoot = join(this.root, 'downloads')
     this.#stagingRoot = join(this.root, 'staging')
     this.#platform = options.platform ?? process.platform
-    this.#fetcher = options.fetcher ?? fetch
+    this.#fetcher = options.fetcher ?? networkFetch
     this.#extractor = options.extractor ?? new ArchiveExtractor()
     this.#mutex = options.mutex ?? new ColdClientMutationMutex()
     this.#backgroundDownloads = options.backgroundDownloads
@@ -571,9 +572,11 @@ export class ColdClientDependencyService {
       signal,
     })
     if (!response.ok || !response.body) {
+      await response.body?.cancel().catch(() => {})
       throw new Error(`Dependency download failed (${response.status})`)
     }
     if (new URL(response.url || remote.sourceUrl).protocol !== 'https:') {
+      await response.body.cancel().catch(() => {})
       throw new Error('Dependency download redirected outside HTTPS')
     }
     const result = await writeHttpTransfer({
@@ -611,6 +614,7 @@ export class ColdClientDependencyService {
       signal,
     )
     if (!response.ok) {
+      await response.body?.cancel().catch(() => {})
       throw new Error(`Dependency update check failed (${response.status})`)
     }
     return parseRemoteArtifact(

@@ -20,6 +20,7 @@ import type {
   ManifestAcquisitionResult,
 } from '../../../types/rpc.ts'
 import { abortable } from '../../shared/abortable.ts'
+import { networkFetch } from '../../shared/network-diagnostics.ts'
 import type { SteamSession } from '../../steam/steam-session.ts'
 import type { ContentServer } from '../../steam/types.ts'
 import { HubcapClient } from '../keys/hubcap-client.ts'
@@ -98,7 +99,7 @@ export class ManifestAcquisitionService {
   constructor(
     private readonly session: Pick<SteamSession, 'getClient'>,
     private readonly database: KalamataDatabase,
-    private readonly fetcher: Fetcher = fetch,
+    private readonly fetcher: Fetcher = networkFetch,
     private readonly decompress: (
       data: Buffer,
     ) => Promise<Buffer> = decompressManifest,
@@ -259,7 +260,10 @@ export class ManifestAcquisitionService {
             githubAppFile(repo, appId, filename),
             { signal },
           )
-          if (!response.ok) continue
+          if (!response.ok) {
+            await response.body?.cancel().catch(() => {})
+            continue
+          }
           const body = Buffer.from(
             await abortable(response.arrayBuffer(), signal),
           )
@@ -303,6 +307,7 @@ export class ManifestAcquisitionService {
       signal,
     )
     if (!response.ok) {
+      await response.body?.cancel().catch(() => {})
       throw new Error(`Steam manifest download failed (${response.status})`)
     }
 
@@ -535,6 +540,7 @@ async function fetchManifestRequestCode(
     signal,
   )
   if (!response.ok) {
+    await response.body?.cancel().catch(() => {})
     throw new Error(`Manifest request code lookup failed (${response.status})`)
   }
   const body = (await abortable(response.text(), signal)).trim()

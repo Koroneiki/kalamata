@@ -14,6 +14,7 @@ import { GITHUB_REPOSITORIES, githubAppFile } from './github-sources.ts'
 import { HubcapArchive, extractHubcapLua } from './hubcap-archive.ts'
 import type { JobContext } from '../../downloads/background-download-coordinator.ts'
 import { abortable } from '../../shared/abortable.ts'
+import { networkFetch } from '../../shared/network-diagnostics.ts'
 import type { BackgroundDownloadCoordinator } from '../../downloads/background-download-coordinator.ts'
 
 type Fetcher = (
@@ -38,7 +39,7 @@ export class DepotKeyAcquisitionService {
 
   constructor(
     private readonly database: KalamataDatabase,
-    private readonly fetcher: Fetcher = fetch,
+    private readonly fetcher: Fetcher = networkFetch,
     private readonly backgroundDownloads?: BackgroundDownloadCoordinator,
     private readonly verifyCandidate: (
       appId: number,
@@ -385,7 +386,10 @@ export class DepotKeyAcquisitionService {
         githubAppFile(repo, appId, `${appId}.lua`),
         { signal },
       )
-      if (!response.ok) return null
+      if (!response.ok) {
+        await response.body?.cancel().catch(() => {})
+        return null
+      }
       return await abortable(response.text(), signal)
     } catch (error) {
       if (signal.aborted) throw error

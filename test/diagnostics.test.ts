@@ -115,7 +115,7 @@ test('records uncaught exceptions and unhandled rejections', async () => {
 test('rotates a one MiB log and keeps one archive', async () => {
   directory = await mkdtemp(join(tmpdir(), 'kalamata-diagnostics-'))
   const diagnostics = new Diagnostics(directory)
-  const archivePath = join(directory, 'kalamata.old.log')
+  const archivePath = join(directory, 'log', 'kalamata.old.log')
   await writeFile(diagnostics.path, Buffer.alloc(1024 * 1024, 'a'))
   await writeFile(archivePath, 'stale archive')
 
@@ -126,4 +126,34 @@ test('rotates a one MiB log and keeps one archive', async () => {
     level: 'info',
     event: 'app.ready',
   })
+})
+
+test('keeps application and network logs separate with independent rotation', async () => {
+  directory = await mkdtemp(join(tmpdir(), 'kalamata-diagnostics-'))
+  const legacyPath = join(directory, 'kalamata.log')
+  await writeFile(legacyPath, 'previous logs')
+  const diagnostics = new Diagnostics(directory)
+  diagnostics.info({ event: 'app.ready' })
+  const applicationLog = await readFile(
+    join(directory, 'log', 'kalamata.log'),
+    'utf8',
+  )
+  const archivePath = join(directory, 'log', 'network.old.log')
+  await writeFile(diagnostics.networkPath, Buffer.alloc(1024 * 1024, 'n'))
+  await writeFile(archivePath, 'stale network archive')
+
+  diagnostics.network({
+    event: 'steam.session.started',
+    connectionId: 'connection-1',
+  })
+
+  expect((await stat(archivePath)).size).toBe(1024 * 1024)
+  expect(
+    JSON.parse(await readFile(join(directory, 'log', 'network.log'), 'utf8')),
+  ).toMatchObject({
+    event: 'steam.session.started',
+    connectionId: 'connection-1',
+  })
+  expect(await readFile(diagnostics.path, 'utf8')).toBe(applicationLog)
+  expect(await readFile(legacyPath, 'utf8')).toBe('previous logs')
 })

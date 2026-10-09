@@ -1,11 +1,12 @@
 import { z } from 'zod'
+import { networkFetch } from '../shared/network-diagnostics.ts'
 import { steamIdSchema } from '../../types/schemas.ts'
 
 const STORE_BROWSE_URL =
   'https://api.steampowered.com/IStoreBrowseService/GetItems/v1/'
 
 export class StoreBrowseClient {
-  constructor(private readonly fetcher: Fetcher = fetch) {}
+  constructor(private readonly fetcher: Fetcher = networkFetch) {}
 
   async getPackageIds(
     appIds: number[],
@@ -22,6 +23,7 @@ export class StoreBrowseClient {
     )
     const response = await this.fetcher(url)
     if (!response.ok) {
+      await response.body?.cancel().catch(() => {})
       const status = Number.isFinite(response.status)
         ? `HTTP ${response.status}`
         : 'a failure without an HTTP status'

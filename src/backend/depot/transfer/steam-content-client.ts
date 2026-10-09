@@ -8,6 +8,7 @@ import {
 } from './chunk-http.ts'
 import { DecompressPool } from './decompress-pool.ts'
 import type { SteamContentUser } from '../../steam/types.ts'
+import { ChunkNetworkDiagnostics } from '../../shared/chunk-network-diagnostics.ts'
 
 export class SteamContentClient implements ChunkClient {
   #decompressPool: DecompressPool | undefined
@@ -17,6 +18,7 @@ export class SteamContentClient implements ChunkClient {
   constructor(
     private readonly user: SteamContentUser,
     private readonly depotKey: Buffer,
+    private readonly network = new ChunkNetworkDiagnostics(),
   ) {}
 
   getContentServers(appId: number): Promise<{ servers: ContentServer[] }> {
@@ -41,7 +43,12 @@ export class SteamContentClient implements ChunkClient {
     let location = buildChunkUrl(server, depotId, chunkSha1, token)
     let encrypted: Buffer
     try {
-      encrypted = await downloadChunkData(location.url, location.vhost, signal)
+      encrypted = await downloadChunkData(
+        location.url,
+        location.vhost,
+        signal,
+        this.network.fetch,
+      )
     } catch (error) {
       // Some servers omit token auth metadata, and cached tokens may expire during long downloads.
       if (!(error instanceof HttpStatusError) || error.statusCode !== 403)
@@ -52,7 +59,12 @@ export class SteamContentClient implements ChunkClient {
         signal,
       )
       location = buildChunkUrl(server, depotId, chunkSha1, token)
-      encrypted = await downloadChunkData(location.url, location.vhost, signal)
+      encrypted = await downloadChunkData(
+        location.url,
+        location.vhost,
+        signal,
+        this.network.fetch,
+      )
     }
     this.#decompressPool ??= new DecompressPool(this.depotKey)
     const networkBytes = encrypted.length
@@ -69,6 +81,7 @@ export class SteamContentClient implements ChunkClient {
 
   dispose(): void {
     this.#decompressPool?.dispose()
+    this.network.flush()
   }
 
   async #getToken(
