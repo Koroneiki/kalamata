@@ -1,5 +1,52 @@
 # Changelog
 
+## v1.1.0
+
+Release date: 09.10.2026
+
+[compare changes](https://github.com/Koroneiki/kalamata/compare/v1.0.5...v1.1.0)
+
+### 🚀 New
+
+- **downloads:** Add a shared background job queue for depot keys, manifests, ColdClient work, dependency downloads, and application updates.
+- **history:** Keep a persistent, unified history of game operations and background jobs with timestamps, transferred bytes, and failure details.
+- **library:** Automatically prepare missing depot keys and manifests for library games in the background.
+- **updates:** Download and stage Kalamata updates in the background before offering installation from Settings.
+- **settings:** Download or remove individual ColdClient dependencies.
+- **diagnostics:** Add a separate network log with Steam CDN transfer summaries.
+
+### ✨ Enhancements
+
+- **downloads:** Group manifest acquisitions by game with cumulative progress, and keep unresolved game failures visible in Next up.
+- **desktop:** Show active and queued background work in a read-only Jobs section, with completed activity and operation details in History.
+- **manifests:** Expand request-code and GitHub fallbacks, and share Hubcap archive downloads between depot-key and manifest acquisition.
+- **desktop:** Show the Kalamata icon in the sidebar header.
+
+### 🩹 Fixes
+
+- **downloads:** Preserve resumable work when the application shuts down.
+- **downloads:** Correct background job retry and shutdown handling.
+- **updates:** Prepare the recorded installed manifests needed for game updates.
+- **depot-keys:** Preserve Steam request order and verify acquired keys against manifests with CDN failover.
+- **history:** Avoid recording cached manifest reads as new downloads.
+
+### 💅 Refactors
+
+- **steam:** Centralize and share application product-info requests.
+
+### 🏡 Chore
+
+- **docs:** Simplify the user-facing README and update background-job documentation.
+- **history:** Store activity history in its own subdirectory.
+
+### ✅ Tests
+
+- **downloads:** Cover background jobs, persistent history, shutdown recovery, resource acquisition, application updates, and network diagnostics.
+
+### ❤️ Contributors
+
+- Koroneiki <101889814+Koroneiki@users.noreply.github.com>
+
 ## v1.0.5
 
 Release date: 22.09.2026
