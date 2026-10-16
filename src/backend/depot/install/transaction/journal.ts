@@ -1,7 +1,7 @@
 import { lstat, readFile, readdir, rm } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { z } from 'zod'
-import { CONFIG_DIRECTORY } from '../internal-paths.ts'
+import { installStateDirectory } from '../internal-paths.ts'
 import { resolveManifestPath } from '../filesystem.ts'
 import {
   canonicalManifestPath,
@@ -252,7 +252,10 @@ export async function loadResumableJournal(
   target: Map<string, ProjectionEntry>,
   validateRetained?: (journal: TransactionJournal) => Promise<boolean>,
 ): Promise<TransactionJournal | undefined> {
-  const root = join(options.outputDirectory, CONFIG_DIRECTORY, 'transactions')
+  const root = join(
+    installStateDirectory(options.dataRoot, options.outputDirectory),
+    'transactions',
+  )
   let entries
   try {
     entries = await readdir(root, { withFileTypes: true })
@@ -355,10 +358,10 @@ async function validateStagingLedger(
 export async function stagedAllocatedBytes(
   outputDirectory: string,
   journal: TransactionJournal,
+  dataRoot: string,
 ): Promise<bigint> {
   const stagingRoot = join(
-    outputDirectory,
-    CONFIG_DIRECTORY,
+    installStateDirectory(dataRoot, outputDirectory),
     'transactions',
     journal.id,
     'staging',

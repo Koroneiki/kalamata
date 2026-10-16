@@ -1,6 +1,7 @@
 import { afterEach, expect, mock } from 'bun:test'
 import { mkdir, realpath, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { installStateDirectory } from '../../../src/backend/depot/install/internal-paths.ts'
 import type { ReconcileApplicationOptions } from '../../../src/backend/depot/depot-download-service.ts'
 import { ApplicationTransactionError } from '../../../src/backend/depot/install/transaction/types.ts'
 import {
@@ -114,7 +115,11 @@ test('transfer exhaustion remains resumable and cancellable', async () => {
     }),
   )
   await expect(
-    getResumableApplicationTransaction(fixture.installPath, APP_ID),
+    getResumableApplicationTransaction(
+      fixture.installPath,
+      APP_ID,
+      fixture.database.dataRoot,
+    ),
   ).resolves.toBeNull()
 })
 
@@ -125,12 +130,14 @@ test('startup restores an explicitly paused download with its reserved path', as
   await writeQueueStagingJournal(options, true)
 
   await recoverApplicationTransaction(fixture.installPath, {
+    dataRoot: fixture.database.dataRoot,
     appId: APP_ID,
     reconcile: async () => {},
   })
   const resumable = await getResumableApplicationTransaction(
     fixture.installPath,
     APP_ID,
+    fixture.database.dataRoot,
   )
   if (!resumable) fixture.database.clearUnusedInstallPath(APP_ID)
 
@@ -238,6 +245,7 @@ test('shutdown preserves a downloading journal even when the transfer rejects wi
     await getResumableApplicationTransaction(
       await realpath(fixture.installPath),
       APP_ID,
+      fixture.database.dataRoot,
     ),
   ).not.toBeNull()
 
@@ -307,7 +315,11 @@ test('removing queued paused work discards its journal first', async () => {
   await queue.removeQueuedOperation('queued-paused')
 
   expect(
-    await getResumableApplicationTransaction(fixture.installPath, APP_ID),
+    await getResumableApplicationTransaction(
+      fixture.installPath,
+      APP_ID,
+      fixture.database.dataRoot,
+    ),
   ).toBeNull()
   expect(fixture.database.getLibraryEntry(APP_ID)?.installPath).toBeNull()
 })
@@ -319,8 +331,7 @@ test('commit-ready failures require repair and keep the app protected', async ()
       getProductInfoWithDlc: async () => products(),
       reconcileApplication: async () => {
         const transaction = join(
-          fixture.installPath,
-          '.Kalamata',
+          installStateDirectory(fixture.database.dataRoot, fixture.installPath),
           'transactions',
           'pending',
         )
@@ -426,8 +437,7 @@ test('cleanup failure transitions to repair-required instead of staying active',
       getProductInfoWithDlc: async () => products(),
       reconcileApplication: async (options) => {
         const transaction = join(
-          fixture.installPath,
-          '.Kalamata',
+          installStateDirectory(fixture.database.dataRoot, fixture.installPath),
           'transactions',
           'malformed',
         )
@@ -470,6 +480,7 @@ function restoreOptions(
     .getManifestRows(depot.depotId)
     .find(({ manifestId }) => manifestId === depot.manifestId)!
   return {
+    dataRoot: fixture.database.dataRoot,
     kind: 'download',
     appId: APP_ID,
     outputDirectory: fixture.installPath,

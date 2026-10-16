@@ -571,6 +571,7 @@ startup = (async () => {
     if (!entry.installPath) continue
     try {
       await recoverApplicationTransaction(entry.installPath, {
+        dataRoot: database.dataRoot,
         appId: entry.appId,
         reconcile: async (desired) =>
           database.reconcileInstalledDepots(
@@ -590,8 +591,12 @@ startup = (async () => {
       const resumable = await getResumableApplicationTransaction(
         entry.installPath,
         entry.appId,
+        database.dataRoot,
       )
-      const repairFallback = await hasRepairFallback(entry.installPath)
+      const repairFallback = await hasRepairFallback(
+        entry.installPath,
+        database.dataRoot,
+      )
       if (repairFallback) {
         recoveryFailures.push({
           appId: entry.appId,

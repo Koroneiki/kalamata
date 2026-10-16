@@ -1,12 +1,10 @@
 import { lstat } from 'node:fs/promises'
 import { join } from 'node:path'
-import { CONFIG_DIRECTORY } from './internal-paths.ts'
 import { filesystemErrorCode } from './transaction/types.ts'
 
 export async function assertSafeInternalStatePaths(
-  outputDirectory: string,
+  directory: string,
 ): Promise<void> {
-  const directory = join(outputDirectory, CONFIG_DIRECTORY)
   for (const path of [
     directory,
     join(directory, 'transactions'),

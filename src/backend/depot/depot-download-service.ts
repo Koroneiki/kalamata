@@ -27,6 +27,7 @@ export interface ApplicationDepotInput {
 }
 
 export interface ReconcileApplicationOptions {
+  dataRoot: string
   kind: 'download' | 'reconcile' | 'repair'
   appId: number
   outputDirectory: string
@@ -121,6 +122,7 @@ export class DepotDownloadService {
           },
         )
         const transactionOptions: RunApplicationTransactionOptions = {
+          dataRoot: options.dataRoot,
           kind: options.kind,
           appId: options.appId,
           outputDirectory: options.outputDirectory,

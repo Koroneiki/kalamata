@@ -34,6 +34,8 @@ test('configures a complete reviewed ColdClient installation', async () => {
 
   const result = await service.configure(fixture.request)
 
+  await expect(access(join(fixture.installRoot, '.Kalamata'))).rejects.toThrow()
+
   expect(result).toMatchObject({
     status: {
       status: 'configured',
@@ -338,6 +340,30 @@ test('regenerates reviewed settings and loader choices while preserving custom f
   })
 })
 
+test('ignores legacy ColdClient journals and leaves them untouched', async () => {
+  const fixture = await createFixture()
+  const legacy = join(fixture.installRoot, '.Kalamata')
+  await mkdir(legacy)
+  const journal = join(legacy, 'coldclient-replacement.json')
+  await writeFile(journal, '{broken legacy journal')
+  const service = createService(fixture)
+
+  expect(await service.hasRecoveryJournal(fixture.installRoot)).toBe(false)
+  expect(await service.recover(10, fixture.installRoot)).toEqual({
+    status: 'none',
+  })
+  await service.configure(fixture.request)
+
+  expect(await service.getStatus(10)).toMatchObject({ status: 'configured' })
+  expect(await readFile(journal, 'utf8')).toBe('{broken legacy journal')
+  expect(
+    await readFile(
+      join(fixture.installRoot, '_ColdClient', 'steamclient64.dll'),
+      'utf8',
+    ),
+  ).toBe('client x64')
+})
+
 test('updates only managed core files and preserves custom configuration', async () => {
   const fixture = await createFixture()
   const service = createService(fixture)
@@ -593,6 +619,7 @@ async function createFixture() {
 }
 
 class FakeDatabase {
+  readonly dataRoot = root!
   current: ColdClientInstallation | null = null
   installs = [{ depotId: 11, installedManifestId: '1000' }]
 

@@ -9,7 +9,8 @@ import {
   writeFile,
 } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
+import { installStateDirectory } from '../../../../../src/backend/depot/install/internal-paths.ts'
 import {
   ApplicationTransactionError,
   type ApplicationTransactionCrashBoundary,
@@ -32,6 +33,10 @@ import { HttpStatusError } from '../../../../../src/backend/depot/transfer/chunk
 import { depot, enospcClient, fakeClient, run } from './transaction-fixtures.ts'
 
 let directory: string | undefined
+
+function statePath(...paths: string[]): string {
+  return join(installStateDirectory(directory!, directory!), ...paths)
+}
 
 afterEach(async () => {
   if (directory) await rm(directory, { recursive: true, force: true })
@@ -284,10 +289,7 @@ describe('application filesystem transactions', () => {
     })
     await writeFile(join(directory, 'retained.bin'), 'bad!')
     await writeStagingJournal(desired, 'new', undefined, [desired])
-    const journalPath = join(
-      directory,
-      '.Kalamata/transactions/resume-test/journal.json',
-    )
+    const journalPath = statePath('transactions/resume-test/journal.json')
     const journal = JSON.parse(await readFile(journalPath, 'utf8'))
     journal.kind = 'repair'
     journal.logicalInstalledTotal = '7'
@@ -333,12 +335,9 @@ describe('application filesystem transactions', () => {
     directory = await tempDirectory()
     const desired = depot(10, '1', { 'game.bin': 'good' })
     await writeStagingJournal(desired, 'good')
-    const journalPath = join(
-      directory,
-      '.Kalamata/transactions/resume-test/journal.json',
-    )
+    const journalPath = statePath('transactions/resume-test/journal.json')
     const journal = JSON.parse(await readFile(journalPath, 'utf8'))
-    journal.stagedFiles[0].path = '.Kalamata/file'
+    journal.stagedFiles[0].path = '../file'
     await writeFile(journalPath, JSON.stringify(journal))
 
     const result = await run(directory, [], [desired])
@@ -351,10 +350,7 @@ describe('application filesystem transactions', () => {
     directory = await tempDirectory()
     const desired = depot(10, '1', { 'game.bin': 'good' })
     await writeStagingJournal(desired, 'good')
-    const journalPath = join(
-      directory,
-      '.Kalamata/transactions/resume-test/journal.json',
-    )
+    const journalPath = statePath('transactions/resume-test/journal.json')
     await rm(journalPath)
     await mkdir(journalPath)
 
@@ -369,10 +365,7 @@ describe('application filesystem transactions', () => {
     directory = await tempDirectory()
     const desired = depot(10, '1', { 'game.bin': 'good' })
     await writeStagingJournal(desired, 'good')
-    const journalPath = join(
-      directory,
-      '.Kalamata/transactions/resume-test/journal.json',
-    )
+    const journalPath = statePath('transactions/resume-test/journal.json')
     const journal = JSON.parse(await readFile(journalPath, 'utf8'))
     journal.stagedFiles = []
     journal.completedChunks = {}
@@ -388,10 +381,7 @@ describe('application filesystem transactions', () => {
     directory = await tempDirectory()
     const desired = depot(10, '1', { 'empty.bin': '' })
     await writeStagingJournal(desired, '')
-    const journalPath = join(
-      directory,
-      '.Kalamata/transactions/resume-test/journal.json',
-    )
+    const journalPath = statePath('transactions/resume-test/journal.json')
     const journal = JSON.parse(await readFile(journalPath, 'utf8'))
     journal.stagedFiles = []
     delete journal.retainedFileCount
@@ -584,7 +574,7 @@ describe('application filesystem transactions', () => {
       run(directory, [], [desired], { signal: controller.signal }),
     ).rejects.toMatchObject({ kind: 'steam' })
     await expect(
-      getResumableApplicationTransaction(directory, 100),
+      getResumableApplicationTransaction(directory, 100, directory),
     ).resolves.toMatchObject({
       appId: 100,
       networkBytes: '0',
@@ -602,7 +592,7 @@ describe('application filesystem transactions', () => {
       kind: 'transfer-exhausted',
     })
     await expect(
-      getResumableApplicationTransaction(directory, 100),
+      getResumableApplicationTransaction(directory, 100, directory),
     ).resolves.toMatchObject({
       appId: 100,
       networkBytes: '0',
@@ -658,6 +648,7 @@ describe('application filesystem transactions', () => {
         desired.client.downloadChunk as ReturnType<typeof mock>
       ).mock.calls.length
       await recoverApplicationTransaction(directory, {
+        dataRoot: directory,
         appId: 100,
         reconcile: async () => void sqlite++,
       })
@@ -688,12 +679,11 @@ describe('application filesystem transactions', () => {
       .calls.length
     const [transaction] = await transactionEntries()
     expect(
-      await exists(
-        join('.Kalamata/transactions', transaction!, 'backup/game.bin'),
-      ),
+      await exists(statePath('transactions', transaction!, 'backup/game.bin')),
     ).toBe(true)
 
     await recoverApplicationTransaction(directory, {
+      dataRoot: directory,
       appId: 100,
       reconcile: async () => {},
     })
@@ -719,8 +709,14 @@ describe('application filesystem transactions', () => {
       }),
     ).rejects.toBeInstanceOf(ApplicationTransactionError)
 
-    const first = await archiveUnresolvedApplicationTransaction(directory)
-    const second = await archiveUnresolvedApplicationTransaction(directory)
+    const first = await archiveUnresolvedApplicationTransaction(
+      directory,
+      directory,
+    )
+    const second = await archiveUnresolvedApplicationTransaction(
+      directory,
+      directory,
+    )
     expect(second).toEqual(first)
     expect(second).toEqual([
       expect.objectContaining({ depotId: 10, manifestId: '2', mountIndex: 0 }),
@@ -731,23 +727,23 @@ describe('application filesystem transactions', () => {
     directory = await tempDirectory()
     const desired = depot(10, '1', { 'game.bin': 'good' })
     await writeStagingJournal(desired, 'good')
-    await mkdir(join(directory, '.Kalamata/repair-fallback'), {
+    await mkdir(statePath('repair-fallback'), {
       recursive: true,
     })
-    const release = await acquireOutputLock(directory)
+    const release = await acquireOutputLock(directory, directory)
 
     try {
       await expect(
-        archiveUnresolvedApplicationTransaction(directory),
+        archiveUnresolvedApplicationTransaction(directory, directory),
       ).rejects.toThrow('already using')
       await expect(
-        discardPrecommitApplicationTransaction(directory),
+        discardPrecommitApplicationTransaction(directory, directory),
       ).rejects.toThrow('already using')
-      await expect(clearRepairFallback(directory)).rejects.toThrow(
+      await expect(clearRepairFallback(directory, directory)).rejects.toThrow(
         'already using',
       )
       expect(await transactionEntries()).toEqual(['resume-test'])
-      expect(await exists('.Kalamata/repair-fallback')).toBe(true)
+      expect(await exists(statePath('repair-fallback'))).toBe(true)
     } finally {
       await release()
     }
@@ -757,15 +753,16 @@ describe('application filesystem transactions', () => {
     directory = await tempDirectory()
     const desired = depot(10, '1', { 'game.bin': 'good' })
     await writeStagingJournal(desired, 'good')
-    await writeFile(join(directory, '.Kalamata/transactions/.DS_Store'), '')
+    await writeFile(statePath('transactions/.DS_Store'), '')
 
     await recoverApplicationTransaction(directory, {
+      dataRoot: directory,
       appId: 100,
       reconcile: async () => {},
     })
 
     expect(
-      await getResumableApplicationTransaction(directory, 100),
+      await getResumableApplicationTransaction(directory, 100, directory),
     ).toMatchObject({ appId: 100, paused: true })
   })
 
@@ -776,10 +773,7 @@ describe('application filesystem transactions', () => {
       'network.bin': 'net',
     })
     await writeStagingJournal(desired, 'local')
-    const journalPath = join(
-      directory,
-      '.Kalamata/transactions/resume-test/journal.json',
-    )
+    const journalPath = statePath('transactions/resume-test/journal.json')
     const journal = JSON.parse(await readFile(journalPath, 'utf8'))
     journal.stagedFiles = desired.manifest.files.map((file) => ({
       path: file.filename,
@@ -803,7 +797,7 @@ describe('application filesystem transactions', () => {
     await writeFile(journalPath, JSON.stringify(journal))
 
     expect(
-      await getResumableApplicationTransaction(directory, 100),
+      await getResumableApplicationTransaction(directory, 100, directory),
     ).toMatchObject({
       installedBytesCompleted: '15',
       installedBytesTotal: '15',
@@ -816,16 +810,17 @@ describe('application filesystem transactions', () => {
     directory = await tempDirectory()
     const desired = depot(10, '1', { 'game.bin': 'good' })
     await writeStagingJournal(desired, 'good')
-    await mkdir(join(directory, '.Kalamata/transactions/other'))
+    await mkdir(statePath('transactions/other'))
 
     await expect(
       recoverApplicationTransaction(directory, {
+        dataRoot: directory,
         appId: 100,
         reconcile: async () => {},
       }),
     ).rejects.toMatchObject({ kind: 'recovery' })
     await expect(
-      getResumableApplicationTransaction(directory, 100),
+      getResumableApplicationTransaction(directory, 100, directory),
     ).rejects.toMatchObject({ kind: 'recovery' })
     expect(await transactionEntries()).toEqual(['other', 'resume-test'])
   })
@@ -835,6 +830,7 @@ describe('application filesystem transactions', () => {
     const contention = new OutputLockBusyError(directory)
 
     const error = await recoverApplicationTransaction(directory, {
+      dataRoot: directory,
       appId: 100,
       reconcile: async () => {},
       acquireLock: async () => {
@@ -849,44 +845,48 @@ describe('application filesystem transactions', () => {
 
   test('detects archived repair evidence', async () => {
     directory = await tempDirectory()
-    expect(await hasRepairFallback(directory)).toBe(false)
-    await mkdir(join(directory, '.Kalamata/repair-fallback/pending'), {
+    expect(await hasRepairFallback(directory, directory)).toBe(false)
+    await mkdir(statePath('repair-fallback/pending'), {
       recursive: true,
     })
-    await writeFile(join(directory, '.Kalamata/repair-fallback/.DS_Store'), '')
+    await writeFile(statePath('repair-fallback/.DS_Store'), '')
 
-    expect(await hasRepairFallback(directory)).toBe(true)
+    expect(await hasRepairFallback(directory, directory)).toBe(true)
   })
 
   test('archives ambiguous journals and repairs from installed metadata', async () => {
     directory = await tempDirectory()
     const desired = depot(10, '1', { 'game.bin': 'good' })
     await writeStagingJournal(desired, 'good')
-    await mkdir(join(directory, '.Kalamata/transactions/other'))
+    await mkdir(statePath('transactions/other'))
 
-    expect(await archiveUnresolvedApplicationTransaction(directory)).toBeNull()
-    expect(await transactionEntries()).toEqual([])
     expect(
-      (await readdir(join(directory, '.Kalamata/repair-fallback'))).sort(),
-    ).toEqual(['other', 'resume-test'])
+      await archiveUnresolvedApplicationTransaction(directory, directory),
+    ).toBeNull()
+    expect(await transactionEntries()).toEqual([])
+    expect((await readdir(statePath('repair-fallback'))).sort()).toEqual([
+      'other',
+      'resume-test',
+    ])
   })
 
   test('malformed recovery journal leaves live files and backups untouched', async () => {
     directory = await tempDirectory()
     await writeFile(join(directory, 'game.bin'), 'live')
-    const root = join(directory, '.Kalamata/transactions/bad')
+    const root = statePath('transactions/bad')
     await mkdir(join(root, 'backup'), { recursive: true })
     await writeFile(join(root, 'backup/game.bin'), 'backup')
     await writeFile(join(root, 'journal.json'), '{broken')
 
     await expect(
       recoverApplicationTransaction(directory, {
+        dataRoot: directory,
         appId: 100,
         reconcile: async () => {},
       }),
     ).rejects.toMatchObject({ kind: 'recovery' })
     expect(await text('game.bin')).toBe('live')
-    expect(await text('.Kalamata/transactions/bad/backup/game.bin')).toBe(
+    expect(await text(statePath('transactions/bad/backup/game.bin'))).toBe(
       'backup',
     )
   })
@@ -895,7 +895,7 @@ describe('application filesystem transactions', () => {
     directory = await tempDirectory()
     await writeFile(join(directory, 'game.bin'), 'live')
     for (const [id, phase] of [['completed', 'completed']] as const) {
-      const root = join(directory, '.Kalamata/transactions', id)
+      const root = statePath('transactions', id)
       await mkdir(join(root, 'staging'), { recursive: true })
       await writeFile(join(root, 'staging/residue'), 'temporary')
       await writeFile(
@@ -923,6 +923,7 @@ describe('application filesystem transactions', () => {
     }
 
     await recoverApplicationTransaction(directory, {
+      dataRoot: directory,
       appId: 100,
       reconcile: async () => {},
     })
@@ -937,26 +938,24 @@ describe('application filesystem transactions', () => {
     await writeStagingJournal(desired, 'good')
 
     await expect(
-      getResumableApplicationTransaction(directory, 101),
+      getResumableApplicationTransaction(directory, 101, directory),
     ).rejects.toMatchObject({ kind: 'recovery' })
     await expect(
       recoverApplicationTransaction(directory, {
+        dataRoot: directory,
         appId: 101,
         reconcile: async () => {},
       }),
     ).rejects.toMatchObject({ kind: 'recovery' })
 
-    const journalPath = join(
-      directory,
-      '.Kalamata/transactions/resume-test/journal.json',
-    )
+    const journalPath = statePath('transactions/resume-test/journal.json')
     const journal = JSON.parse(await readFile(journalPath, 'utf8'))
     journal.appId = 100
     journal.installPath = `${directory}-other`
     await writeFile(journalPath, JSON.stringify(journal))
 
     await expect(
-      getResumableApplicationTransaction(directory, 100),
+      getResumableApplicationTransaction(directory, 100, directory),
     ).rejects.toMatchObject({ kind: 'recovery' })
   })
 })
@@ -966,12 +965,12 @@ async function tempDirectory(): Promise<string> {
 }
 
 async function text(path: string): Promise<string> {
-  return readFile(join(directory!, path), 'utf8')
+  return readFile(resolve(directory!, path), 'utf8')
 }
 
 async function exists(path: string): Promise<boolean> {
   try {
-    await lstat(join(directory!, path))
+    await lstat(resolve(directory!, path))
     return true
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
@@ -981,7 +980,7 @@ async function exists(path: string): Promise<boolean> {
 
 async function transactionEntries(): Promise<string[]> {
   try {
-    return (await readdir(join(directory!, '.Kalamata/transactions'))).sort()
+    return (await readdir(statePath('transactions'))).sort()
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
     throw error
@@ -995,7 +994,7 @@ async function writeStagingJournal(
   installed: DesiredApplicationDepot[] = [],
 ): Promise<void> {
   const id = 'resume-test'
-  const root = join(directory!, '.Kalamata/transactions', id)
+  const root = statePath('transactions', id)
   const staging = join(root, 'staging')
   await mkdir(staging, { recursive: true })
   const file = desired.manifest.files[0]!

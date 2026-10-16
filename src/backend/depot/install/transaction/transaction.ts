@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, rm, statfs, writeFile } from 'node:fs/promises'
+import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { manifestPathKey } from '../../manifests/manifest-utils.ts'
-import { CONFIG_DIRECTORY } from '../internal-paths.ts'
+import { installStateDirectory } from '../internal-paths.ts'
 import { acquireOutputLock } from '../output-lock.ts'
-import { resolveOutputPath } from '../filesystem.ts'
+import { resolveManifestPath } from '../filesystem.ts'
 import {
   planCommitActions,
   rollForward,
@@ -33,6 +33,7 @@ import {
 import { projectionEntryNeedsStaging } from './local-state.ts'
 import { recoverUnlocked } from './recovery.ts'
 import { prepareStagedFiles } from './staging.ts'
+import { assertTransactionSpace } from './space.ts'
 import {
   ApplicationTransactionError,
   classify,
@@ -62,6 +63,7 @@ export async function recoverAndRunApplicationTransaction(
 ): Promise<ApplicationTransactionResult> {
   return withTransactionLock(options, async () => {
     const recoveryOptions: RecoverApplicationTransactionCallbacks = {
+      dataRoot: options.dataRoot,
       appId: options.appId,
       reconcile: options.reconcile,
     }
@@ -74,11 +76,13 @@ export async function recoverAndRunApplicationTransaction(
 async function withTransactionLock<T>(
   options: Pick<
     RunApplicationTransactionOptions,
-    'outputDirectory' | 'acquireLock'
+    'outputDirectory' | 'acquireLock' | 'dataRoot'
   >,
   action: () => Promise<T>,
 ): Promise<T> {
-  const acquire = options.acquireLock ?? acquireOutputLock
+  const acquire =
+    options.acquireLock ??
+    ((path: string) => acquireOutputLock(path, options.dataRoot))
   const release = await acquire(options.outputDirectory).catch((error) => {
     throw classify(error, 'filesystem', 'Could not acquire output lock')
   })
@@ -198,7 +202,7 @@ function buildValidatedProjections(options: RunApplicationTransactionOptions) {
     const target = buildProjection(options.desiredDepots, options.appId)
     validateDesiredDepots(options.desiredDepots)
     for (const entry of target.values())
-      resolveOutputPath(options.outputDirectory, entry.file.filename)
+      resolveManifestPath(options.outputDirectory, entry.file.filename)
     return { source, target }
   } catch (error) {
     throw classify(error, 'planning', 'Could not build application projection')
@@ -309,22 +313,36 @@ async function prepareTransaction(
         : BigInt(resumed.estimatedDownloadBytes)
   }
   const allocatedBytes = resumed
-    ? await stagedAllocatedBytes(options.outputDirectory, resumed)
+    ? await stagedAllocatedBytes(
+        options.outputDirectory,
+        resumed,
+        options.dataRoot,
+      )
     : 0n
-  await assertSpace(
-    options.outputDirectory,
-    requiredBytes > allocatedBytes ? requiredBytes - allocatedBytes : 0n,
-  )
   const id = resumed?.id ?? randomUUID()
   const transactionRoot = join(
-    options.outputDirectory,
-    CONFIG_DIRECTORY,
+    installStateDirectory(options.dataRoot, options.outputDirectory),
     'transactions',
     id,
   )
   const stagingRoot = join(transactionRoot, 'staging')
   const backupRoot = join(transactionRoot, 'backup')
   const journalPath = join(transactionRoot, 'journal.json')
+  const { oldMoves } = await planCommitActions(
+    options.outputDirectory,
+    source,
+    target,
+    changed,
+    [],
+    backupRoot,
+  )
+  await assertTransactionSpace(
+    installStateDirectory(options.dataRoot, options.outputDirectory),
+    options.outputDirectory,
+    requiredBytes,
+    allocatedBytes,
+    oldMoves,
+  )
   const journal: TransactionJournal = resumed
     ? {
         ...resumed,
@@ -534,19 +552,4 @@ function throwTransactionFailure(
     'Application transaction failed',
     { cause: failure.cause },
   )
-}
-
-async function assertSpace(path: string, required: bigint): Promise<void> {
-  try {
-    const info = await statfs(path, { bigint: true })
-    const available = info.bavail * info.bsize
-    if (required > available)
-      throw new ApplicationTransactionError(
-        'insufficient-space',
-        `Staging requires ${required} bytes but only ${available} are available`,
-      )
-  } catch (error) {
-    if (error instanceof ApplicationTransactionError) throw error
-    // statfs is best-effort; actual allocation still reports ENOSPC.
-  }
 }

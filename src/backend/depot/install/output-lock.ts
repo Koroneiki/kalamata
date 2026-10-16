@@ -2,7 +2,7 @@ import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Database } from 'bun:sqlite'
 import { z } from 'zod'
-import { CONFIG_DIRECTORY } from './internal-paths.ts'
+import { installStateDirectory } from './internal-paths.ts'
 import { assertSafeInternalStatePaths } from './internal-state.ts'
 
 const sqliteLockErrorSchema = z.object({
@@ -33,9 +33,10 @@ export function isOutputLockBusyError(error: Error): boolean {
 
 export async function acquireOutputLock(
   outputDirectory: string,
+  dataRoot: string,
 ): Promise<() => Promise<void>> {
-  await assertSafeInternalStatePaths(outputDirectory)
-  const directory = join(outputDirectory, CONFIG_DIRECTORY)
+  const directory = installStateDirectory(dataRoot, outputDirectory)
+  await assertSafeInternalStatePaths(directory)
   const ownerPath = join(directory, 'download.lock')
   await mkdir(directory, { recursive: true })
   let database: Database | undefined

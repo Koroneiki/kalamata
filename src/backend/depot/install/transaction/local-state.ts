@@ -1,4 +1,4 @@
-import { resolveOutputPath, verifyFileSha1 } from '../filesystem.ts'
+import { resolveManifestPath, verifyFileSha1 } from '../filesystem.ts'
 import {
   executableModeMatches,
   isConfigFile,
@@ -26,7 +26,7 @@ export async function projectionEntryNeedsStaging(
 ): Promise<boolean> {
   throwIfAborted(signal)
   const wantsDirectory = isDirectory(entry.file)
-  const path = resolveOutputPath(outputDirectory, entry.file.filename)
+  const path = resolveManifestPath(outputDirectory, entry.file.filename)
   const info = await safeLstat(path)
   if (info?.isSymbolicLink())
     throw new ApplicationTransactionError(

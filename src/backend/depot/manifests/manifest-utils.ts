@@ -1,5 +1,4 @@
 import { posix, win32 } from 'node:path'
-import { CONFIG_DIRECTORY } from '../install/internal-paths.ts'
 import type { ManifestFile } from './types.ts'
 
 export const DIRECTORY = 64
@@ -37,11 +36,6 @@ export function canonicalManifestPath(
     throw new Error(`Manifest path escapes output directory: ${filename}`)
   }
   if (platform === 'win32') validateWindowsPath(canonical, filename)
-  if (
-    canonical.split('/', 1)[0]?.toLowerCase() === CONFIG_DIRECTORY.toLowerCase()
-  ) {
-    throw new Error(`Manifest path conflicts with internal state: ${filename}`)
-  }
   return canonical
 }
 

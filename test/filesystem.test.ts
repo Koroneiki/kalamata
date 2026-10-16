@@ -5,7 +5,6 @@ import { tmpdir } from 'node:os'
 import {
   assertNoSymlinkTraversal,
   resolveManifestPath,
-  resolveOutputPath,
 } from '../src/backend/depot/install/filesystem.ts'
 
 let directory: string | undefined
@@ -22,12 +21,6 @@ test('rejects manifest path traversal', () => {
   expect(() =>
     resolveManifestPath('/safe/output', 'folder\\file.bin'),
   ).not.toThrow()
-})
-
-test('rejects normalized internal-state aliases', () => {
-  expect(() =>
-    resolveOutputPath('/safe/output', 'ordinary/../.Kalamata/config'),
-  ).toThrow('conflicts with internal state')
 })
 
 test('rejects paths traversing an existing symlink', async () => {

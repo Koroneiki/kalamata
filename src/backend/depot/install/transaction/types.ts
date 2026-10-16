@@ -81,6 +81,10 @@ export type ApplicationTransactionEvent =
     }
 
 export type ApplicationTransactionCrashBoundary =
+  | 'backup-copied'
+  | 'backup-published'
+  | 'new-copied'
+  | 'new-published'
   | 'ready-to-commit'
   | 'old-moved'
   | 'some-new-installed'
@@ -89,6 +93,7 @@ export type ApplicationTransactionCrashBoundary =
   | 'sqlite-reconciled'
 
 export interface RunApplicationTransactionOptions {
+  dataRoot: string
   kind: 'download' | 'reconcile' | 'repair'
   appId: number
   outputDirectory: string
@@ -102,6 +107,7 @@ export interface RunApplicationTransactionOptions {
 }
 
 export interface RecoverApplicationTransactionCallbacks {
+  dataRoot: string
   appId: number
   reconcile: (desired: ApplicationDepotRecord[]) => Promise<void>
   acquireLock?: (outputDirectory: string) => Promise<() => Promise<void>>

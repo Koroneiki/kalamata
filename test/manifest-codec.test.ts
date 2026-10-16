@@ -111,10 +111,6 @@ test('rejects canonical path collisions and unsafe paths', () => {
     manifest.files[0]!.filename = filename
     expect(() => validateManifest(manifest, 20)).toThrow(/Unsafe|escapes/u)
   }
-
-  const internal = basicManifest()
-  internal.files[0]!.filename = '.Kalamata/state'
-  expect(() => validateManifest(internal, 20)).toThrow('internal state')
 })
 
 test('rejects entries nested beneath a regular file', () => {

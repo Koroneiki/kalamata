@@ -317,6 +317,7 @@ async function readPortableExecutableArchitecture(
 function isExcludedDirectory(path: string): boolean {
   const name = basename(path).toLowerCase()
   return (
+    // Old staging/backups must not supply executable or Steam API candidates.
     name === '.kalamata' ||
     name === '_coldclient' ||
     name.startsWith('.kalamata-coldclient-')

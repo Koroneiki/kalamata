@@ -32,6 +32,7 @@ import type { ColdClientOperationContext } from './operation-coordinator.ts'
 import { hasColdClientRecoveryJournal } from './replacement.ts'
 
 interface ServiceDatabase {
+  readonly dataRoot: string
   getLibraryEntry(appId: number): { installPath: string | null } | null
   getInstalls(appId: number): Array<{
     depotId: number
@@ -129,7 +130,7 @@ interface ReplacementProvider {
 interface ColdClientServiceOptions {
   platform?: NodeJS.Platform
   now?: () => number
-  acquireLock?: typeof acquireOutputLock
+  acquireLock?: (outputDirectory: string) => Promise<() => Promise<void>>
   reportCleanupError?: (error: Error) => void
 }
 
@@ -144,7 +145,9 @@ const requiredSettingsFiles = [
 export class ColdClientService {
   readonly #platform: NodeJS.Platform
   readonly #now: () => number
-  readonly #acquireLock: typeof acquireOutputLock
+  readonly #acquireLock: (
+    outputDirectory: string,
+  ) => Promise<() => Promise<void>>
   readonly #reportCleanupError: (error: Error) => void
 
   constructor(
@@ -159,7 +162,9 @@ export class ColdClientService {
   ) {
     this.#platform = options.platform ?? process.platform
     this.#now = options.now ?? Date.now
-    this.#acquireLock = options.acquireLock ?? acquireOutputLock
+    this.#acquireLock =
+      options.acquireLock ??
+      ((path) => acquireOutputLock(path, database.dataRoot))
     this.#reportCleanupError = options.reportCleanupError ?? (() => {})
   }
 
@@ -589,7 +594,7 @@ export class ColdClientService {
   }
 
   async hasRecoveryJournal(installRoot: string) {
-    return hasColdClientRecoveryJournal(installRoot)
+    return hasColdClientRecoveryJournal(installRoot, this.database.dataRoot)
   }
 
   private assertSupported(): void {

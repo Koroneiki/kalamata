@@ -10,7 +10,7 @@ import {
   writeFile,
 } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import type { ColdClientInstallation } from '../../../src/types/cold-client.ts'
 import {
   ColdClientReplacementService,
@@ -76,7 +76,7 @@ describe('ColdClient setup replacement', () => {
       ),
     ).toBe('new')
     await expect(
-      access(replacementJournalPath(fixture.installRoot)),
+      access(replacementJournalPath(fixture.installRoot, root!)),
     ).rejects.toThrow()
   })
 
@@ -105,7 +105,7 @@ describe('ColdClient setup replacement', () => {
       ),
     ).toBe('old')
     await expect(
-      access(replacementJournalPath(fixture.installRoot)),
+      access(replacementJournalPath(fixture.installRoot, root!)),
     ).rejects.toThrow()
   })
 })
@@ -132,7 +132,7 @@ test('configuration replacement records regeneration for the full directory', as
 
   expect(database.current).toEqual(target)
   await expect(
-    access(replacementJournalPath(fixture.installRoot)),
+    access(replacementJournalPath(fixture.installRoot, root!)),
   ).rejects.toThrow()
 })
 
@@ -238,7 +238,7 @@ describe('ColdClient replacement recovery', () => {
     ).resolves.toEqual({ status: 'recovered', direction: 'forward' })
     await expect(access(join(fixture.installRoot, backup))).rejects.toThrow()
     await expect(
-      access(replacementJournalPath(fixture.installRoot)),
+      access(replacementJournalPath(fixture.installRoot, root!)),
     ).rejects.toThrow()
   })
 
@@ -259,7 +259,7 @@ describe('ColdClient replacement recovery', () => {
 
     expect(result.status).toBe('invalid')
     await expect(
-      access(replacementJournalPath(fixture.installRoot)),
+      access(replacementJournalPath(fixture.installRoot, root!)),
     ).resolves.toBeNull()
   })
 
@@ -334,7 +334,7 @@ describe('ColdClient replacement recovery', () => {
     expect(database.current).toEqual(target)
     await expect(access(join(fixture.installRoot, oldBackup))).rejects.toThrow()
     await expect(
-      access(replacementJournalPath(fixture.installRoot)),
+      access(replacementJournalPath(fixture.installRoot, root!)),
     ).rejects.toThrow()
   })
 
@@ -437,7 +437,7 @@ describe('ColdClient replacement recovery', () => {
     ).resolves.toEqual({ status: 'recovered', direction: 'rollback' })
     expect(await readFile(join(fixture.live, 'old.dll'), 'utf8')).toBe('old')
     await expect(
-      access(replacementJournalPath(fixture.installRoot)),
+      access(replacementJournalPath(fixture.installRoot, root!)),
     ).rejects.toThrow()
   })
 
@@ -475,6 +475,7 @@ describe('ColdClient replacement recovery', () => {
 })
 
 class FakeDatabase {
+  readonly dataRoot = root!
   constructor(
     public current: ColdClientInstallation | null,
     private readonly events: string[] = [],
@@ -541,9 +542,11 @@ async function writeJournal(
     filesystemChanged?: boolean
   } = {},
 ): Promise<void> {
-  await mkdir(join(installRoot, '.Kalamata'), { recursive: true })
+  await mkdir(dirname(replacementJournalPath(installRoot, root!)), {
+    recursive: true,
+  })
   await writeFile(
-    replacementJournalPath(installRoot),
+    replacementJournalPath(installRoot, root!),
     JSON.stringify({
       version: 2,
       kind: 'setup',
@@ -567,9 +570,11 @@ async function writeSettingsJournal(
   installRoot: string,
   backup: string,
 ): Promise<void> {
-  await mkdir(join(installRoot, '.Kalamata'), { recursive: true })
+  await mkdir(dirname(replacementJournalPath(installRoot, root!)), {
+    recursive: true,
+  })
   await writeFile(
-    replacementJournalPath(installRoot),
+    replacementJournalPath(installRoot, root!),
     JSON.stringify({
       version: 2,
       kind: 'regenerate',
@@ -590,9 +595,11 @@ async function writeCoreJournal(
   installRoot: string,
   backup: string,
 ): Promise<void> {
-  await mkdir(join(installRoot, '.Kalamata'), { recursive: true })
+  await mkdir(dirname(replacementJournalPath(installRoot, root!)), {
+    recursive: true,
+  })
   await writeFile(
-    replacementJournalPath(installRoot),
+    replacementJournalPath(installRoot, root!),
     JSON.stringify({
       version: 2,
       kind: 'update-core',

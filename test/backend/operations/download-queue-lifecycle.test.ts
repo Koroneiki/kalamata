@@ -1,6 +1,7 @@
 import { afterEach, expect, mock } from 'bun:test'
 import { mkdir, realpath, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { installStateDirectory } from '../../../src/backend/depot/install/internal-paths.ts'
 import type { ProductInfoResult } from '../../../src/backend/steam/types.ts'
 import { getResumableApplicationTransaction } from '../../../src/backend/depot/install/transaction/recovery.ts'
 import { DownloadHistory } from '../../../src/backend/downloads/download-history.ts'
@@ -574,6 +575,7 @@ test('priority pauses current work and starts the selected queued app', async ()
     await getResumableApplicationTransaction(
       await realpath(fixture.installPath),
       APP_ID,
+      fixture.database.dataRoot,
     ),
   ).not.toBeNull()
 
@@ -635,9 +637,9 @@ test('priority rejects preparation failure and keeps the selected row', async ()
   const fixture = await setup()
   const selectedAppId = 30
   const selectedPath = join(fixture.root, 'selected-install')
+  await mkdir(selectedPath)
   const transactionPath = join(
-    selectedPath,
-    '.Kalamata',
+    installStateDirectory(fixture.database.dataRoot, selectedPath),
     'transactions',
     'broken',
   )
@@ -672,8 +674,7 @@ test('priority rejects preparation failure and keeps the selected row', async ()
 test('malformed precommit work can be removed from the queue', async () => {
   const fixture = await setup()
   const transactionPath = join(
-    fixture.installPath,
-    '.Kalamata',
+    installStateDirectory(fixture.database.dataRoot, fixture.installPath),
     'transactions',
     'broken',
   )
@@ -705,9 +706,9 @@ test('failed priority preparation does not restart completed work', async () => 
   const fixture = await setup()
   const selectedAppId = 30
   const selectedPath = join(fixture.root, 'selected-install')
+  await mkdir(selectedPath)
   const transactionPath = join(
-    selectedPath,
-    '.Kalamata',
+    installStateDirectory(fixture.database.dataRoot, selectedPath),
     'transactions',
     'broken',
   )
@@ -853,7 +854,11 @@ test('cancel overrides a pending pause and discards resumable work', async () =>
 
   expect(queue.getOperationState().status).toBe('cancelled')
   expect(
-    await getResumableApplicationTransaction(fixture.installPath, APP_ID),
+    await getResumableApplicationTransaction(
+      fixture.installPath,
+      APP_ID,
+      fixture.database.dataRoot,
+    ),
   ).toBeNull()
 })
 
@@ -952,6 +957,7 @@ test('shutdown aborts and awaits precommit work and prevents new work', async ()
     getResumableApplicationTransaction(
       await realpath(fixture.installPath),
       APP_ID,
+      fixture.database.dataRoot,
     ),
   ).resolves.not.toBeNull()
   await expect(
@@ -974,6 +980,7 @@ test('shutdown awaits cancellation of paused work', async () => {
   )
   await writeQueueStagingJournal(
     {
+      dataRoot: fixture.database.dataRoot,
       kind: 'download',
       appId: APP_ID,
       outputDirectory: fixture.installPath,

@@ -1,7 +1,7 @@
 import type { Dirent } from 'node:fs'
 import { mkdir, readdir, rename, rm } from 'node:fs/promises'
 import { join } from 'node:path'
-import { CONFIG_DIRECTORY } from '../internal-paths.ts'
+import { installStateDirectory } from '../internal-paths.ts'
 import { acquireOutputLock } from '../output-lock.ts'
 import { rollForward } from './commit.ts'
 import {
@@ -24,7 +24,9 @@ export async function recoverApplicationTransaction(
   outputDirectory: string,
   callbacks: RecoverApplicationTransactionCallbacks,
 ): Promise<void> {
-  const acquire = callbacks.acquireLock ?? acquireOutputLock
+  const acquire =
+    callbacks.acquireLock ??
+    ((path: string) => acquireOutputLock(path, callbacks.dataRoot))
   const release = await acquire(outputDirectory).catch((error) => {
     throw classify(
       error,
@@ -50,7 +52,10 @@ export async function recoverUnlocked(
   outputDirectory: string,
   callbacks: RecoverApplicationTransactionCallbacks,
 ): Promise<void> {
-  const root = join(outputDirectory, CONFIG_DIRECTORY, 'transactions')
+  const root = join(
+    installStateDirectory(callbacks.dataRoot, outputDirectory),
+    'transactions',
+  )
   let entry: Dirent | undefined
   try {
     entry = transactionDirectory(await readDirectoryIfExists(root))
@@ -118,8 +123,12 @@ async function readRecoverableJournal(
 export async function getResumableApplicationTransaction(
   outputDirectory: string,
   expectedAppId: number,
+  dataRoot: string,
 ): Promise<ResumableApplicationTransaction | null> {
-  const root = join(outputDirectory, CONFIG_DIRECTORY, 'transactions')
+  const root = join(
+    installStateDirectory(dataRoot, outputDirectory),
+    'transactions',
+  )
   const entry = transactionDirectory(await readDirectoryIfExists(root))
   if (!entry) return null
   const journal = await readJournal(join(root, entry.name, 'journal.json'))
@@ -160,15 +169,13 @@ function reconstructProgress(journal: TransactionJournal) {
 
 export async function hasCommitReadyApplicationTransaction(
   outputDirectory: string,
+  dataRoot: string,
 ): Promise<boolean> {
-  const root = join(outputDirectory, CONFIG_DIRECTORY, 'transactions')
-  let entries
-  try {
-    entries = await readdir(root, { withFileTypes: true })
-  } catch (error) {
-    if (filesystemErrorCode(error) === 'ENOENT') return false
-    throw error
-  }
+  const root = join(
+    installStateDirectory(dataRoot, outputDirectory),
+    'transactions',
+  )
+  const entries = (await readDirectoryIfExists(root)) ?? []
   for (const entry of entries) {
     if (!entry.isDirectory()) continue
     const transactionRoot = join(root, entry.name)
@@ -189,26 +196,25 @@ export async function hasCommitReadyApplicationTransaction(
 
 export async function archiveUnresolvedApplicationTransaction(
   outputDirectory: string,
+  dataRoot: string,
 ): Promise<ApplicationDepotRecord[] | null> {
-  return withOutputLock(outputDirectory, () =>
-    archiveUnresolvedApplicationTransactionUnlocked(outputDirectory),
+  return withOutputLock(outputDirectory, dataRoot, () =>
+    archiveUnresolvedApplicationTransactionUnlocked(outputDirectory, dataRoot),
   )
 }
 
 async function archiveUnresolvedApplicationTransactionUnlocked(
   outputDirectory: string,
+  dataRoot: string,
 ): Promise<ApplicationDepotRecord[] | null> {
-  const root = join(outputDirectory, CONFIG_DIRECTORY, 'transactions')
-  let entries
-  try {
-    entries = await readdir(root, { withFileTypes: true })
-  } catch (error) {
-    if (filesystemErrorCode(error) === 'ENOENT')
-      return readRepairFallbackDesired(outputDirectory)
-    throw error
-  }
+  const root = join(
+    installStateDirectory(dataRoot, outputDirectory),
+    'transactions',
+  )
+  const entries = (await readDirectoryIfExists(root)) ?? []
   const pending = entries.filter((candidate) => candidate.isDirectory())
-  if (pending.length === 0) return readRepairFallbackDesired(outputDirectory)
+  if (pending.length === 0)
+    return readRepairFallbackDesired(outputDirectory, dataRoot)
   let desired: ApplicationDepotRecord[] | null = null
   if (pending.length === 1)
     try {
@@ -218,7 +224,10 @@ async function archiveUnresolvedApplicationTransactionUnlocked(
     } catch {
       // Repair falls back to the installed version while preserving evidence.
     }
-  const archiveRoot = join(outputDirectory, CONFIG_DIRECTORY, 'repair-fallback')
+  const archiveRoot = join(
+    installStateDirectory(dataRoot, outputDirectory),
+    'repair-fallback',
+  )
   await mkdir(archiveRoot, { recursive: true })
   for (const entry of pending)
     await rename(join(root, entry.name), join(archiveRoot, entry.name))
@@ -227,8 +236,12 @@ async function archiveUnresolvedApplicationTransactionUnlocked(
 
 async function readRepairFallbackDesired(
   outputDirectory: string,
+  dataRoot: string,
 ): Promise<ApplicationDepotRecord[] | null> {
-  const root = join(outputDirectory, CONFIG_DIRECTORY, 'repair-fallback')
+  const root = join(
+    installStateDirectory(dataRoot, outputDirectory),
+    'repair-fallback',
+  )
   let entries
   try {
     entries = await readdir(root, { withFileTypes: true })
@@ -247,21 +260,26 @@ async function readRepairFallbackDesired(
 
 export async function clearRepairFallback(
   outputDirectory: string,
+  dataRoot: string,
 ): Promise<void> {
-  await withOutputLock(outputDirectory, () =>
-    rm(join(outputDirectory, CONFIG_DIRECTORY, 'repair-fallback'), {
-      recursive: true,
-      force: true,
-    }),
+  await withOutputLock(outputDirectory, dataRoot, () =>
+    rm(
+      join(installStateDirectory(dataRoot, outputDirectory), 'repair-fallback'),
+      {
+        recursive: true,
+        force: true,
+      },
+    ),
   )
 }
 
 export async function hasRepairFallback(
   outputDirectory: string,
+  dataRoot: string,
 ): Promise<boolean> {
   try {
     const entries = await readdir(
-      join(outputDirectory, CONFIG_DIRECTORY, 'repair-fallback'),
+      join(installStateDirectory(dataRoot, outputDirectory), 'repair-fallback'),
       { withFileTypes: true },
     )
     return entries.some((entry) => entry.isDirectory())
@@ -273,19 +291,22 @@ export async function hasRepairFallback(
 
 export async function discardPrecommitApplicationTransaction(
   outputDirectory: string,
+  dataRoot: string,
 ): Promise<void> {
-  await withOutputLock(outputDirectory, () =>
-    discardPrecommitApplicationTransactionUnlocked(outputDirectory),
+  await withOutputLock(outputDirectory, dataRoot, () =>
+    discardPrecommitApplicationTransactionUnlocked(outputDirectory, dataRoot),
   )
 }
 
 export async function discardQueuedPrecommitApplicationTransaction(
   outputDirectory: string,
   expectedAppId: number,
+  dataRoot: string,
 ): Promise<void> {
-  await withOutputLock(outputDirectory, () =>
+  await withOutputLock(outputDirectory, dataRoot, () =>
     discardPrecommitApplicationTransactionUnlocked(
       outputDirectory,
+      dataRoot,
       expectedAppId,
       true,
     ),
@@ -294,10 +315,14 @@ export async function discardQueuedPrecommitApplicationTransaction(
 
 async function discardPrecommitApplicationTransactionUnlocked(
   outputDirectory: string,
+  dataRoot: string,
   expectedAppId?: number,
   discardMalformed = false,
 ): Promise<void> {
-  const root = join(outputDirectory, CONFIG_DIRECTORY, 'transactions')
+  const root = join(
+    installStateDirectory(dataRoot, outputDirectory),
+    'transactions',
+  )
   const entries = await readDirectoryIfExists(root)
   if (!entries) return
   for (const entry of entries) {
@@ -345,9 +370,10 @@ function transactionDirectory(
 
 async function withOutputLock<T>(
   outputDirectory: string,
+  dataRoot: string,
   action: () => Promise<T>,
 ): Promise<T> {
-  const release = await acquireOutputLock(outputDirectory)
+  const release = await acquireOutputLock(outputDirectory, dataRoot)
   try {
     return await action()
   } finally {

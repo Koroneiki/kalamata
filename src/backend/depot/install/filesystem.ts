@@ -2,7 +2,6 @@ import { createReadStream } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { chmod, lstat, mkdir, open, stat } from 'node:fs/promises'
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
-import { CONFIG_DIRECTORY } from './internal-paths.ts'
 import { canonicalManifestPath } from '../manifests/manifest-utils.ts'
 import type { ManifestChunk, ManifestFile } from '../manifests/types.ts'
 import { filesystemErrorCode } from './transaction/types.ts'
@@ -25,21 +24,12 @@ export function resolveManifestPath(root: string, filename: string): string {
   return outputPath
 }
 
-export function resolveOutputPath(root: string, filename: string): string {
-  const outputPath = resolveManifestPath(root, filename)
-  const firstSegment = relative(resolve(root), outputPath).split(sep, 1)[0]
-  if (firstSegment?.toLowerCase() === CONFIG_DIRECTORY.toLowerCase()) {
-    throw new Error(`Manifest path conflicts with internal state: ${filename}`)
-  }
-  return outputPath
-}
-
 export async function assertNoSymlinkTraversal(
   root: string,
   filename: string,
 ): Promise<void> {
   const outputRoot = resolve(root)
-  const outputPath = resolveOutputPath(root, filename)
+  const outputPath = resolveManifestPath(root, filename)
   const segments = relative(outputRoot, outputPath).split(sep)
   let current = outputRoot
 

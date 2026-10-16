@@ -8,7 +8,7 @@ import {
   coldClientRelativePathSchema,
 } from '../../types/cold-client.ts'
 import { acquireOutputLock } from '../depot/install/output-lock.ts'
-import { CONFIG_DIRECTORY } from '../depot/install/internal-paths.ts'
+import { installStateDirectory } from '../depot/install/internal-paths.ts'
 import { filesystemErrorCode } from '../depot/install/transaction/types.ts'
 import { writeDurableJson } from '../filesystem/durable-json.ts'
 
@@ -136,6 +136,7 @@ const journalSchema = z
 type ColdClientReplacementJournal = z.infer<typeof journalSchema>
 
 interface ReplacementDatabase {
+  readonly dataRoot: string
   getColdClientInstallation(appId: number): ColdClientInstallation | null
   replaceColdClientInstallationIfCurrent(
     previous: ColdClientInstallation | null,
@@ -152,7 +153,7 @@ interface ReplaceSetupOptions {
 }
 
 interface ReplacementServiceOptions {
-  acquireLock?: typeof acquireOutputLock
+  acquireLock?: (outputDirectory: string) => Promise<() => Promise<void>>
   reportCleanupError?: (error: Error) => void
 }
 
@@ -162,14 +163,18 @@ export type ColdClientRecoveryResult =
   | { status: 'invalid'; message: string }
 
 export class ColdClientReplacementService {
-  readonly #acquireLock: typeof acquireOutputLock
+  readonly #acquireLock: (
+    outputDirectory: string,
+  ) => Promise<() => Promise<void>>
   readonly #reportCleanupError: (error: Error) => void
 
   constructor(
     private readonly database: ReplacementDatabase,
     options: ReplacementServiceOptions = {},
   ) {
-    this.#acquireLock = options.acquireLock ?? acquireOutputLock
+    this.#acquireLock =
+      options.acquireLock ??
+      ((path) => acquireOutputLock(path, database.dataRoot))
     this.#reportCleanupError = options.reportCleanupError ?? (() => {})
   }
 
@@ -235,8 +240,13 @@ export class ColdClientReplacementService {
       deferredCleanupRelativePaths: [],
       supersededJournal: null,
     })
-    await mkdir(join(installRoot, CONFIG_DIRECTORY), { recursive: true })
-    const existingJournal = await readJournal(installRoot)
+    await mkdir(installStateDirectory(this.database.dataRoot, installRoot), {
+      recursive: true,
+    })
+    const existingJournal = await readJournal(
+      installRoot,
+      this.database.dataRoot,
+    )
     if (existingJournal) {
       if (!this.isCleanupOnly(existingJournal)) {
         throw new Error('Run full ColdClient setup to repair the installation')
@@ -244,7 +254,10 @@ export class ColdClientReplacementService {
       journal.deferredCleanupRelativePaths = cleanupPaths(existingJournal)
       journal.supersededJournal = existingJournal
     }
-    await writeDurableJson(replacementJournalPath(installRoot), journal)
+    await writeDurableJson(
+      replacementJournalPath(installRoot, this.database.dataRoot),
+      journal,
+    )
 
     await this.commitReplacement(
       journal,
@@ -292,9 +305,17 @@ export class ColdClientReplacementService {
       deferredCleanupRelativePaths: [],
       supersededJournal: null,
     })
-    const journalPath = replacementJournalPath(installRoot)
-    await mkdir(join(installRoot, CONFIG_DIRECTORY), { recursive: true })
-    const existingJournal = await readJournal(installRoot)
+    const journalPath = replacementJournalPath(
+      installRoot,
+      this.database.dataRoot,
+    )
+    await mkdir(installStateDirectory(this.database.dataRoot, installRoot), {
+      recursive: true,
+    })
+    const existingJournal = await readJournal(
+      installRoot,
+      this.database.dataRoot,
+    )
     if (existingJournal) {
       if (paths.kind !== 'setup' && !this.isCleanupOnly(existingJournal)) {
         throw new Error('Run full ColdClient setup to repair the installation')
@@ -322,7 +343,7 @@ export class ColdClientReplacementService {
       await replaceFilesystem()
       journal.filesystemChanged = true
       await writeDurableJson(
-        replacementJournalPath(journal.installRoot),
+        replacementJournalPath(journal.installRoot, this.database.dataRoot),
         journal,
       )
       await options.validateLive(liveDirectory)
@@ -354,7 +375,7 @@ export class ColdClientReplacementService {
     const installRoot = await canonicalDirectory(installRootInput)
     const release = await this.#acquireLock(installRoot)
     try {
-      const journal = await readJournal(installRoot)
+      const journal = await readJournal(installRoot, this.database.dataRoot)
       if (!journal) return { status: 'none' }
       if (journal.appId !== expectedAppId) {
         return {
@@ -403,7 +424,7 @@ export class ColdClientReplacementService {
     expectedAppId: number,
   ): Promise<boolean> {
     const installRoot = await canonicalDirectory(installRootInput)
-    const journal = await readJournal(installRoot)
+    const journal = await readJournal(installRoot, this.database.dataRoot)
     return (
       journal !== null &&
       (journal.appId !== expectedAppId ||
@@ -466,7 +487,10 @@ export class ColdClientReplacementService {
       journalPathInRoot(journal.installRoot, journal.stagingRelativePath),
       { recursive: true, force: true },
     )
-    await rm(replacementJournalPath(journal.installRoot), { force: true })
+    await rm(
+      replacementJournalPath(journal.installRoot, this.database.dataRoot),
+      { force: true },
+    )
   }
 
   private async prepareCoreBackup(
@@ -575,7 +599,10 @@ export class ColdClientReplacementService {
   private async restoreSupersededJournal(
     journal: ColdClientReplacementJournal,
   ): Promise<void> {
-    const path = replacementJournalPath(journal.installRoot)
+    const path = replacementJournalPath(
+      journal.installRoot,
+      this.database.dataRoot,
+    )
     if (journal.supersededJournal) {
       await writeDurableJson(
         path,
@@ -587,21 +614,26 @@ export class ColdClientReplacementService {
   }
 }
 
-export function replacementJournalPath(installRoot: string): string {
-  return join(installRoot, CONFIG_DIRECTORY, JOURNAL_FILENAME)
+export function replacementJournalPath(
+  installRoot: string,
+  dataRoot: string,
+): string {
+  return join(installStateDirectory(dataRoot, installRoot), JOURNAL_FILENAME)
 }
 
 export async function hasColdClientRecoveryJournal(
   installRootInput: string,
+  dataRoot: string,
 ): Promise<boolean> {
   const installRoot = await canonicalDirectory(installRootInput)
-  return (await readJournal(installRoot)) !== null
+  return (await readJournal(installRoot, dataRoot)) !== null
 }
 
 async function readJournal(
   installRoot: string,
+  dataRoot: string,
 ): Promise<ColdClientReplacementJournal | null> {
-  const path = replacementJournalPath(installRoot)
+  const path = replacementJournalPath(installRoot, dataRoot)
   if (!(await lstatOrNull(path))) return null
   return journalSchema.parse(JSON.parse(await readFile(path, 'utf8')))
 }

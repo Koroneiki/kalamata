@@ -384,6 +384,7 @@ export class DownloadQueueCoordinator {
         await discardQueuedPrecommitApplicationTransaction(
           item.installPath,
           item.appId,
+          this.database.dataRoot,
         )
         const removed = this.database.removeApplicationQueueItem(id)
         if (!removed) throw new Error('Queued operation was not found')
@@ -419,7 +420,10 @@ export class DownloadQueueCoordinator {
       this.#currentRequest = undefined
       const cancellation = (async (): Promise<CancelOperationResult> => {
         try {
-          await discardPrecommitApplicationTransaction(state.installPath)
+          await discardPrecommitApplicationTransaction(
+            state.installPath,
+            this.database.dataRoot,
+          )
         } catch (error) {
           this.#currentRequest = request
           throw error
@@ -511,6 +515,7 @@ export class DownloadQueueCoordinator {
       const resumable = await getResumableApplicationTransaction(
         entry.installPath,
         entry.appId,
+        this.database.dataRoot,
       ).catch(() => null)
       if (!resumable) continue
       const request: ApplicationPlanRequest = {
@@ -808,6 +813,7 @@ export class DownloadQueueCoordinator {
           installedDepots.filter(({ depotId }) => !desiredIds.has(depotId))
             .length
     const result = await this.steam.reconcileApplication({
+      dataRoot: this.database.dataRoot,
       kind: request.kind,
       appId: request.appId,
       outputDirectory: request.installPath,
@@ -839,7 +845,7 @@ export class DownloadQueueCoordinator {
       estimatedDownloadBytes: result.estimatedDownloadBytes,
     }
     if (request.kind === 'repair')
-      await clearRepairFallback(request.installPath)
+      await clearRepairFallback(request.installPath, this.database.dataRoot)
     this.#repairRequirements.delete(request.appId)
     this.#currentRequest = undefined
     this.#state = completedState
@@ -888,7 +894,10 @@ export class DownloadQueueCoordinator {
       })
     }
     if (disposition.cancelled && !disposition.commitReady) {
-      await discardPrecommitApplicationTransaction(request.installPath)
+      await discardPrecommitApplicationTransaction(
+        request.installPath,
+        this.database.dataRoot,
+      )
       this.#currentRequest = undefined
       this.database.clearUnusedInstallPath(request.appId)
     }
@@ -916,6 +925,7 @@ export class DownloadQueueCoordinator {
       const pending = await getResumableApplicationTransaction(
         request.installPath,
         request.appId,
+        this.database.dataRoot,
       ).catch(() => null)
       if (!pending) this.database.clearUnusedInstallPath(request.appId)
     }
@@ -947,12 +957,14 @@ export class DownloadQueueCoordinator {
     const resumable = await getResumableApplicationTransaction(
       request.installPath,
       request.appId,
+      this.database.dataRoot,
     ).catch(() => null)
     const recoverable =
       (isRecoverableOperationError(serialized.kind) || shuttingDown) &&
       resumable !== null
     const commitReady = await hasCommitReadyApplicationTransaction(
       request.installPath,
+      this.database.dataRoot,
     ).catch(() => true)
     const pauseRequested = this.#pausing && !this.#cancelRequested
     return {
@@ -1218,8 +1230,10 @@ export class DownloadQueueCoordinator {
         .map(({ depotId }) => depotId)
       if (this.#repairRequirements.has(item.appId)) {
         request.fixedDesired =
-          (await archiveUnresolvedApplicationTransaction(item.installPath)) ??
-          undefined
+          (await archiveUnresolvedApplicationTransaction(
+            item.installPath,
+            this.database.dataRoot,
+          )) ?? undefined
         if (
           this.#state.status === 'repair-required' &&
           this.#state.appId === item.appId
@@ -1236,6 +1250,7 @@ export class DownloadQueueCoordinator {
     const resumable = await getResumableApplicationTransaction(
       item.installPath,
       item.appId,
+      this.database.dataRoot,
     )
     if (!resumable) return null
     if (resumable.kind !== item.kind)

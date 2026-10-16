@@ -8,7 +8,6 @@ import type { ContentServer } from '../../transfer/chunk-client.ts'
 import {
   preallocate,
   resolveManifestPath,
-  resolveOutputPath,
   setExecutable,
   writeChunk,
 } from '../filesystem.ts'
@@ -485,7 +484,7 @@ function buildChunkCandidates(
   >()
   for (const entry of source.values()) {
     if (isDirectory(entry.file)) continue
-    const path = resolveOutputPath(outputDirectory, entry.file.filename)
+    const path = resolveManifestPath(outputDirectory, entry.file.filename)
     for (const chunk of entry.file.chunks) {
       const key = chunkKey(chunk)
       const group = result.get(key) ?? []

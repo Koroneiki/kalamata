@@ -1,9 +1,8 @@
-import { mkdir, readdir, rename, rm, rmdir } from 'node:fs/promises'
+import { mkdir, readdir, rm, rmdir, writeFile } from 'node:fs/promises'
 import { dirname, join, relative, resolve } from 'node:path'
 import {
   assertNoSymlinkTraversal,
   resolveManifestPath,
-  resolveOutputPath,
   verifyFileSha1,
 } from '../filesystem.ts'
 import {
@@ -11,6 +10,7 @@ import {
   normalizeManifestSeparators,
 } from '../../manifests/manifest-utils.ts'
 import { callPersistence, writeJournal } from './journal.ts'
+import { movePath } from './move-path.ts'
 import {
   isDirectory,
   isUserConfig,
@@ -36,7 +36,7 @@ export async function validateObstructions(
 ): Promise<void> {
   for (const entry of changed) {
     const info = await safeLstat(
-      resolveOutputPath(outputDirectory, entry.file.filename),
+      resolveManifestPath(outputDirectory, entry.file.filename),
     )
     if (!info) continue
     if (info.isSymbolicLink())
@@ -123,7 +123,7 @@ async function sourcePathShouldMove(
   if (!wanted) {
     if (isUserConfig(entry.file)) return false
     const info = await safeLstat(
-      resolveOutputPath(outputDirectory, entry.file.filename),
+      resolveManifestPath(outputDirectory, entry.file.filename),
     )
     if (info?.isSymbolicLink())
       throw new ApplicationTransactionError(
@@ -142,7 +142,7 @@ async function addChangedPathsToMove(
   oldPaths: Set<string>,
 ): Promise<void> {
   for (const entry of changed) {
-    const path = resolveOutputPath(outputDirectory, entry.file.filename)
+    const path = resolveManifestPath(outputDirectory, entry.file.filename)
     const info = await safeLstat(path)
     if (!info) continue
     if (info.isSymbolicLink())
@@ -207,7 +207,7 @@ export async function rollForward(
 ): Promise<void> {
   // Backups remain until local configuration and SQLite both reconcile.
   let journal = initial
-  const outputDirectory = resolve(transactionRoot, '..', '..', '..')
+  const outputDirectory = journal.installPath
 
   if (journal.phase === 'ready')
     journal = await commitFilesystem(
@@ -246,7 +246,13 @@ async function commitFilesystem(
     'reconcile' | 'testCrashAt'
   >,
 ): Promise<TransactionJournal> {
-  await moveOldPaths(transactionRoot, outputDirectory, journal)
+  const movedMarker = join(transactionRoot, 'old-moved')
+  // A cross-volume backup can be published before the live source is removed.
+  // Finish all removals before publishing this marker or installing any new file.
+  if (!(await pathExists(movedMarker))) {
+    await moveOldPaths(transactionRoot, outputDirectory, journal, callbacks)
+    await writeFile(movedMarker, '')
+  }
   callbacks.testCrashAt?.('old-moved')
   await installNewPaths(transactionRoot, outputDirectory, journal, callbacks)
   await removeObsoleteDirectories(outputDirectory, journal)
@@ -261,21 +267,24 @@ async function moveOldPaths(
   transactionRoot: string,
   outputDirectory: string,
   journal: TransactionJournal,
+  callbacks: Pick<RunApplicationTransactionOptions, 'testCrashAt'>,
 ): Promise<void> {
   for (const action of journal.oldMoves) {
-    const live = resolveOutputPath(outputDirectory, action.path)
+    const live = resolveManifestPath(outputDirectory, action.path)
     const backup = resolveManifestPath(transactionRoot, action.backup)
-    if (await pathExists(backup)) continue
-    const install = journal.installs.find((item) => item.path === action.path)
-    if (
-      install?.staging &&
-      !(await pathExists(resolveManifestPath(transactionRoot, install.staging)))
-    )
+    if (await pathExists(backup)) {
+      await revalidateDestructivePath(outputDirectory, action.path)
+      await rm(live, { recursive: true, force: true })
       continue
+    }
     if (!(await pathExists(live))) continue
     await revalidateDestructivePath(outputDirectory, action.path)
     await mkdir(dirname(backup), { recursive: true })
-    await rename(live, backup)
+    await movePath(live, backup, journal.id, (boundary) => {
+      callbacks.testCrashAt?.(
+        boundary === 'copied' ? 'backup-copied' : 'backup-published',
+      )
+    })
   }
 }
 
@@ -287,7 +296,7 @@ async function installNewPaths(
 ): Promise<void> {
   let installed = 0
   for (const action of journal.installs) {
-    const live = resolveOutputPath(outputDirectory, action.path)
+    const live = resolveManifestPath(outputDirectory, action.path)
     if (action.directory) {
       const info = await safeLstat(live)
       if (!info) await mkdir(live, { recursive: true })
@@ -301,7 +310,11 @@ async function installNewPaths(
       if (await pathExists(staging)) {
         await assertNoSymlinkTraversal(outputDirectory, action.path)
         await mkdir(dirname(live), { recursive: true })
-        await rename(staging, live)
+        await movePath(staging, live, journal.id, (boundary) => {
+          callbacks.testCrashAt?.(
+            boundary === 'copied' ? 'new-copied' : 'new-published',
+          )
+        })
       } else {
         await verifyCommittedFile(live, action)
       }
@@ -317,7 +330,7 @@ async function removeObsoleteDirectories(
 ): Promise<void> {
   for (const path of journal.obsoleteDirectories) {
     await revalidateDestructivePath(outputDirectory, path)
-    await rmdir(resolveOutputPath(outputDirectory, path)).catch((error) => {
+    await rmdir(resolveManifestPath(outputDirectory, path)).catch((error) => {
       const code = filesystemErrorCode(error)
       if (!['ENOENT', 'ENOTEMPTY', 'EEXIST'].includes(code ?? '')) throw error
     })
@@ -329,7 +342,7 @@ async function assertDirectoryIsManaged(
   filename: string,
   source: Map<string, ProjectionEntry>,
 ): Promise<void> {
-  const root = resolveOutputPath(outputDirectory, filename)
+  const root = resolveManifestPath(outputDirectory, filename)
   const visit = async (directory: string): Promise<void> => {
     for (const entry of await readdir(directory, { withFileTypes: true })) {
       const path = join(directory, entry.name)
@@ -358,7 +371,7 @@ async function revalidateDestructivePath(
 ): Promise<void> {
   // The output lock is the coordination boundary; Node has no portable renameat2 API.
   await assertNoSymlinkTraversal(outputDirectory, filename)
-  const path = resolveOutputPath(outputDirectory, filename)
+  const path = resolveManifestPath(outputDirectory, filename)
   const info = await safeLstat(path)
   if (info?.isSymbolicLink())
     throw new ApplicationTransactionError(

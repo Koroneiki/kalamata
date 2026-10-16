@@ -22,6 +22,7 @@ export function run(
   overrides: Partial<Parameters<typeof runApplicationTransaction>[0]> = {},
 ) {
   return runApplicationTransaction({
+    dataRoot: outputDirectory,
     appId: 100,
     kind: 'reconcile',
     outputDirectory,

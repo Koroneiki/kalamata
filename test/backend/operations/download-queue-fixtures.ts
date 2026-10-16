@@ -4,6 +4,7 @@ import { createRequire } from 'node:module'
 import { mkdir, mkdtemp, realpath, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { installStateDirectory } from '../../../src/backend/depot/install/internal-paths.ts'
 import type SteamUser from 'steam-user'
 import type {
   ApplicationDepotRecord,
@@ -43,7 +44,7 @@ export interface DownloadQueueFixture {
 }
 
 export async function setupDownloadQueue(): Promise<DownloadQueueFixture> {
-  const root = await mkdtemp(join(tmpdir(), 'kalamata-queue-'))
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'kalamata-queue-')))
   const database = await KalamataDatabase.open(
     root,
     join(import.meta.dir, '..', '..', '..', 'src', 'db', 'migrations'),
@@ -195,8 +196,7 @@ export async function writeQueueStagingJournal(
 ): Promise<void> {
   const id = 'queue-resume'
   const transaction = join(
-    options.outputDirectory,
-    '.Kalamata',
+    installStateDirectory(options.dataRoot, options.outputDirectory),
     'transactions',
     id,
   )
