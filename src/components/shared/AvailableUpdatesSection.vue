@@ -120,7 +120,6 @@ function updateSubmitted() {
     v-if="reviewDetails"
     :open="reviewDialogOpen"
     :app="reviewDetails"
-    :initial-path="reviewDetails.installPath ?? ''"
     :selected-depot-ids="reviewDepotIds"
     :custom-manifest-targets="emptyManifestTargets"
     priority

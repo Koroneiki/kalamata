@@ -365,9 +365,10 @@ export class KalamataDatabase {
   async assertInstallPathAvailable(
     appId: number,
     path: string,
+    allowMissing = false,
   ): Promise<string> {
     validateId(appId, 'appId')
-    const requested = await canonicalizeInstallDirectory(path)
+    const requested = await canonicalizeInstallDirectory(path, allowMissing)
     const own = this.getLibraryEntry(appId)
     if (!own) throw new Error('App is not in library')
     if (own.installPath) {

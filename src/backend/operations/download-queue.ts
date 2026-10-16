@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { mkdir } from 'node:fs/promises'
 import type {
   ApplicationDepotInput,
   ReconcileApplicationOptions,
@@ -259,11 +260,18 @@ export class DownloadQueueCoordinator {
     validateManifestTargets(request.manifestTargets, request.depotIds)
     return this.serializeAcceptance(async () => {
       this.assertAppAvailable(request.appId)
-      const installPath = await this.database.assertInstallPathAvailable(
+      let installPath = await this.database.assertInstallPathAvailable(
         request.appId,
         request.installPath,
+        true,
       )
       if (this.#shuttingDown) throw new Error('Application is shutting down')
+      // Selection and previews never create folders; only a confirmed install does.
+      await mkdir(installPath, { recursive: true })
+      installPath = await this.database.assertInstallPathAvailable(
+        request.appId,
+        installPath,
+      )
       const item = {
         id: randomUUID(),
         kind: 'download' as const,

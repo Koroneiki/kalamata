@@ -524,7 +524,8 @@ const rpcRequestSchemas = {
     depotId: steamIdSchema,
     pinned: z.boolean(),
   }),
-  selectInstallDirectory: strict({ startingPath: z.string().optional() }),
+  getInstallDirectory: idRequestSchema,
+  selectInstallDirectory: idRequestSchema,
   startDownload: strict({
     appId: steamIdSchema,
     installPath: z.string(),
@@ -603,6 +604,7 @@ export const rpcResponseSchemas = {
   addLibraryEntry: libraryEntrySchema,
   removeLibraryEntry: z.void(),
   setDepotPinned: z.void(),
+  getInstallDirectory: z.string().nullable(),
   selectInstallDirectory: z.string().nullable(),
   startDownload: downloadQueueSnapshotSchema,
   queueDepotUpdate: downloadQueueSnapshotSchema,

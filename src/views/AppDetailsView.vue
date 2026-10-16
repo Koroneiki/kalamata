@@ -677,7 +677,6 @@ async function browseLocalFiles() {
           <DownloadDepotsDialog
             :open="dialogOpen"
             :app="{ ...data, depots: visibleDepots }"
-            :initial-path="selectedPath"
             :selected-depot-ids="selectedDepotIds"
             :custom-manifest-targets="customManifestTargets"
             @update:open="setDownloadDialogOpen"

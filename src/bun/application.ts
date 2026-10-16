@@ -21,6 +21,7 @@ import { ColdClientReplacementService } from '../backend/cold-client/replacement
 import { ColdClientService } from '../backend/cold-client/service.ts'
 import { DownloadQueueCoordinator } from '../backend/operations/download-queue.ts'
 import { DownloadHistory } from '../backend/downloads/download-history.ts'
+import { InstallDirectoryService } from '../backend/downloads/install-directory.ts'
 import {
   BackgroundDownloadCoordinator,
   type JobContext,
@@ -32,7 +33,6 @@ import {
 } from '../backend/depot/install/transaction/recovery.ts'
 import { isOutputLockBusyError } from '../backend/depot/install/output-lock.ts'
 import { openKalamataDatabase } from '../db/index.ts'
-import { canonicalizeInstallDirectory } from '../db/validation.ts'
 import type { AppRpc, AppSettings, DepotPlatform } from '../types/rpc.ts'
 import { validatedRpcHandlers } from '../types/rpc-schemas.ts'
 import packageJson from '../../package.json' with { type: 'json' }
@@ -96,6 +96,20 @@ void steam.initializeDepotKeyCache(database).catch((error) => {
   })
 })
 const appService = new AppService(steam, database)
+const installDirectory = new InstallDirectoryService(
+  Utils.paths.userData,
+  steam,
+  async (startingFolder) => {
+    const paths = await Utils.openFileDialog({
+      startingFolder: startingFolder ?? '',
+      allowedFileTypes: '*',
+      canChooseFiles: false,
+      canChooseDirectory: true,
+      allowsMultipleSelection: false,
+    })
+    return paths[0] ?? null
+  },
+)
 const coldClientMutex = new ColdClientMutationMutex()
 const coldClientJobs = new ColdClientJobQueue(backgroundDownloads, (appId) => {
   coldClientOperations.cancel(appId)
@@ -371,16 +385,11 @@ const rpc = BrowserView.defineRPC<AppRpc>({
           )
         return database.setDepotPinned(appId, depotId, pinned)
       },
-      async selectInstallDirectory({ startingPath }) {
-        const selected = await Utils.openFileDialog({
-          startingFolder: startingPath ?? Utils.paths.home,
-          allowedFileTypes: '*',
-          canChooseFiles: false,
-          canChooseDirectory: true,
-          allowsMultipleSelection: false,
-        })
-        const path = selected[0]
-        return path ? (await canonicalizeInstallDirectory(path)).path : null
+      getInstallDirectory({ appId }) {
+        return installDirectory.get(appId)
+      },
+      selectInstallDirectory({ appId }) {
+        return installDirectory.select(appId)
       },
       startDownload(request) {
         return queue.start(request)

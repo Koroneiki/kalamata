@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 
-import { selectInstallDirectory } from '@/api/install-directory'
 import { previewApplicationOperation } from '@/api/operations'
+import { useInstallDirectory } from '@/composables/use-install-directory'
 import DownloadDepotChanges from '@/components/forms/DownloadDepotChanges.vue'
 import DownloadDialogErrors from '@/components/forms/DownloadDialogErrors.vue'
 import DownloadDialogFooter from '@/components/forms/DownloadDialogFooter.vue'
@@ -26,7 +26,6 @@ const props = withDefaults(
   defineProps<{
     open: boolean
     app: AppDetails
-    initialPath: string
     selectedDepotIds: number[]
     customManifestTargets: ReadonlyMap<number, string>
     priority?: boolean
@@ -41,11 +40,19 @@ const emit = defineEmits<{
 }>()
 
 const operation = useOperationStore()
-const selectedPath = ref('')
+const { directory, select, path } = useInstallDirectory(
+  () => props.app.appId,
+  () => props.open && !props.app.installPath,
+)
+const selectedPath = computed(() => props.app.installPath ?? path.value ?? '')
+const directoryError = computed(() => {
+  const error = directory.error.value
+  return pathError.value || (error instanceof Error ? error.message : '')
+})
 const pathError = ref('')
 const startError = ref('')
 const previewError = ref('')
-const choosingPath = ref(false)
+const choosingPath = select.isLoading
 const starting = ref(false)
 const downloadStarted = ref(false)
 const previewLoading = ref(false)
@@ -122,7 +129,6 @@ watch(
       previewLoading.value = false
       return
     }
-    selectedPath.value = props.app.installPath ?? props.initialPath
     pathError.value = ''
     startError.value = ''
     previewError.value = ''
@@ -204,15 +210,11 @@ function handleCloseAutoFocus(event: Event) {
 }
 
 async function chooseDirectory() {
-  choosingPath.value = true
   pathError.value = ''
   try {
-    const path = await selectInstallDirectory(selectedPath.value || undefined)
-    if (path) selectedPath.value = path
+    await select.mutateAsync(props.app.appId)
   } catch (error) {
     pathError.value = error instanceof Error ? error.message : String(error)
-  } finally {
-    choosingPath.value = false
   }
 }
 
@@ -263,7 +265,7 @@ async function submit() {
           :install-path="app.installPath"
           :selected-path="selectedPath"
           :choosing-path="choosingPath"
-          :path-error="pathError"
+          :path-error="directoryError"
           @choose="chooseDirectory"
         />
 

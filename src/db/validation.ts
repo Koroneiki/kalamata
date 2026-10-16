@@ -1,6 +1,6 @@
-import { access, realpath, stat } from 'node:fs/promises'
+import { access, lstat, realpath, stat } from 'node:fs/promises'
 import { constants } from 'node:fs'
-import { isAbsolute } from 'node:path'
+import { basename, dirname, isAbsolute, join } from 'node:path'
 import {
   depotKeyHexSchema,
   manifestIdSchema,
@@ -23,12 +23,36 @@ export function depotKeyFromHex(value: string): Buffer {
   return Buffer.from(depotKeyHexSchema.parse(value), 'hex')
 }
 
-export async function canonicalizeInstallDirectory(path: string): Promise<{
+export async function canonicalizeInstallDirectory(
+  path: string,
+  allowMissing = false,
+): Promise<{
   path: string
   comparisonKey: string
 }> {
   if (!path || !isAbsolute(path)) {
     throw new Error('Install path must be an absolute directory')
+  }
+  if (allowMissing) {
+    const entry = await lstat(path).catch((error) => {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT')
+        return null
+      throw error
+    })
+    if (!entry) {
+      // Only the game folder may be absent; its chosen parent must already exist.
+      const parent = await canonicalizeInstallDirectory(dirname(path))
+      const name = basename(path)
+      return {
+        path: join(parent.path, name),
+        comparisonKey: join(
+          parent.comparisonKey,
+          process.platform === 'darwin' || process.platform === 'win32'
+            ? name.toLowerCase()
+            : name,
+        ),
+      }
+    }
   }
   const canonicalPath = await realpath(path)
   if (!(await stat(canonicalPath)).isDirectory()) {

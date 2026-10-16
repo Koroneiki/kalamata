@@ -19,6 +19,19 @@ const pathIcon = computed(() => (props.installPath ? Lock : FolderOpen))
 const chooseLabel = computed(() =>
   props.choosingPath ? 'Choosing…' : 'Choose',
 )
+const pathParts = computed(() => {
+  // Existing installs have a locked path, not a newly appended folder name.
+  const start = props.installPath
+    ? props.selectedPath.length
+    : Math.max(
+        props.selectedPath.lastIndexOf('/'),
+        props.selectedPath.lastIndexOf('\\'),
+      ) + 1
+  return {
+    base: props.selectedPath.slice(0, start),
+    installDir: props.selectedPath.slice(start),
+  }
+})
 </script>
 
 <template>
@@ -38,7 +51,10 @@ const chooseLabel = computed(() =>
         v-if="selectedPath"
         class="min-w-0 flex-1 truncate font-mono text-xs"
         :aria-label="`Install path: ${selectedPath}`"
-        >{{ selectedPath }}</span
+        >{{ pathParts.base
+        }}<span class="text-primary dark:text-ring">{{
+          pathParts.installDir
+        }}</span></span
       >
       <span v-else class="text-muted-foreground min-w-0 flex-1 text-sm"
         >No directory selected</span

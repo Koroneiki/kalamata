@@ -1,5 +1,5 @@
 import { afterEach, expect, mock } from 'bun:test'
-import { mkdir, realpath, writeFile } from 'node:fs/promises'
+import { mkdir, realpath, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { installStateDirectory } from '../../../src/backend/depot/install/internal-paths.ts'
 import type { ProductInfoResult } from '../../../src/backend/steam/types.ts'
@@ -34,6 +34,66 @@ async function setup(): Promise<DownloadQueueFixture> {
   currentFixture = await setupDownloadQueue()
   return currentFixture
 }
+
+test('a confirmed first install creates its new game folder and updates keep that path', async () => {
+  const fixture = await setup()
+  const installPath = join(fixture.root, 'New Game')
+  const queue = new DownloadQueueCoordinator(
+    {
+      getProductInfoWithDlc: async () => products(),
+      reconcileApplication: async (options) => {
+        expect(options.outputDirectory).toBe(installPath)
+        expect((await stat(installPath)).isDirectory()).toBe(true)
+        return successfulReconciliation(options)
+      },
+    },
+    fixture.database,
+  )
+  try {
+    expect(await stat(installPath).catch(() => null)).toBeNull()
+    await queue.start({
+      appId: APP_ID,
+      installPath,
+      depotIds: [DEPOTS[0].depotId],
+    })
+    await waitForTerminal(queue)
+    expect(queue.getOperationState().status).toBe('completed')
+    expect(fixture.database.getLibraryEntry(APP_ID)?.installPath).toBe(
+      installPath,
+    )
+    await queue.queueDepotUpdate({
+      appId: APP_ID,
+      desiredDepotIds: DEPOTS.map(({ depotId }) => depotId),
+    })
+    await waitForTerminal(queue)
+    expect(queue.getOperationState().status).toBe('completed')
+    expect(fixture.database.getLibraryEntry(APP_ID)?.installPath).toBe(
+      installPath,
+    )
+  } finally {
+    await queue.shutdown()
+  }
+})
+
+test('a rejected install does not create the proposed game folder', async () => {
+  const fixture = await setup()
+  const installPath = join(fixture.root, 'Not Accepted')
+  const queue = new DownloadQueueCoordinator(
+    {
+      getProductInfoWithDlc: async () => products(),
+      reconcileApplication: successfulReconciliation,
+    },
+    fixture.database,
+  )
+  try {
+    await expect(
+      queue.start({ appId: 999, installPath, depotIds: [DEPOTS[0].depotId] }),
+    ).rejects.toThrow('not in library')
+    expect(await stat(installPath).catch(() => null)).toBeNull()
+  } finally {
+    await queue.shutdown()
+  }
+})
 
 test('reports correlated operation lifecycle totals', async () => {
   const fixture = await setup()
