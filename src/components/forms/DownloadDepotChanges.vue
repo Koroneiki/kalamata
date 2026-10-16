@@ -13,9 +13,11 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion'
 import { Badge } from '@/components/ui/badge'
+import { Skeleton } from '@/components/ui/skeleton'
 
 const props = defineProps<{
   preview: ApplicationOperationPreview | null
+  loading: boolean
   visibleDepots: ReadonlyMap<number, EligibleAppDepot>
   hasPlannedChanges: boolean
 }>()
@@ -59,21 +61,45 @@ function depotCountSummary(value: ApplicationOperationPreview) {
 </script>
 
 <template>
-  <section class="min-w-0" aria-labelledby="selected-depots-title">
+  <section
+    class="min-w-0"
+    aria-labelledby="selected-depots-title"
+    :aria-busy="loading"
+  >
     <header class="flex flex-wrap items-baseline justify-between gap-2">
       <div class="flex items-center gap-2">
         <h3 id="selected-depots-title" class="text-sm font-medium">
           Depot changes
         </h3>
-        <Badge variant="secondary" class="tabular-nums">
+        <Skeleton v-if="loading" class="h-5 w-7 rounded-full" />
+        <Badge v-else variant="secondary" class="tabular-nums">
           {{ changeRows.length }}
         </Badge>
       </div>
-      <p v-if="countSummary" class="text-muted-foreground text-xs tabular-nums">
+      <Skeleton v-if="loading" class="h-4 w-28" />
+      <p
+        v-else-if="countSummary"
+        class="text-muted-foreground text-xs tabular-nums"
+      >
         {{ countSummary }}
       </p>
     </header>
-    <Accordion v-if="depotGroups.length" type="multiple" class="mt-2 space-y-2">
+    <div
+      v-if="loading"
+      class="mt-2 flex items-center gap-2 rounded-lg border px-3 py-2.5"
+      role="status"
+    >
+      <Skeleton class="size-4" />
+      <Skeleton class="h-5 w-24" />
+      <Skeleton class="h-5 w-7 rounded-full" />
+      <Skeleton class="ml-auto size-4" />
+      <span class="sr-only">Calculating depot changes.</span>
+    </div>
+    <Accordion
+      v-else-if="depotGroups.length"
+      type="multiple"
+      class="mt-2 space-y-2"
+    >
       <AccordionItem
         v-for="group in depotGroups"
         :key="group.name"
@@ -99,7 +125,7 @@ function depotCountSummary(value: ApplicationOperationPreview) {
     </Accordion>
 
     <p
-      v-if="showNoChanges"
+      v-else-if="showNoChanges"
       class="bg-muted/40 mt-2 rounded-lg border px-4 py-5 text-sm"
       role="status"
     >

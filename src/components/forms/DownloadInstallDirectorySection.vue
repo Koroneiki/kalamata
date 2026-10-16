@@ -3,10 +3,12 @@ import { FolderOpen, Lock } from '@lucide/vue'
 import { computed } from 'vue'
 
 import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 
 const props = defineProps<{
   installPath: string | null
   selectedPath: string
+  loading: boolean
   choosingPath: boolean
   pathError: string
 }>()
@@ -35,7 +37,11 @@ const pathParts = computed(() => {
 </script>
 
 <template>
-  <section class="min-w-0 space-y-2" aria-labelledby="install-path-title">
+  <section
+    class="min-w-0 space-y-2"
+    aria-labelledby="install-path-title"
+    :aria-busy="loading"
+  >
     <h3 id="install-path-title" class="text-sm font-medium">
       Install directory
     </h3>
@@ -47,8 +53,12 @@ const pathParts = computed(() => {
         class="text-muted-foreground size-4 shrink-0"
         aria-hidden="true"
       />
+      <div v-if="loading" class="min-w-0 flex-1" role="status">
+        <Skeleton class="my-0.5 h-4 w-full max-w-sm" />
+        <span class="sr-only">Loading install directory.</span>
+      </div>
       <span
-        v-if="selectedPath"
+        v-else-if="selectedPath"
         class="min-w-0 flex-1 truncate font-mono text-xs"
         :aria-label="`Install path: ${selectedPath}`"
         >{{ pathParts.base
@@ -64,7 +74,7 @@ const pathParts = computed(() => {
         type="button"
         size="sm"
         variant="outline"
-        :disabled="choosingPath"
+        :disabled="loading || choosingPath"
         @click="$emit('choose')"
       >
         {{ chooseLabel }}

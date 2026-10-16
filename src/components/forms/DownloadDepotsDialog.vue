@@ -53,6 +53,12 @@ const pathError = ref('')
 const startError = ref('')
 const previewError = ref('')
 const choosingPath = select.isLoading
+// The picker suspends install eligibility, not the displayed directory choice.
+const displayedPath = computed(() =>
+  choosingPath.value
+    ? (props.app.installPath ?? directory.data.value ?? '')
+    : selectedPath.value,
+)
 const starting = ref(false)
 const downloadStarted = ref(false)
 const previewLoading = ref(false)
@@ -263,7 +269,8 @@ async function submit() {
       <div class="min-w-0 space-y-6 overflow-y-auto px-5 py-5 sm:px-6">
         <DownloadInstallDirectorySection
           :install-path="app.installPath"
-          :selected-path="selectedPath"
+          :selected-path="displayedPath"
+          :loading="!app.installPath && directory.isLoading.value"
           :choosing-path="choosingPath"
           :path-error="directoryError"
           @choose="chooseDirectory"
@@ -277,6 +284,7 @@ async function submit() {
 
         <DownloadDepotChanges
           :preview="preview"
+          :loading="previewLoading"
           :visible-depots="visibleDepots"
           :has-planned-changes="hasPlannedChanges"
         />
