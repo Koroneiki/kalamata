@@ -90,7 +90,12 @@ export class DepotDownloadService {
       throwIfAborted(options.signal)
 
       const clients: LazySteamContentClient[] = []
-      const network = new ChunkNetworkDiagnostics(options.appId)
+      const network = new ChunkNetworkDiagnostics(
+        options.appId,
+        undefined,
+        undefined,
+        (urls) => options.onEvent?.({ type: 'content-servers', urls }),
+      )
       const controller = new AbortController()
       const onAbort = () =>
         controller.abort(

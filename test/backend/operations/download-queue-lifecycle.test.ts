@@ -5,6 +5,9 @@ import { installStateDirectory } from '../../../src/backend/depot/install/intern
 import type { ProductInfoResult } from '../../../src/backend/steam/types.ts'
 import { getResumableApplicationTransaction } from '../../../src/backend/depot/install/transaction/recovery.ts'
 import { DownloadHistory } from '../../../src/backend/downloads/download-history.ts'
+import type { ReconcileApplicationOptions } from '../../../src/backend/depot/depot-download-service.ts'
+import { downloadQueueSnapshotSchema } from '../../../src/types/rpc-schemas.ts'
+import type { DownloadQueueSnapshot } from '../../../src/types/rpc.ts'
 import {
   DownloadQueueCoordinator,
   type OperationLifecycleEvent,
@@ -34,6 +37,53 @@ async function setup(): Promise<DownloadQueueFixture> {
   currentFixture = await setupDownloadQueue()
   return currentFixture
 }
+
+test('publishes changing active servers in download snapshots and clears them after transfer', async () => {
+  const fixture = await setup()
+  const started = deferred<ReconcileApplicationOptions>()
+  const release = deferred<void>()
+  const snapshots: DownloadQueueSnapshot[] = []
+  const queue = new DownloadQueueCoordinator(
+    {
+      getProductInfoWithDlc: async () => products(),
+      reconcileApplication: async (options) => {
+        options.onEvent?.({ type: 'phase', phase: 'downloading' })
+        started.resolve(options)
+        await release.promise
+        return successfulReconciliation(options)
+      },
+    },
+    fixture.database,
+    (snapshot) => snapshots.push(downloadQueueSnapshotSchema.parse(snapshot)),
+  )
+  try {
+    await queue.start({
+      appId: APP_ID,
+      installPath: fixture.installPath,
+      depotIds: [DEPOTS[0].depotId],
+    })
+    const options = await started.promise
+    const urls = ['https://cdn1.example.com', 'http://cdn2.example.com:8080']
+    options.onEvent?.({ type: 'content-servers', urls })
+    await Promise.resolve()
+    expect(snapshots.at(-1)?.operation).toMatchObject({
+      status: 'active',
+      phase: 'downloading',
+      activeServerUrls: urls,
+    })
+
+    options.onEvent?.({ type: 'content-servers', urls: [] })
+    await Promise.resolve()
+    expect(snapshots.at(-1)?.operation).toMatchObject({ activeServerUrls: [] })
+    release.resolve()
+    await waitForTerminal(queue)
+    expect(queue.getOperationState().status).toBe('completed')
+    expect(queue.getOperationState()).not.toHaveProperty('activeServerUrls')
+  } finally {
+    release.resolve()
+    await queue.shutdown()
+  }
+})
 
 test('a confirmed first install creates its new game folder and updates keep that path', async () => {
   const fixture = await setup()

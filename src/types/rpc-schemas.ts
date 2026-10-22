@@ -229,6 +229,7 @@ const activeOperationFields = {
   reusedLocalBytes: manifestIdSchema,
   networkBytes: manifestIdSchema,
   estimatedDownloadBytes: manifestIdSchema.nullable(),
+  activeServerUrls: z.array(z.url()).optional(),
 }
 const activeOperationStateSchema = strict({
   status: z.literal('active'),

@@ -4,6 +4,46 @@ import type { NetworkDiagnostic } from '../src/backend/shared/network-diagnostic
 import { SteamContentClient } from '../src/backend/depot/transfer/steam-content-client.ts'
 import type { SteamContentUser } from '../src/backend/steam/types.ts'
 
+test('active server origins track overlapping requests until their bodies finish or abort', async () => {
+  const snapshots: string[][] = []
+  const network = new ChunkNetworkDiagnostics(
+    440,
+    () => {},
+    async (input) => {
+      if (String(input).includes('failed')) throw new Error('Connection failed')
+      return new Response('chunk')
+    },
+    (urls) => snapshots.push(urls),
+  )
+  const first = await network.fetch(
+    'https://cdn.example.com/depot/SECRET?token=SECRET',
+  )
+  const abort = new AbortController()
+  const second = await network.fetch('https://cdn.example.com/depot/other', {
+    signal: abort.signal,
+  })
+  const third = await network.fetch('http://other.example.com:8080/chunk')
+  expect(snapshots).toEqual([
+    ['https://cdn.example.com'],
+    ['http://other.example.com:8080', 'https://cdn.example.com'],
+  ])
+
+  await first.text()
+  expect(snapshots).toHaveLength(2)
+  await third.body!.cancel()
+  expect(snapshots.at(-1)).toEqual(['https://cdn.example.com'])
+  abort.abort()
+  expect(snapshots.at(-1)).toEqual([])
+  await second.body!.cancel()
+  expect(snapshots).toHaveLength(4)
+
+  await expect(
+    network.fetch('https://failed.example.com/chunk'),
+  ).rejects.toThrow('Connection failed')
+  expect(snapshots.slice(-2)).toEqual([['https://failed.example.com'], []])
+  expect(JSON.stringify(snapshots)).not.toContain('SECRET')
+})
+
 test('many parallel chunk requests emit only one summary per server at download end', async () => {
   const events: NetworkDiagnostic[] = []
   const network = new ChunkNetworkDiagnostics(

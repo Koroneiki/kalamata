@@ -291,6 +291,7 @@ export interface ActiveOperationState {
   reusedLocalBytes: string
   networkBytes: string
   estimatedDownloadBytes: string | null
+  activeServerUrls?: string[]
 }
 
 export interface PausedOperationState extends Omit<

@@ -4,6 +4,7 @@ import { computed, onBeforeUnmount, ref } from 'vue'
 
 import InlineOperationCancelDialog from '@/components/shared/InlineOperationCancelDialog.vue'
 import DownloadTransferStats from '@/components/shared/DownloadTransferStats.vue'
+import DownloadServers from '@/components/shared/DownloadServers.vue'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { useOperationStore } from '@/stores/operation'
@@ -127,6 +128,9 @@ const showTransferStats = computed(() => {
   // A lingering panel must not show the next app's transfer measurements.
   return operation.stateForApp(state.appId) === operation.state
 })
+const activeServerUrls = computed(() =>
+  showTransferStats.value ? (progressState.value?.activeServerUrls ?? []) : [],
+)
 const canPause = computed(
   () =>
     !props.finished &&
@@ -235,10 +239,17 @@ defineExpose({
       :aria-label="`${phaseLabel} operation status`"
     >
       <div class="flex items-baseline justify-between gap-3 leading-4">
-        <h2 class="text-xs font-semibold tracking-wide">{{ phaseLabel }}</h2>
+        <div
+          class="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-1 sm:flex-nowrap"
+        >
+          <h2 class="shrink-0 text-xs font-semibold tracking-wide">
+            {{ phaseLabel }}
+          </h2>
+          <DownloadServers :urls="activeServerUrls" />
+        </div>
         <span
           v-if="progressState && !isUninstall"
-          class="font-mono text-xs font-medium tabular-nums"
+          class="shrink-0 font-mono text-xs font-medium tabular-nums"
           >{{ Math.round(progress) }}%</span
         >
       </div>

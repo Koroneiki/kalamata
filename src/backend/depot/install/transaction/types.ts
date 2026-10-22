@@ -66,6 +66,7 @@ export interface ApplicationTransactionProgress {
 
 export type ApplicationTransactionEvent =
   | ApplicationTransactionProgress
+  | { type: 'content-servers'; urls: string[] }
   | { type: 'transaction'; transactionId: string }
   | {
       type: 'phase'

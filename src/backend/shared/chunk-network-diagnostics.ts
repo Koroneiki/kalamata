@@ -14,11 +14,13 @@ export class ChunkNetworkDiagnostics {
   readonly fetch: Fetcher
   readonly #downloadId = randomUUID()
   readonly #servers = new Map<string, ChunkTransferSummary>()
+  readonly #activeServers = new Map<string, number>()
 
   constructor(
     private readonly appId?: number,
     private readonly report: NetworkReporter = reportNetworkDiagnostic,
     fetcher: Fetcher = fetch,
+    private readonly onActiveServers?: (urls: string[]) => void,
   ) {
     this.fetch = createDiagnosticFetch((event) => this.record(event), fetcher)
   }
@@ -30,6 +32,11 @@ export class ChunkNetworkDiagnostics {
   }
 
   private record(event: NetworkDiagnostic): void {
+    if (
+      event.event === 'outbound.started' ||
+      event.event === 'outbound.finished'
+    )
+      this.recordActiveServer(event)
     if (event.event !== 'outbound.finished') return
     const key = JSON.stringify([
       event.host,
@@ -61,5 +68,22 @@ export class ChunkNetworkDiagnostics {
       const status = String(event.statusCode)
       summary.statusCodes[status] = (summary.statusCodes[status] ?? 0) + 1
     }
+  }
+
+  private recordActiveServer(
+    event: Extract<
+      NetworkDiagnostic,
+      { event: 'outbound.started' | 'outbound.finished' }
+    >,
+  ): void {
+    // Expose origins only: chunk paths and query strings may contain credentials.
+    const url = new URL(`${event.protocol}://${event.host}:${event.port}`)
+      .origin
+    const previous = this.#activeServers.get(url) ?? 0
+    const count = previous + (event.event === 'outbound.started' ? 1 : -1)
+    if (count > 0) this.#activeServers.set(url, count)
+    else this.#activeServers.delete(url)
+    if (previous > 0 !== count > 0)
+      this.onActiveServers?.([...this.#activeServers.keys()].sort())
   }
 }

@@ -1096,6 +1096,11 @@ export class DownloadQueueCoordinator {
       return
     }
     if (event.type === 'progress') return this.handleProgressEvent(event)
+    if (event.type === 'content-servers') {
+      this.#state = { ...this.#state, activeServerUrls: event.urls }
+      this.scheduleProgressEmission()
+      return
+    }
     this.handlePhaseEvent(event)
   }
 
@@ -1109,6 +1114,10 @@ export class DownloadQueueCoordinator {
       networkBytes: event.actualNetwork,
       estimatedDownloadBytes: event.estimatedDownloadBytes,
     }
+    this.scheduleProgressEmission()
+  }
+
+  private scheduleProgressEmission(): void {
     if (this.#progressQueued) return
     this.#progressQueued = true
     queueMicrotask(() => {
