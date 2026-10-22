@@ -3,12 +3,17 @@ import { computed } from 'vue'
 import { Download } from '@lucide/vue'
 
 import DownloadAppSummaryIdentity from '@/components/shared/DownloadAppSummaryIdentity.vue'
+import DownloadTransferStats from '@/components/shared/DownloadTransferStats.vue'
 import { Progress } from '@/components/ui/progress'
 import type { BackgroundDownloadJob } from '@/types/background-downloads'
 import { formatBytes } from '@/utils/bytes'
 import { backgroundDownloadLabel } from '@/utils/background-downloads'
 
-const props = defineProps<{ job: BackgroundDownloadJob }>()
+const props = defineProps<{
+  job: BackgroundDownloadJob
+  bytesPerSecond: number | null
+  remainingSeconds: number | null
+}>()
 const manifestStatus = computed(() => {
   const { itemCount, manifestProgress } = props.job
   if (!itemCount || !manifestProgress) return null
@@ -112,6 +117,10 @@ const percentage = computed(() => {
         <span v-if="currentTransfer" class="tabular-nums">
           Current: {{ currentTransfer }}
         </span>
+        <DownloadTransferStats
+          :bytes-per-second="bytesPerSecond"
+          :remaining-seconds="remainingSeconds"
+        />
       </div>
     </div>
   </div>

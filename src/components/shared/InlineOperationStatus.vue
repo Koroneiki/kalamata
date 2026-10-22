@@ -3,6 +3,7 @@ import { Computer, Download, Pause, Play, X } from '@lucide/vue'
 import { computed, onBeforeUnmount, ref } from 'vue'
 
 import InlineOperationCancelDialog from '@/components/shared/InlineOperationCancelDialog.vue'
+import DownloadTransferStats from '@/components/shared/DownloadTransferStats.vue'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { useOperationStore } from '@/stores/operation'
@@ -115,6 +116,17 @@ const downloadProgress = computed(() => {
     label: `Downloaded ${downloaded} out of an estimated ${estimated}`,
   }
 })
+const showTransferStats = computed(() => {
+  const state = props.state
+  if (
+    props.finished ||
+    state.status !== 'active' ||
+    state.phase !== 'downloading'
+  )
+    return false
+  // A lingering panel must not show the next app's transfer measurements.
+  return operation.stateForApp(state.appId) === operation.state
+})
 const canPause = computed(
   () =>
     !props.finished &&
@@ -215,7 +227,7 @@ defineExpose({
 </script>
 
 <template>
-  <div v-bind="$attrs" class="flex min-w-0 items-stretch gap-2 sm:h-16">
+  <div v-bind="$attrs" class="flex min-w-0 items-stretch gap-2 sm:min-h-16">
     <section
       ref="panel"
       class="focus-visible:ring-ring flex min-w-0 flex-1 flex-col justify-center rounded-lg p-2 outline-none focus-visible:ring-2 sm:p-1"
@@ -281,6 +293,11 @@ defineExpose({
             <Download class="size-3" aria-hidden="true" />
             <span aria-hidden="true">{{ downloadProgress.text }}</span>
           </span>
+          <DownloadTransferStats
+            v-if="showTransferStats"
+            :bytes-per-second="operation.bytesPerSecond"
+            :remaining-seconds="operation.remainingSeconds"
+          />
           <span
             v-if="showInstalledProgress"
             class="ml-auto flex min-w-0 items-center justify-end gap-1 whitespace-nowrap tabular-nums"

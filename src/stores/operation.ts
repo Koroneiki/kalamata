@@ -22,6 +22,7 @@ import {
   coldClientQueryKeys,
   libraryQueryKey,
 } from '@/composables/queries'
+import { useDownloadTransfer } from '@/composables/use-download-transfer'
 import { useDepotOperationDraftStore } from '@/stores/depot-operation-drafts'
 import type {
   DownloadQueueSnapshot,
@@ -56,6 +57,18 @@ export const useOperationStore = defineStore('operation', () => {
   const initializationError = ref<string | null>(null)
   let initializePromise: Promise<void> | undefined
   let unsubscribe: (() => void) | undefined
+
+  // The store owns sampling so route changes cannot restart the measurement.
+  const { bytesPerSecond, remainingSeconds } = useDownloadTransfer(() => {
+    const current = state.value
+    if (current.status !== 'active' || current.phase !== 'downloading')
+      return null
+    return {
+      key: `${current.appId}:${current.installPath}:${current.kind}`,
+      bytes: current.networkBytes,
+      total: current.estimatedDownloadBytes,
+    }
+  })
 
   function invalidateApplication(appId: number) {
     void Promise.all([
@@ -206,6 +219,8 @@ export const useOperationStore = defineStore('operation', () => {
 
   return {
     state,
+    bytesPerSecond,
+    remainingSeconds,
     pending,
     issues,
     stateForApp,

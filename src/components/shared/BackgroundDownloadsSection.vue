@@ -26,7 +26,11 @@ const queued = computed(() =>
       Jobs
     </h2>
     <div v-if="active" class="mt-6" aria-label="Current background job">
-      <BackgroundCurrentOperationPanel :job="active" />
+      <BackgroundCurrentOperationPanel
+        :job="active"
+        :bytes-per-second="downloads.bytesPerSecond"
+        :remaining-seconds="downloads.remainingSeconds"
+      />
     </div>
     <section
       v-if="queued.length"

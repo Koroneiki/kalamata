@@ -14,12 +14,24 @@ import {
   coldClientQueryKeys,
   libraryQueryKey,
 } from '@/composables/queries'
+import { useDownloadTransfer } from '@/composables/use-download-transfer'
 import type { BackgroundDownloadsSnapshot } from '@/types/background-downloads'
 
 export const useBackgroundDownloadsStore = defineStore(
   'background-downloads',
   () => {
     const jobs = shallowRef<BackgroundDownloadsSnapshot['jobs']>([])
+    // Background transfers keep their measurement even when no page shows them.
+    const { bytesPerSecond, remainingSeconds } = useDownloadTransfer(() => {
+      const job = jobs.value.find((candidate) => candidate.status === 'active')
+      if (!job || job.phase.toLowerCase() !== 'downloading') return null
+      return {
+        key: `${job.id}:${job.source}:${job.manifestProgress?.currentIndex}`,
+        bytes: job.transferredBytes,
+        // A manifest group has no reliable total until all its children finish.
+        total: job.totalBytes,
+      }
+    })
     const queryCache = useQueryCache()
     let initialization: Promise<void> | undefined
     let unsubscribe: (() => void) | undefined
@@ -84,6 +96,8 @@ export const useBackgroundDownloadsStore = defineStore(
 
     return {
       jobs,
+      bytesPerSecond,
+      remainingSeconds,
       initialize,
     }
   },
