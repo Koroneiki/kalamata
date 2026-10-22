@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import DepotResourceStatus from '@/components/shared/DepotResourceStatus.vue'
 import type { AppDepot } from '@/types/rpc'
 import { depotBadges } from '@/utils/depots'
 
@@ -8,7 +9,7 @@ defineProps<{ depot: AppDepot }>()
 </script>
 
 <template>
-  <div v-if="depotBadges(depot).length" class="flex flex-wrap gap-2">
+  <div class="flex flex-wrap items-center gap-2">
     <Badge
       v-for="badge in depotBadges(depot)"
       :key="badge.label"
@@ -16,5 +17,6 @@ defineProps<{ depot: AppDepot }>()
     >
       {{ badge.label }}
     </Badge>
+    <DepotResourceStatus v-if="depot.eligible" :depot="depot" />
   </div>
 </template>

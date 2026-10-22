@@ -98,18 +98,6 @@ export function depotBadges(depot: AppDepot): DepotBadgeItem[] {
   }
   if (!depot.eligible) return badges
 
-  if (depot.manifestStatus !== 'ready') {
-    badges.push({
-      label: `Manifest ${depot.manifestStatus}`,
-      variant: depot.manifestStatus === 'invalid' ? 'destructive' : 'outline',
-    })
-  }
-  if (depot.keyStatus !== 'present') {
-    badges.push({
-      label: `Key ${depot.keyStatus}`,
-      variant: depot.keyStatus === 'invalid' ? 'destructive' : 'outline',
-    })
-  }
   if (depot.installStatus === 'current') {
     badges.push({ label: 'Installed', variant: 'outline' })
   } else if (depot.installStatus === 'outdated') {
